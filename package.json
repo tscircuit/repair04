@@ -1,0 +1,47 @@
+{
+  "name": "@tscircuit/repair04",
+  "version": "0.0.1",
+  "description": "Bounded Simple Route JSON DRC repair solver",
+  "module": "lib/index.ts",
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "lib"
+  ],
+  "exports": {
+    ".": {
+      "types": "./lib/index.ts",
+      "import": "./lib/index.ts"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tscircuit/repair04.git"
+  },
+  "scripts": {
+    "start": "cosmos",
+    "build:site": "cosmos-export",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "format": "biome format --write .",
+    "format:check": "biome format ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "@types/bun": "latest",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "graphics-debug": "^0.0.86",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-cosmos": "^7.1.1",
+    "react-cosmos-plugin-vite": "^7.1.1",
+    "typescript": "^5.9.2",
+    "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "@tscircuit/solver-utils": "^0.0.16",
+    "high-density-repair03": "git+https://github.com/tscircuit/high-density-repair03.git#9d6da7d69e7a02c066cf8e962b981da3c0b4e350",
+    "@tscircuit/math-utils": "^0.0.36"
+  }
+}
