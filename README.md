@@ -1,5 +1,8 @@
 # repair04
 
+> **Correction in progress:** the original benchmark omitted the dedicated via-in-pad and via-to-pad checks. Several saved outputs, including sample006, therefore contain violations despite passing that narrower checker. The original passing-board totals below are historical and do not establish the requested DRC improvement with these checks included. PR #2420 is back in draft while the repair and benchmark are corrected.
+
+
 A bounded, incremental DRC repair solver for routed Simple Route JSON. It searches for clearance paths between fixed anchors, adjusts bends, replaces short polyline spans, adds doglegs, or adds local layer bridges while keeping region boundaries, terminals, and required electrical junctions fixed.
 
 ```sh
