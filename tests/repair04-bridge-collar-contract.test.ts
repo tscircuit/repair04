@@ -13,6 +13,7 @@ test("every generated near-boundary bridge keeps new vias inside and satisfies t
   ]
   const region = extractRepairRegion(input)
   const solver = new Repair04Solver({
+    allowLayerChanges: true,
     srj: region.srj,
     routes: region.routes,
     bounds: region.bounds,

@@ -3,7 +3,7 @@
 > **Correction in progress:** the original benchmark omitted the dedicated via-in-pad and via-to-pad checks. Several saved outputs, including sample006, therefore contain violations despite passing that narrower checker. The original passing-board totals below are historical and do not establish the requested DRC improvement with these checks included. PR #2420 is back in draft while the repair and benchmark are corrected.
 
 
-A bounded, incremental DRC repair solver for routed Simple Route JSON. It searches for clearance paths between fixed anchors, adjusts bends, replaces short polyline spans, adds doglegs, or adds local layer bridges while keeping region boundaries, terminals, and required electrical junctions fixed.
+A bounded, incremental DRC repair solver for routed Simple Route JSON. By default it searches for same-layer clearance paths, adjusts bends, replaces short polyline spans, and adds doglegs while preserving every existing via, region boundary, terminal, and required electrical junction. Via movement and local layer bridges require `allowLayerChanges: true`; new or moved vias must clear pads even on the same net.
 
 ```sh
 bun add github:tscircuit/repair04
@@ -46,15 +46,13 @@ const candidate = mergeRepairRegion({
 - Original endpoints, port points, tee contacts, shared vias, boundary segments, and atomic through-obstacle spans are fixed. The merge validates both geometry and metadata and rejects stale source state.
 - Fixed preloaded copper, relevant pads and keepouts, and local board edges remain in the regional context. Unrelated geometry and embedded full-board state are excluded.
 - `Repair04Solver` takes only the serializable local problem. The caller retains source provenance and the enclosing board. Use extraction to provide fixed cut points where traces cross the mutable boundary.
-- New bends retain copper width; vias move as complete layer transitions. Variable-width spans are not simplified into narrower copper.
+- New bends retain copper width. Existing vias keep their exact positions, layer transitions, and diameters by default. With `allowLayerChanges: true`, vias move as complete layer transitions and new/moved vias must clear every pad. Variable-width spans are not simplified into narrower copper.
 
-A step evaluates at most one candidate. `maxCandidates` gives a deterministic search budget. Clearance paths use a bounded 0.1 mm grid, refined to half the copper width for traces at most 0.1 mm wide, with at most 30,000 expanded states per path. They can change layers using the existing via diameter. `solved` means that the optimization finished; unresolved DRC is reported by `stats.finalErrorCount`. Invalid geometry throws. `getOutput()` is available only after a completed solve and returns a copy.
+A step evaluates at most one candidate. `maxCandidates` gives a deterministic search budget. Clearance paths use a bounded 0.1 mm grid, refined to half the copper width for traces at most 0.1 mm wide, with at most 30,000 expanded states per path. With explicit `allowLayerChanges: true`, they can change layers using the existing via diameter after a bounded trace-only search. `solved` means that the optimization finished; unresolved DRC is reported by `stats.finalErrorCount`. Invalid geometry throws. `getOutput()` is available only after a completed solve and returns a copy.
 
 The local score combines repair03's indexed copper checks with generic and rotated obstacle checks. Wire vertices on both sides of each via are explicit, so neither via-adjacent trace segment disappears from the score. A caller must still validate the merged board with its independent DRC implementation. Pipeline9 performs that check before accepting a region.
 
-![Actual SRJ33 sample006 bounded repair](docs/sample006-bounded-repair.svg)
-
-This is the first region selected by Pipeline9 on SRJ33 sample006: a 10×10 mm region with a 0.5 mm fixed collar. The regional score falls from two errors to zero, all 41 locked points stay exact, and the parent accepts the merge. These are local demonstration counts; full-board results require running every remaining pipeline stage.
+The corrected Pipeline9 sample006 result passes default and relaxed DRC including via-in-pad and via-to-pad checks. Its complete before/after outputs have the same ten via locations: repair04 uses trace-only edits. The corrected illustration and full dataset revalidation are being prepared in PR #2420.
 
 ## Development
 

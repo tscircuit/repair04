@@ -18,6 +18,7 @@ type Barrier = {
   minZ: number
   maxZ: number
   radius: number
+  viaOnly?: boolean
   a: Point
   b: Point
   rect?: { width: number; height: number; rotation: number }
@@ -36,8 +37,11 @@ export function findClearancePath(input: {
   traceClearance: number
   viaClearance: number
   gridSize?: number
+  /** Disable layer changes when searching for a trace-only repair. */
+  allowLayerChanges?: boolean
 }): Point[] | null {
   const { srj, routes, routeIndex, start, end, bounds, traceThickness } = input
+  if (input.allowLayerChanges === false && start.z !== end.z) return null
   const route = routes[routeIndex]!
   const parents = new Map<string, string>()
   const net = (name: string): string => {
@@ -83,6 +87,7 @@ export function findClearancePath(input: {
     b: Point,
     radius: number,
     rect?: Barrier["rect"],
+    viaOnly = false,
   ): void => {
     const extent = rect ? Math.hypot(rect.width, rect.height) / 2 : radius
     barriers.push({
@@ -90,6 +95,7 @@ export function findClearancePath(input: {
       b,
       radius,
       rect,
+      viaOnly,
       minX: Math.min(a.x, b.x) - extent,
       maxX: Math.max(a.x, b.x) + extent,
       minY: Math.min(a.y, b.y) - extent,
@@ -99,17 +105,24 @@ export function findClearancePath(input: {
     })
   }
   for (const obstacle of srj.obstacles) {
-    if (obstacle.connectedTo.some((name) => net(name) === owner)) continue
+    // A wire may enter its own pad, but a new via still needs pad clearance.
+    const viaOnly = obstacle.connectedTo.some((name) => net(name) === owner)
     const zs =
       (obstacle as typeof obstacle & { __zLayers?: number[] }).__zLayers ??
       obstacle.zLayers ??
       obstacle.layers.map(layer)
     for (const z of zs)
-      add({ ...obstacle.center, z }, { ...obstacle.center, z }, 0, {
-        width: obstacle.width,
-        height: obstacle.height,
-        rotation: ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180,
-      })
+      add(
+        { ...obstacle.center, z },
+        { ...obstacle.center, z },
+        0,
+        {
+          width: obstacle.width,
+          height: obstacle.height,
+          rotation: ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180,
+        },
+        viaOnly,
+      )
   }
   for (const other of routes) {
     if (net(other.connectionName) === owner) continue
@@ -204,6 +217,7 @@ export function findClearancePath(input: {
         y++
       )
         for (const barrier of cells.get(`${x},${y}`) ?? []) {
+          if (barrier.viaOnly && !isVia) continue
           if (seen.has(barrier)) continue
           seen.add(barrier)
           if (
@@ -356,8 +370,10 @@ export function findClearancePath(input: {
           continue
         neighbors.push(idAt(x + dx, y + dy, a.z))
       }
-    for (let z = 0; z < srj.layerCount; z++)
-      if (z !== a.z) neighbors.push(idAt(x, y, z))
+    if (input.allowLayerChanges !== false) {
+      for (let z = 0; z < srj.layerCount; z++)
+        if (z !== a.z) neighbors.push(idAt(x, y, z))
+    }
     for (const id of neighbors) {
       const b = point(id),
         cost =

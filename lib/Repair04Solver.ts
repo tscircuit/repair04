@@ -15,9 +15,11 @@ import {
 import { getFixedObstacleViolations } from "./getFixedObstacleViolations"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { findClearancePath } from "./findClearancePath"
+import { getNewViaPadViolations } from "./getNewViaPadViolations"
 
 type Point = HighDensityRoute["route"][number]
 type Candidate = { routeIndex: number; route: HighDensityRoute }
+type RepairTarget = { ri: number; pi: number; distance: number; t: number }
 type Score = {
   count: number
   severity: number
@@ -29,6 +31,8 @@ export type Repair04SolverInput = RepairRegionInput & {
   maxCandidates?: number
   traceClearance?: number
   viaClearance?: number
+  /** Opt in to moving/adding vias; defaults to trace-only edits with fixed vias. */
+  allowLayerChanges?: boolean
 }
 
 function inside(point: Point, bounds: Bounds): boolean {
@@ -56,6 +60,17 @@ function rebuildVias(route: HighDensityRoute): HighDensityRoute {
     }
   }
   return { ...route, vias }
+}
+
+function getViaGeometryKey(route: HighDensityRoute): string {
+  const transitions: number[][] = []
+  for (let index = 1; index < route.route.length; index++) {
+    const before = route.route[index - 1]!
+    const after = route.route[index]!
+    if (before.z !== after.z)
+      transitions.push([before.x, before.y, before.z, after.z])
+  }
+  return JSON.stringify([route.viaDiameter, transitions])
 }
 
 /**
@@ -200,18 +215,116 @@ export class Repair04Solver extends BaseSolver {
     )
   }
 
+  private *generateClearanceCandidates(
+    targets: RepairTarget[],
+    allowLayerChanges: boolean,
+  ): Generator<Candidate> {
+    // Search complete spans between immutable contacts. A clearance path can
+    // navigate several obstacles at once without moving either attachment.
+    const searched = new Set<string>()
+    for (const { ri, pi } of targets) {
+      if (searched.size >= 12) break
+      const route = this.routes[ri]!
+      const isAnchor = (index: number): boolean => {
+        const point = route.route[index]!
+        return (
+          this.isLocked(ri, point) ||
+          (!allowLayerChanges &&
+            ((index > 0 && route.route[index - 1]!.z !== point.z) ||
+              (index + 1 < route.route.length &&
+                route.route[index + 1]!.z !== point.z)))
+        )
+      }
+      let lo = pi - 1,
+        hi = pi
+      while (lo > 0 && !isAnchor(lo)) lo--
+      while (hi < route.route.length - 1 && !isAnchor(hi)) hi++
+      const key = `${ri}:${lo}:${hi}`
+      if (searched.has(key)) continue
+      searched.add(key)
+      const a = route.route[lo]!,
+        b = route.route[hi]!
+      if (a.x === b.x && a.y === b.y) continue
+      const inMutableClosure = (p: Point): boolean =>
+        p.x >= this.mutableBounds.minX - REGION_EPSILON &&
+        p.x <= this.mutableBounds.maxX + REGION_EPSILON &&
+        p.y >= this.mutableBounds.minY - REGION_EPSILON &&
+        p.y <= this.mutableBounds.maxY + REGION_EPSILON
+      if (!inMutableClosure(a) || !inMutableClosure(b)) continue
+      const widths = new Set(
+        route.route
+          .slice(lo, hi + 1)
+          .map(
+            (p) =>
+              (p as Point & { traceThickness?: number }).traceThickness ??
+              route.traceThickness,
+          ),
+      )
+      if (widths.size !== 1) continue
+      const traceThickness = [...widths][0]!
+      const path = findClearancePath({
+        allowLayerChanges,
+        srj: this.input.srj,
+        routes: this.routes,
+        routeIndex: ri,
+        start: a,
+        end: b,
+        bounds: this.mutableBounds,
+        traceThickness,
+        gridSize: traceThickness <= 0.1 ? traceThickness / 2 : 0.1,
+        traceClearance: this.input.traceClearance ?? 0.1,
+        viaClearance: this.input.viaClearance ?? 0.1,
+      })
+      if (!path) continue
+      yield {
+        routeIndex: ri,
+        route: rebuildVias({
+          ...route,
+          route: [
+            ...route.route.slice(0, lo),
+            ...path,
+            ...route.route.slice(hi + 1),
+          ],
+        }),
+      }
+    }
+  }
+
   private *generateCandidates(): Generator<Candidate> {
+    for (const allowLayerChanges of this.input.allowLayerChanges === true
+      ? [false, true]
+      : [false]) {
+      let traceCandidates = 0
+      for (const candidate of this.generateCandidatesForMode(
+        allowLayerChanges,
+      )) {
+        if (!allowLayerChanges) {
+          const previous = this.routes[candidate.routeIndex]!
+          if (
+            getViaGeometryKey(candidate.route) !== getViaGeometryKey(previous)
+          )
+            continue
+          if (
+            this.input.allowLayerChanges === true &&
+            traceCandidates++ >=
+              Math.min(512, Math.floor(this.maxCandidates / 4))
+          )
+            break
+        }
+        yield candidate
+      }
+    }
+  }
+
+  private *generateCandidatesForMode(
+    allowLayerChanges: boolean,
+  ): Generator<Candidate> {
     const errors = this.score!.errors
     const locations = errors.flatMap((e) => {
       const center = e.center ?? e.pcb_center
       return center ? [center] : []
     })
-    const targets: Array<{
-      ri: number
-      pi: number
-      distance: number
-      t: number
-    }> = []
+    const targets: RepairTarget[] = []
     for (let ri = 0; ri < this.routes.length; ri++) {
       const route = this.routes[ri]!
       if (
@@ -248,68 +361,8 @@ export class Repair04Solver extends BaseSolver {
     targets.sort(
       (a, b) => a.distance - b.distance || a.ri - b.ri || a.pi - b.pi,
     )
-    // Search complete spans between immutable contacts. A clearance path can
-    // navigate several obstacles at once without moving either attachment.
-    const searched = new Set<string>()
-    for (const { ri, pi } of targets) {
-      if (searched.size >= 12) break
-      const route = this.routes[ri]!
-      let lo = pi - 1,
-        hi = pi
-      while (lo > 0 && !this.isLocked(ri, route.route[lo]!)) lo--
-      while (
-        hi < route.route.length - 1 &&
-        !this.isLocked(ri, route.route[hi]!)
-      )
-        hi++
-      const key = `${ri}:${lo}:${hi}`
-      if (searched.has(key)) continue
-      searched.add(key)
-      const a = route.route[lo]!,
-        b = route.route[hi]!
-      if (a.x === b.x && a.y === b.y) continue
-      const inMutableClosure = (p: Point): boolean =>
-        p.x >= this.mutableBounds.minX - REGION_EPSILON &&
-        p.x <= this.mutableBounds.maxX + REGION_EPSILON &&
-        p.y >= this.mutableBounds.minY - REGION_EPSILON &&
-        p.y <= this.mutableBounds.maxY + REGION_EPSILON
-      if (!inMutableClosure(a) || !inMutableClosure(b)) continue
-      const widths = new Set(
-        route.route
-          .slice(lo, hi + 1)
-          .map(
-            (p) =>
-              (p as Point & { traceThickness?: number }).traceThickness ??
-              route.traceThickness,
-          ),
-      )
-      if (widths.size !== 1) continue
-      const traceThickness = [...widths][0]!
-      const path = findClearancePath({
-        srj: this.input.srj,
-        routes: this.routes,
-        routeIndex: ri,
-        start: a,
-        end: b,
-        bounds: this.mutableBounds,
-        traceThickness,
-        gridSize: traceThickness <= 0.1 ? traceThickness / 2 : 0.1,
-        traceClearance: this.input.traceClearance ?? 0.1,
-        viaClearance: this.input.viaClearance ?? 0.1,
-      })
-      if (!path) continue
-      yield {
-        routeIndex: ri,
-        route: rebuildVias({
-          ...route,
-          route: [
-            ...route.route.slice(0, lo),
-            ...path,
-            ...route.route.slice(hi + 1),
-          ],
-        }),
-      }
-    }
+    // Try same-layer paths first, keeping every existing via in place.
+    yield* this.generateClearanceCandidates(targets, allowLayerChanges)
     // Replace a short polyline span as a unit, so a dense sequence of tiny
     // segments does not trap the search at a single bend.
     const spanned = new Set<string>()
@@ -386,7 +439,7 @@ export class Repair04Solver extends BaseSolver {
             }
           }
         }
-        if (length > route.viaDiameter * 2 + 0.3) {
+        if (allowLayerChanges && length > route.viaDiameter * 2 + 0.3) {
           for (let z = 0; z < this.input.srj.layerCount; z++) {
             if (z === a.z) continue
             const left = {
@@ -505,7 +558,8 @@ export class Repair04Solver extends BaseSolver {
           }
         }
         // A local bridge can resolve an unavoidable crossing on the current layer.
-        if (end - start < route.viaDiameter + 0.15) continue
+        if (!allowLayerChanges || end - start < route.viaDiameter + 0.15)
+          continue
         const left = {
           x: a.x + ux * start,
           y: a.y + uy * start,
@@ -583,12 +637,23 @@ export class Repair04Solver extends BaseSolver {
     candidate[next.value.routeIndex] = next.value.route
     const score = this.evaluate(candidate)
     this.evaluated++
+    const preservesViaPadClearance =
+      getNewViaPadViolations({
+        srj: this.input.srj,
+        previousRoutes: this.input.routes,
+        routes: candidate,
+        viaClearance: this.input.viaClearance,
+      }).length === 0
     const preservesFixedObstacles = [...score.fixedViolations].every(
       ([key, severity]) =>
         this.score!.fixedViolations.has(key) &&
         severity <= this.score!.fixedViolations.get(key)! + REGION_EPSILON,
     )
-    if (preservesFixedObstacles && score.count < this.score.count) {
+    if (
+      preservesViaPadClearance &&
+      preservesFixedObstacles &&
+      score.count < this.score.count
+    ) {
       this.routes = candidate
       this.score = score
       this.accepted++
@@ -596,6 +661,7 @@ export class Repair04Solver extends BaseSolver {
       this.candidates = this.generateCandidates()
     } else if (
       preservesFixedObstacles &&
+      preservesViaPadClearance &&
       score.count === this.score.count &&
       score.severity <
         (this.bestAdjustment?.score.severity ?? this.score.severity) - 1e-6

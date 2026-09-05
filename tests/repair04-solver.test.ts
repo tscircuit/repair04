@@ -146,7 +146,10 @@ test("moves a via stack atomically and emits a consistent via position", () => {
       (error) => error.type === "pcb_pad_pad_clearance_error",
     ),
   ).toBe(true)
-  const solver = new Repair04Solver(deepFreeze(input))
+  const solver = new Repair04Solver({
+    ...deepFreeze(input),
+    allowLayerChanges: true,
+  })
   solver.solve()
   expect(solver.failed).toBe(false)
   const output = solver.getOutput()
@@ -176,7 +179,7 @@ test("locking either side of a via preserves the entire transition", () => {
     (point) => point.x === 0 && point.z === 0,
   )
   input.lockedPointIndices[0]![viaIndex] = true
-  const solver = new Repair04Solver(input)
+  const solver = new Repair04Solver({ ...input, allowLayerChanges: true })
   solver.solve()
   expect(solver.failed).toBe(false)
   expect(solver.getOutput()).toEqual(input.routes)
