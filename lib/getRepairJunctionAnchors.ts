@@ -118,6 +118,7 @@ const addSegmentContactAnchors = (
   segments: Segment[],
   bounds: Bounds,
   results: RepairJunctionAnchors[],
+  sharesImmutableEndpointComponent: (left: string, right: string) => boolean,
 ): void => {
   const cellSize = 2
   const cells = new Map<string, number[]>()
@@ -182,6 +183,10 @@ const addSegmentContactAnchors = (
           const other = locals[otherIndex]!
           if (
             other.original.source === original.source ||
+            sharesImmutableEndpointComponent(
+              other.original.source,
+              original.source,
+            ) ||
             (other.original.routeIndex === undefined &&
               original.routeIndex === undefined)
           )
@@ -278,6 +283,47 @@ export const getRepairJunctionAnchors = (
   bounds: Bounds,
 ): RepairJunctionAnchors[] => {
   const canonicalNet = getCanonicalNets(srj, routes)
+  const endpointComponents = routes.map((_, index) => index)
+  const findEndpointComponent = (index: number): number => {
+    const parent = endpointComponents[index]!
+    if (parent === index) return index
+    const root = findEndpointComponent(parent)
+    endpointComponents[index] = root
+    return root
+  }
+  const routeByImmutableEndpoint = new Map<string, number>()
+  for (let routeIndex = 0; routeIndex < routes.length; routeIndex += 1) {
+    const route = routes[routeIndex]!
+    for (const point of [route.route[0], route.route.at(-1)]) {
+      if (!point?.pcb_port_id) continue
+      const key = JSON.stringify([
+        canonicalNet(route.connectionName),
+        point.pcb_port_id,
+        point.x,
+        point.y,
+        point.z,
+      ])
+      const previousRouteIndex = routeByImmutableEndpoint.get(key)
+      if (previousRouteIndex === undefined)
+        routeByImmutableEndpoint.set(key, routeIndex)
+      else
+        endpointComponents[findEndpointComponent(routeIndex)] =
+          findEndpointComponent(previousRouteIndex)
+    }
+  }
+  const sharesImmutableEndpointComponent = (
+    left: string,
+    right: string,
+  ): boolean => {
+    if (!left.startsWith("route:") || !right.startsWith("route:")) return false
+    // Both original port endpoints are immutable, even outside this crop. Their
+    // route paths stay contiguous, so incidental overlaps within this already
+    // connected component need not be frozen as additional junctions.
+    return (
+      findEndpointComponent(Number(left.slice(6))) ===
+      findEndpointComponent(Number(right.slice(6)))
+    )
+  }
   const anchors: Anchor[] = []
   const segments: Segment[] = []
   const vias: Via[] = []
@@ -438,7 +484,11 @@ export const getRepairJunctionAnchors = (
     for (const anchor of byNetLayer.get(
       JSON.stringify([segment.net, segment.z]),
     ) ?? []) {
-      if (anchor.source === segment.source) continue
+      if (
+        anchor.source === segment.source ||
+        sharesImmutableEndpointComponent(anchor.source, segment.source)
+      )
+        continue
       const t = Math.max(
         0,
         Math.min(
@@ -477,6 +527,7 @@ export const getRepairJunctionAnchors = (
       for (const anchor of byNetLayer.get(JSON.stringify([via.net, z])) ?? []) {
         if (
           anchor.source === via.source ||
+          sharesImmutableEndpointComponent(anchor.source, via.source) ||
           Math.hypot(via.x - anchor.x, via.y - anchor.y) >
             via.radius + anchor.radius + REGION_EPSILON
         )
@@ -486,6 +537,11 @@ export const getRepairJunctionAnchors = (
       }
     }
   }
-  addSegmentContactAnchors(segments, bounds, results)
+  addSegmentContactAnchors(
+    segments,
+    bounds,
+    results,
+    sharesImmutableEndpointComponent,
+  )
   return results
 }

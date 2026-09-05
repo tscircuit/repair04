@@ -14,6 +14,7 @@ import {
 } from "./repairRegionGeometry"
 import { getFixedObstacleViolations } from "./getFixedObstacleViolations"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
+import { findClearancePath } from "./findClearancePath"
 
 type Point = HighDensityRoute["route"][number]
 type Candidate = { routeIndex: number; route: HighDensityRoute }
@@ -28,10 +29,6 @@ export type Repair04SolverInput = RepairRegionInput & {
   maxCandidates?: number
   traceClearance?: number
   viaClearance?: number
-}
-
-function equalPoint(a: Point, b: Point): boolean {
-  return a.x === b.x && a.y === b.y && a.z === b.z
 }
 
 function inside(point: Point, bounds: Bounds): boolean {
@@ -197,7 +194,9 @@ export class Repair04Solver extends BaseSolver {
   private isLocked(routeIndex: number, point: Point): boolean {
     return (
       !inside(point, this.mutableBounds) ||
-      this.lockedPoints[routeIndex]!.some((p) => equalPoint(p, point))
+      this.lockedPoints[routeIndex]!.some(
+        (p) => p.x === point.x && p.y === point.y,
+      )
     )
   }
 
@@ -249,6 +248,68 @@ export class Repair04Solver extends BaseSolver {
     targets.sort(
       (a, b) => a.distance - b.distance || a.ri - b.ri || a.pi - b.pi,
     )
+    // Search complete spans between immutable contacts. A clearance path can
+    // navigate several obstacles at once without moving either attachment.
+    const searched = new Set<string>()
+    for (const { ri, pi } of targets) {
+      if (searched.size >= 12) break
+      const route = this.routes[ri]!
+      let lo = pi - 1,
+        hi = pi
+      while (lo > 0 && !this.isLocked(ri, route.route[lo]!)) lo--
+      while (
+        hi < route.route.length - 1 &&
+        !this.isLocked(ri, route.route[hi]!)
+      )
+        hi++
+      const key = `${ri}:${lo}:${hi}`
+      if (searched.has(key)) continue
+      searched.add(key)
+      const a = route.route[lo]!,
+        b = route.route[hi]!
+      if (a.x === b.x && a.y === b.y) continue
+      const inMutableClosure = (p: Point): boolean =>
+        p.x >= this.mutableBounds.minX - REGION_EPSILON &&
+        p.x <= this.mutableBounds.maxX + REGION_EPSILON &&
+        p.y >= this.mutableBounds.minY - REGION_EPSILON &&
+        p.y <= this.mutableBounds.maxY + REGION_EPSILON
+      if (!inMutableClosure(a) || !inMutableClosure(b)) continue
+      const widths = new Set(
+        route.route
+          .slice(lo, hi + 1)
+          .map(
+            (p) =>
+              (p as Point & { traceThickness?: number }).traceThickness ??
+              route.traceThickness,
+          ),
+      )
+      if (widths.size !== 1) continue
+      const traceThickness = [...widths][0]!
+      const path = findClearancePath({
+        srj: this.input.srj,
+        routes: this.routes,
+        routeIndex: ri,
+        start: a,
+        end: b,
+        bounds: this.mutableBounds,
+        traceThickness,
+        gridSize: traceThickness <= 0.1 ? traceThickness / 2 : 0.1,
+        traceClearance: this.input.traceClearance ?? 0.1,
+        viaClearance: this.input.viaClearance ?? 0.1,
+      })
+      if (!path) continue
+      yield {
+        routeIndex: ri,
+        route: rebuildVias({
+          ...route,
+          route: [
+            ...route.route.slice(0, lo),
+            ...path,
+            ...route.route.slice(hi + 1),
+          ],
+        }),
+      }
+    }
     // Replace a short polyline span as a unit, so a dense sequence of tiny
     // segments does not trap the search at a single bend.
     const spanned = new Set<string>()

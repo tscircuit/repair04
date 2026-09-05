@@ -1,6 +1,6 @@
 # repair04
 
-A bounded, incremental DRC repair solver for routed Simple Route JSON. It adjusts bends, replaces short polyline spans, adds doglegs, or adds local layer bridges while keeping region boundaries, terminals, and existing electrical junctions fixed.
+A bounded, incremental DRC repair solver for routed Simple Route JSON. It searches for clearance paths between fixed anchors, adjusts bends, replaces short polyline spans, adds doglegs, or adds local layer bridges while keeping region boundaries, terminals, and required electrical junctions fixed.
 
 ```sh
 bun add github:tscircuit/repair04
@@ -45,7 +45,7 @@ const candidate = mergeRepairRegion({
 - `Repair04Solver` takes only the serializable local problem. The caller retains source provenance and the enclosing board. Use extraction to provide fixed cut points where traces cross the mutable boundary.
 - New bends retain copper width; vias move as complete layer transitions. Variable-width spans are not simplified into narrower copper.
 
-A step evaluates at most one candidate. `maxCandidates` gives a deterministic search budget. `solved` means that the optimization finished; unresolved DRC is reported by `stats.finalErrorCount`. Invalid geometry throws. `getOutput()` is available only after a completed solve and returns a copy.
+A step evaluates at most one candidate. `maxCandidates` gives a deterministic search budget. Clearance paths use a bounded 0.1 mm grid, refined to half the copper width for traces at most 0.1 mm wide, with at most 30,000 expanded states per path. They can change layers using the existing via diameter. `solved` means that the optimization finished; unresolved DRC is reported by `stats.finalErrorCount`. Invalid geometry throws. `getOutput()` is available only after a completed solve and returns a copy.
 
 The local score combines repair03's indexed copper checks with generic and rotated obstacle checks. Wire vertices on both sides of each via are explicit, so neither via-adjacent trace segment disappears from the score. A caller must still validate the merged board with its independent DRC implementation. Pipeline9 performs that check before accepting a region.
 

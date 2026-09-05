@@ -185,6 +185,10 @@ test("locking either side of a via preserves the entire transition", () => {
 
 test("a fixed candidate budget gives deterministic output and incremental work", () => {
   const input = { ...padConflictInput(), maxCandidates: 37 }
+  // A pad covering the complete region makes the fixed terminals infeasible;
+  // the solver must exhaust its budget without reporting clearance success.
+  input.srj.obstacles[0]!.width = 20
+  input.srj.obstacles[0]!.height = 20
   const first = new Repair04Solver(input)
   let previousCandidates = 0
   while (!first.solved && !first.failed) {
