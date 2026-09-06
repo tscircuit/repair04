@@ -12,15 +12,33 @@ import {
   getSegmentBoundsInterval,
   REGION_EPSILON,
 } from "./repairRegionGeometry"
-import { getFixedObstacleViolations } from "./getFixedObstacleViolations"
+import {
+  createFixedObstacleViolationEvaluator,
+  type FixedObstacleViolation,
+} from "./getFixedObstacleViolations"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
-import { findClearancePath } from "./findClearancePath"
-import { getNewViaPadViolations } from "./getNewViaPadViolations"
-import { getRepairViaGeometry } from "./getRepairViaGeometry"
+import {
+  findClearancePath,
+  type ClearancePathSearchStats,
+} from "./findClearancePath"
+import {
+  createNewViaPadViolationEvaluator,
+  type NewViaPadViolation,
+} from "./getNewViaPadViolations"
+import {
+  getRepairViaGeometry,
+  type RepairViaGeometry,
+} from "./getRepairViaGeometry"
 
 type Point = HighDensityRoute["route"][number]
 type Candidate = { routeIndex: number; route: HighDensityRoute }
 type RepairTarget = { ri: number; pi: number; distance: number; t: number }
+type RouteCache = {
+  trace?: SimplifiedPcbTrace
+  fixedViolations?: FixedObstacleViolation[]
+  scoredViaViolations?: NewViaPadViolation[]
+  newViaViolations?: NewViaPadViolation[]
+}
 type Score = {
   count: number
   severity: number
@@ -30,6 +48,10 @@ type Score = {
 export type Repair04SolverInput = RepairRegionInput & {
   /** Deterministic candidate budget; each step evaluates at most one candidate. */
   maxCandidates?: number
+  /** Maximum yielded proposals, including permission rejections; cumulative across accepted states. */
+  maxCandidateAttempts?: number
+  /** Total actual A* heap pops across all searches and accepted states. */
+  maxPathSearchNodes?: number
   traceClearance?: number
   viaClearance?: number
   /** Permit layer bridges and general via edits unless movableVias constrains them; defaults to false. */
@@ -96,6 +118,29 @@ export class Repair04Solver extends BaseSolver {
   private evaluated = 0
   private accepted = 0
   private readonly maxCandidates: number
+  private candidateAttempts = 0
+  private pathSearchNodes = 0
+  private pathSearchCalls = 0
+  // Exact candidates can recur when radii clamp to the same segment endpoints.
+  // Scores are valid only while every other route remains in the same state.
+  private readonly candidateScores = new Map<string, Score>()
+  // Only solver-owned clones and immutable candidate routes enter these caches.
+  // A route may occur at multiple indices, so index-dependent IDs stay separate.
+  private readonly routeCache = new WeakMap<
+    HighDensityRoute,
+    Map<number, RouteCache>
+  >()
+  private readonly fixedObstacleNetContext: HighDensityRoute[]
+  private readonly fixedObstacleEvaluator: ReturnType<
+    typeof createFixedObstacleViolationEvaluator
+  >
+  private readonly viaPadEvaluator: ReturnType<
+    typeof createNewViaPadViolationEvaluator
+  >
+  private readonly viaGeometryCache = new WeakMap<
+    HighDensityRoute,
+    RepairViaGeometry[]
+  >()
 
   constructor(input: Repair04SolverInput) {
     super()
@@ -111,7 +156,22 @@ export class Repair04Solver extends BaseSolver {
       throw new Error("repair04: bounds must be finite and at least 10 × 10 mm")
     }
     this.input = structuredClone(input)
+    this.viaPadEvaluator = createNewViaPadViolationEvaluator({
+      srj: this.input.srj,
+      viaClearance: this.input.viaClearance,
+    })
     this.routes = structuredClone(input.routes)
+    // Candidate generators preserve route ownership. Retain every alias when
+    // checking one route, without repeatedly checking unchanged copper.
+    this.fixedObstacleNetContext = this.input.routes.map(
+      (route): HighDensityRoute => ({ ...route, route: [] }),
+    )
+    this.fixedObstacleEvaluator = createFixedObstacleViolationEvaluator({
+      srj: this.input.srj,
+      routes: this.fixedObstacleNetContext,
+      traceClearance: this.input.traceClearance,
+      viaClearance: this.input.viaClearance,
+    })
     this.fixedTraces = (input.srj.traces ?? []).map((trace) =>
       normalizeRepairTrace(trace, input.srj.minTraceWidth),
     )
@@ -173,30 +233,214 @@ export class Repair04Solver extends BaseSolver {
         )
       }
     }
+    for (const name of [
+      "maxCandidateAttempts",
+      "maxPathSearchNodes",
+    ] as const) {
+      const limit = input[name]
+      if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1))
+        throw new Error(`repair04: ${name} must be a positive safe integer`)
+    }
     this.maxCandidates = input.maxCandidates ?? 8000
     if (!Number.isInteger(this.maxCandidates) || this.maxCandidates < 1) {
       throw new Error("repair04: maxCandidates must be a positive integer")
     }
     this.MAX_ITERATIONS = this.maxCandidates * 2 + 4
-    this.engine = new AutoroutingDrcEngine(input.srj, {
+    this.engine = new AutoroutingDrcEngine(this.input.srj, {
+      cacheStaticObstacleNetMembership: true,
+      cacheImmutableTraceGeometry: true,
+      useConservativeRectObstaclePrecheck: true,
       traceClearance: input.traceClearance ?? 0.1,
       viaClearance: input.viaClearance ?? 0.1,
       includeTraceViaOwnerMetadata: true,
     })
   }
 
+  private getWorkLimitReason():
+    | "candidate-attempt-limit"
+    | "path-search-node-limit"
+    | null {
+    if (
+      this.input.maxCandidateAttempts !== undefined &&
+      this.candidateAttempts >= this.input.maxCandidateAttempts
+    )
+      return "candidate-attempt-limit"
+    if (
+      this.input.maxPathSearchNodes !== undefined &&
+      this.pathSearchNodes >= this.input.maxPathSearchNodes
+    )
+      return "path-search-node-limit"
+    return null
+  }
+
+  private updateWorkStats(completionReason?: string): void {
+    if (
+      this.input.maxCandidateAttempts === undefined &&
+      this.input.maxPathSearchNodes === undefined
+    )
+      return
+    this.stats = {
+      ...this.stats,
+      candidateAttempts: this.candidateAttempts,
+      pathSearchNodes: this.pathSearchNodes,
+      pathSearchCalls: this.pathSearchCalls,
+      ...(completionReason === undefined ? {} : { completionReason }),
+    }
+  }
+
+  private finishSearch(completionReason: string): void {
+    if (this.bestAdjustment) {
+      this.routes = this.bestAdjustment.routes
+      this.candidateScores.clear()
+      this.score = this.bestAdjustment.score
+      this.accepted++
+      this.bestAdjustment = null
+      this.stats = {
+        ...this.stats,
+        finalErrorCount: this.score.count,
+        accepted: this.accepted,
+      }
+    }
+    this.updateWorkStats(completionReason)
+    this.solved = true
+  }
+
+  private getRouteCache(
+    routeIndex: number,
+    route: HighDensityRoute,
+  ): RouteCache {
+    let byIndex = this.routeCache.get(route)
+    if (!byIndex) {
+      byIndex = new Map()
+      this.routeCache.set(route, byIndex)
+    }
+    let cached = byIndex.get(routeIndex)
+    if (!cached) {
+      cached = {}
+      byIndex.set(routeIndex, cached)
+    }
+    return cached
+  }
+
+  private getViaGeometry(route: HighDensityRoute): RepairViaGeometry[] {
+    let geometry = this.viaGeometryCache.get(route)
+    if (!geometry) {
+      geometry = getRepairViaGeometry(route, this.input.srj.layerCount)
+      this.viaGeometryCache.set(route, geometry)
+    }
+    return geometry
+  }
+
+  private getViaPadViolations(
+    routes: HighDensityRoute[],
+    scoreExisting: boolean,
+  ): NewViaPadViolation[] {
+    // Preserve the guard's validation even for an empty region.
+    if (routes.length === 0)
+      return this.viaPadEvaluator({
+        previousRoutes: [],
+        routes: [],
+      })
+    return routes.flatMap((route, routeIndex): NewViaPadViolation[] => {
+      const cache = this.getRouteCache(routeIndex, route)
+      const key = scoreExisting ? "scoredViaViolations" : "newViaViolations"
+      if (!cache[key]) {
+        const includeExistingVias = !scoreExisting
+          ? []
+          : this.input.allowLayerChanges === true &&
+              !this.input.movableVias?.length
+            ? this.getViaGeometry(route).flatMap(
+                (via, viaIndex): { routeIndex: number; viaIndex: number }[] =>
+                  via.pointIndices.every(
+                    (index): boolean =>
+                      !this.isLocked(routeIndex, route.route[index]!),
+                  )
+                    ? [{ routeIndex: 0, viaIndex }]
+                    : [],
+              )
+            : (this.input.movableVias ?? [])
+                .filter(
+                  (selected): boolean => selected.routeIndex === routeIndex,
+                )
+                .map((selected): { routeIndex: number; viaIndex: number } => ({
+                  routeIndex: 0,
+                  viaIndex: selected.viaIndex,
+                }))
+        cache[key] = this.viaPadEvaluator({
+          previousRoutes: [
+            scoreExisting ? route : this.input.routes[routeIndex]!,
+          ],
+          routes: [route],
+          includeExistingVias,
+        }).map(
+          (violation): NewViaPadViolation => ({
+            ...violation,
+            routeIndex,
+            key: violation.key.replace(
+              "new-via-pad:0:",
+              `new-via-pad:${routeIndex}:`,
+            ),
+          }),
+        )
+      }
+      return cache[key]!
+    })
+  }
+
+  private getFixedViolations(
+    routes: HighDensityRoute[],
+  ): FixedObstacleViolation[] {
+    if (routes.length === 0) return this.fixedObstacleEvaluator(routes)
+    const missing = routes.flatMap((route, routeIndex): number[] =>
+      this.getRouteCache(routeIndex, route).fixedViolations === undefined
+        ? [routeIndex]
+        : [],
+    )
+    if (missing.length) {
+      const context = this.fixedObstacleNetContext.slice()
+      for (const routeIndex of missing)
+        context[routeIndex] = routes[routeIndex]!
+      const violations = this.fixedObstacleEvaluator(context)
+      // Prime all initial routes in one check; subsequent candidates normally
+      // contain only one uncached route. Never retain rejected candidates.
+      for (const routeIndex of missing)
+        this.getRouteCache(routeIndex, routes[routeIndex]!).fixedViolations = []
+      for (const violation of violations)
+        this.getRouteCache(
+          violation.routeIndex,
+          routes[violation.routeIndex]!,
+        ).fixedViolations!.push(violation)
+    }
+    // The uncached checker visits obstacles, then routes, then wire/via points.
+    // Stable sorting restores that exact error order and severity summation.
+    return routes
+      .flatMap(
+        (route, routeIndex): FixedObstacleViolation[] =>
+          this.getRouteCache(routeIndex, route).fixedViolations!,
+      )
+      .sort(
+        (a, b): number =>
+          a.obstacleIndex - b.obstacleIndex || a.routeIndex - b.routeIndex,
+      )
+  }
+
   private evaluate(routes: HighDensityRoute[]): Score {
     const { errors } = this.engine.evaluate([
       ...this.fixedTraces,
-      ...convertRepairRoutesToTraces(routes, this.input.srj.layerCount),
+      ...routes.map((route, routeIndex): SimplifiedPcbTrace => {
+        const cache = this.getRouteCache(routeIndex, route)
+        if (!cache.trace) {
+          cache.trace = convertRepairRoutesToTraces(
+            [route],
+            this.input.srj.layerCount,
+          )[0]!
+          cache.trace.pcb_trace_id = `repair04_${routeIndex}`
+        }
+        return cache.trace
+      }),
     ])
     const fixedViolations = new Map<string, number>()
-    for (const violation of getFixedObstacleViolations({
-      srj: this.input.srj,
-      routes,
-      traceClearance: this.input.traceClearance,
-      viaClearance: this.input.viaClearance,
-    })) {
+    for (const violation of this.getFixedViolations(routes)) {
       fixedViolations.set(violation.key, violation.severity)
       errors.push({
         type: "pcb_trace_error",
@@ -212,30 +456,7 @@ export class Repair04Solver extends BaseSolver {
     // Layer repair must also see existing same-net via-pad defects. The wire
     // checker permits own-pad contact; omitting these can falsely end the
     // search at zero errors. Locked vias remain outside the mutable score.
-    for (const violation of getNewViaPadViolations({
-      srj: this.input.srj,
-      previousRoutes: routes,
-      routes,
-      viaClearance: this.input.viaClearance,
-      includeExistingVias:
-        this.input.allowLayerChanges === true && !this.input.movableVias?.length
-          ? routes.flatMap(
-              (route, routeIndex): { routeIndex: number; viaIndex: number }[] =>
-                getRepairViaGeometry(route, this.input.srj.layerCount).flatMap(
-                  (
-                    via,
-                    viaIndex,
-                  ): { routeIndex: number; viaIndex: number }[] =>
-                    via.pointIndices.every(
-                      (index): boolean =>
-                        !this.isLocked(routeIndex, route.route[index]!),
-                    )
-                      ? [{ routeIndex, viaIndex }]
-                      : [],
-                ),
-            )
-          : this.input.movableVias,
-    })) {
+    for (const violation of this.getViaPadViolations(routes, true)) {
       errors.push({
         type: "pcb_trace_error",
         error_type: "pcb_trace_error",
@@ -321,7 +542,20 @@ export class Repair04Solver extends BaseSolver {
       )
       if (widths.size !== 1) continue
       const traceThickness = [...widths][0]!
+      if (this.getWorkLimitReason() === "path-search-node-limit") return
+      const searchStats: ClearancePathSearchStats = {
+        nodesPopped: 0,
+        completionReason: "no-path",
+      }
       const path = findClearancePath({
+        maxNodes:
+          this.input.maxPathSearchNodes === undefined
+            ? undefined
+            : Math.min(
+                30000,
+                this.input.maxPathSearchNodes - this.pathSearchNodes,
+              ),
+        stats: searchStats,
         allowLayerChanges,
         srj: this.input.srj,
         routes: this.routes,
@@ -334,6 +568,9 @@ export class Repair04Solver extends BaseSolver {
         traceClearance: this.input.traceClearance ?? 0.1,
         viaClearance: this.input.viaClearance ?? 0.1,
       })
+      this.pathSearchCalls++
+      this.pathSearchNodes += searchStats.nodesPopped
+      this.updateWorkStats()
       if (!path) continue
       yield {
         routeIndex: ri,
@@ -354,8 +591,8 @@ export class Repair04Solver extends BaseSolver {
     route: HighDensityRoute,
   ): boolean {
     const original = this.input.routes[routeIndex]!
-    const before = getRepairViaGeometry(original, this.input.srj.layerCount)
-    const after = getRepairViaGeometry(route, this.input.srj.layerCount)
+    const before = this.getViaGeometry(original)
+    const after = this.getViaGeometry(route)
     if (
       route.connectionName !== original.connectionName ||
       route.rootConnectionName !== original.rootConnectionName ||
@@ -382,9 +619,7 @@ export class Repair04Solver extends BaseSolver {
   private *generateExistingViaCandidates(): Generator<Candidate> {
     for (const selected of this.input.movableVias ?? []) {
       const route = this.routes[selected.routeIndex]!
-      const via = getRepairViaGeometry(route, this.input.srj.layerCount)[
-        selected.viaIndex
-      ]!
+      const via = this.getViaGeometry(route)[selected.viaIndex]!
       if (
         via.pointIndices.some((index): boolean =>
           this.isLocked(selected.routeIndex, route.route[index]!),
@@ -416,6 +651,7 @@ export class Repair04Solver extends BaseSolver {
         ? [true]
         : [false, true]
       : [false]) {
+      if (this.getWorkLimitReason() === "path-search-node-limit") return
       let traceCandidates = 0
       for (const candidate of this.generateCandidatesForMode(
         allowLayerChanges,
@@ -491,6 +727,7 @@ export class Repair04Solver extends BaseSolver {
     )
     // Try same-layer paths first, keeping every existing via in place.
     yield* this.generateClearanceCandidates(targets, allowLayerChanges)
+    if (this.getWorkLimitReason() === "path-search-node-limit") return
     // Replace a short polyline span as a unit, so a dense sequence of tiny
     // segments does not trap the search at a single bend.
     const spanned = new Set<string>()
@@ -734,33 +971,45 @@ export class Repair04Solver extends BaseSolver {
         accepted: 0,
       }
       this.candidates = this.generateCandidates()
+      this.updateWorkStats()
     }
-    if (this.score.count === 0 || this.evaluated >= this.maxCandidates) {
-      if (this.bestAdjustment) {
-        this.routes = this.bestAdjustment.routes
-        this.score = this.bestAdjustment.score
-        this.accepted++
-        this.bestAdjustment = null
-        this.stats = {
-          ...this.stats,
-          finalErrorCount: this.score.count,
-          accepted: this.accepted,
-        }
-      }
-      this.solved = true
+    const workLimitReason = this.getWorkLimitReason()
+    if (
+      this.score.count === 0 ||
+      this.evaluated >= this.maxCandidates ||
+      workLimitReason
+    ) {
+      this.finishSearch(
+        this.score.count === 0
+          ? "clean"
+          : this.evaluated >= this.maxCandidates
+            ? "candidate-limit"
+            : workLimitReason!,
+      )
       return
     }
     const next = this.candidates!.next()
     if (next.done) {
+      const exhausted = this.getWorkLimitReason()
+      if (exhausted) {
+        this.finishSearch(exhausted)
+        return
+      }
       if (this.bestAdjustment) {
         this.routes = this.bestAdjustment.routes
+        this.candidateScores.clear()
         this.score = this.bestAdjustment.score
         this.bestAdjustment = null
         this.accepted++
         this.candidates = this.generateCandidates()
-      } else this.solved = true
+      } else {
+        this.updateWorkStats("search-exhausted")
+        this.solved = true
+      }
       return
     }
+    this.candidateAttempts++
+    this.updateWorkStats()
     // Every generator shares the same physical-via acceptance invariant,
     // including atomic moves that can otherwise collapse neighboring stacks.
     if (
@@ -771,31 +1020,47 @@ export class Repair04Solver extends BaseSolver {
       return
     const candidate = this.routes.slice()
     candidate[next.value.routeIndex] = next.value.route
-    const score = this.evaluate(candidate)
-    this.evaluated++
+    // Validate candidate copper even when the mandatory via-pad guard rejects
+    // it. Rejected proposals cannot be accepted, so avoid rebuilding indexed DRC.
+    this.getFixedViolations(candidate)
     const preservesViaPadClearance =
-      getNewViaPadViolations({
-        srj: this.input.srj,
-        previousRoutes: this.input.routes,
-        routes: candidate,
-        viaClearance: this.input.viaClearance,
-      }).length === 0
-    const preservesFixedObstacles = [...score.fixedViolations].every(
-      ([key, severity]) =>
-        this.score!.fixedViolations.has(key) &&
-        severity <= this.score!.fixedViolations.get(key)! + REGION_EPSILON,
-    )
+      this.getViaPadViolations(candidate, false).length === 0
+    let score: Score | undefined
+    if (preservesViaPadClearance) {
+      const candidateKey = JSON.stringify([
+        next.value.routeIndex,
+        next.value.route,
+      ])
+      score = this.candidateScores.get(candidateKey)
+      if (!score) {
+        score = this.evaluate(candidate)
+        if (this.candidateScores.size >= 128)
+          this.candidateScores.delete(this.candidateScores.keys().next().value!)
+        this.candidateScores.set(candidateKey, score)
+      }
+    }
+    this.evaluated++
+    const preservesFixedObstacles =
+      score !== undefined &&
+      [...score.fixedViolations].every(
+        ([key, severity]) =>
+          this.score!.fixedViolations.has(key) &&
+          severity <= this.score!.fixedViolations.get(key)! + REGION_EPSILON,
+      )
     if (
+      score &&
       preservesViaPadClearance &&
       preservesFixedObstacles &&
       score.count < this.score.count
     ) {
       this.routes = candidate
+      this.candidateScores.clear()
       this.score = score
       this.accepted++
       this.bestAdjustment = null
       this.candidates = this.generateCandidates()
     } else if (
+      score &&
       preservesFixedObstacles &&
       preservesViaPadClearance &&
       score.count === this.score.count &&

@@ -22,8 +22,16 @@ type Barrier = {
   a: Point
   b: Point
   rect?: { width: number; height: number; rotation: number }
+  rectCos: number
+  rectSin: number
+  rectBounds?: Bounds
+  visitedQuery: number
 }
 type SearchNode = { id: number; cost: number; priority: number }
+export type ClearancePathSearchStats = {
+  nodesPopped: number
+  completionReason: "found" | "no-path" | "node-limit"
+}
 
 /** Clearance-aware routing between fixed anchors, using only cropped context. */
 export function findClearancePath(input: {
@@ -39,8 +47,21 @@ export function findClearancePath(input: {
   gridSize?: number
   /** Disable layer changes when searching for a trace-only repair. */
   allowLayerChanges?: boolean
+  /** Maximum actual heap pops in this search; defaults to 30000. */
+  maxNodes?: number
+  /** Optional output accounting, overwritten for this synchronous call. */
+  stats?: ClearancePathSearchStats
 }): Point[] | null {
   const { srj, routes, routeIndex, start, end, bounds, traceThickness } = input
+  if (
+    input.maxNodes !== undefined &&
+    (!Number.isSafeInteger(input.maxNodes) || input.maxNodes < 1)
+  )
+    throw new Error("repair04: maxNodes must be a positive safe integer")
+  if (input.stats) {
+    input.stats.nodesPopped = 0
+    input.stats.completionReason = "no-path"
+  }
   if (input.allowLayerChanges === false && start.z !== end.z) return null
   const route = routes[routeIndex]!
   const parents = new Map<string, string>()
@@ -96,6 +117,17 @@ export function findClearancePath(input: {
       radius,
       rect,
       viaOnly,
+      rectCos: rect ? Math.cos(rect.rotation) : 1,
+      rectSin: rect ? Math.sin(rect.rotation) : 0,
+      rectBounds: rect
+        ? {
+            minX: -rect.width / 2,
+            maxX: rect.width / 2,
+            minY: -rect.height / 2,
+            maxY: rect.height / 2,
+          }
+        : undefined,
+      visitedQuery: 0,
       minX: Math.min(a.x, b.x) - extent,
       maxX: Math.max(a.x, b.x) + extent,
       minY: Math.min(a.y, b.y) - extent,
@@ -194,6 +226,7 @@ export function findClearancePath(input: {
         else cells.set(key, [barrier])
       }
   }
+  let queryId = 0
   const clear = (a: Point, b: Point): boolean => {
     const isVia = a.z !== b.z
     const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
@@ -205,7 +238,13 @@ export function findClearancePath(input: {
         : (srj.minTraceToPadEdgeClearance ?? 0),
     )
     const reach = radius + margin + 1e-5
-    const seen = new Set<Barrier>()
+    // Barriers belong to this synchronous search only. A visit stamp preserves
+    // the original first-seen order without allocating a Set for each edge.
+    const currentQuery = ++queryId
+    const minX = Math.min(a.x, b.x),
+      maxX = Math.max(a.x, b.x)
+    const minY = Math.min(a.y, b.y),
+      maxY = Math.max(a.y, b.y)
     for (
       let x = Math.floor(Math.min(a.x, b.x) - reach);
       x <= Math.floor(Math.max(a.x, b.x) + reach);
@@ -218,40 +257,49 @@ export function findClearancePath(input: {
       )
         for (const barrier of cells.get(`${x},${y}`) ?? []) {
           if (barrier.viaOnly && !isVia) continue
-          if (seen.has(barrier)) continue
-          seen.add(barrier)
+          if (barrier.visitedQuery === currentQuery) continue
+          barrier.visitedQuery = currentQuery
           if (
             barrier.maxZ < Math.min(a.z, b.z) ||
             barrier.minZ > Math.max(a.z, b.z)
           )
             continue
-          let distance: number
-          if (barrier.rect) {
-            const { rotation, width, height } = barrier.rect
-            const local = (p: Point): { x: number; y: number } => ({
-              x:
-                (p.x - barrier.a.x) * Math.cos(rotation) +
-                (p.y - barrier.a.y) * Math.sin(rotation),
-              y:
-                -(p.x - barrier.a.x) * Math.sin(rotation) +
-                (p.y - barrier.a.y) * Math.cos(rotation),
-            })
-            distance = segmentToBoundsMinDistance(local(a), local(b), {
-              minX: -width / 2,
-              maxX: width / 2,
-              minY: -height / 2,
-              maxY: height / 2,
-            })
-          } else
-            distance =
-              segmentToSegmentMinDistance(a, b, barrier.a, barrier.b) -
-              barrier.radius
           const requiredGap = barrier.rect
             ? margin
             : isVia && barrier.minZ !== barrier.maxZ
               ? input.viaClearance
               : input.traceClearance
-          if (distance < radius + requiredGap + 1e-5) return false
+          const clearance = radius + requiredGap + 1e-5
+          // These bounds enclose the entire copper/rotated obstacle. Strict
+          // separation can only rule out a collision; exact boundary cases
+          // still use the same distance calculation and tolerance below.
+          if (
+            maxX + clearance < barrier.minX ||
+            minX - clearance > barrier.maxX ||
+            maxY + clearance < barrier.minY ||
+            minY - clearance > barrier.maxY
+          )
+            continue
+          let distance: number
+          if (barrier.rect) {
+            const local = (p: Point): { x: number; y: number } => ({
+              x:
+                (p.x - barrier.a.x) * barrier.rectCos +
+                (p.y - barrier.a.y) * barrier.rectSin,
+              y:
+                -(p.x - barrier.a.x) * barrier.rectSin +
+                (p.y - barrier.a.y) * barrier.rectCos,
+            })
+            distance = segmentToBoundsMinDistance(
+              local(a),
+              local(b),
+              barrier.rectBounds!,
+            )
+          } else
+            distance =
+              segmentToSegmentMinDistance(a, b, barrier.a, barrier.b) -
+              barrier.radius
+          if (distance < clearance) return false
         }
     return true
   }
@@ -329,8 +377,10 @@ export function findClearancePath(input: {
     }
   const edgeCache = new Map<string, boolean>()
   let expanded = 0
-  while (heap.length && expanded++ < 30000) {
+  while (heap.length && expanded < (input.maxNodes ?? 30000)) {
     const current = pop()
+    expanded++
+    if (input.stats) input.stats.nodesPopped = expanded
     if (current.cost !== costs.get(current.id)) continue
     const a = point(current.id)
     if (
@@ -353,6 +403,7 @@ export function findClearancePath(input: {
         simplified.push(path[furthest]!)
         i = furthest + 1
       }
+      if (input.stats) input.stats.completionReason = "found"
       return simplified
     }
     const x = current.id % nx,
@@ -392,5 +443,7 @@ export function findClearancePath(input: {
       push({ id, cost, priority: cost + heuristic(b) })
     }
   }
+  if (input.stats)
+    input.stats.completionReason = heap.length ? "node-limit" : "no-path"
   return null
 }
