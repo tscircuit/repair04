@@ -419,7 +419,19 @@ export function findClearancePath(input: {
       previous.set(id, -1)
       push({ id, cost, priority: cost + heuristic(p) })
     }
-  const edgeCache = new Map<string, boolean>()
+  const gridNodeCount = nx * ny * srj.layerCount
+  // Only pack edges when every grid-node pair has an exact integer key.
+  const useNumericEdgeKeys =
+    nx > 0 &&
+    ny > 0 &&
+    Number.isSafeInteger(srj.layerCount) &&
+    Number.isSafeInteger(gridNodeCount) &&
+    gridNodeCount > 0 &&
+    Number.isSafeInteger(gridNodeCount * gridNodeCount - 1) &&
+    Number.isInteger(start.z) &&
+    start.z >= 0 &&
+    start.z < srj.layerCount
+  const edgeCache = new Map<number | string, boolean>()
   let expanded = 0
   while (heap.length && expanded < (input.maxNodes ?? 30000)) {
     const current = pop()
@@ -474,8 +486,11 @@ export function findClearancePath(input: {
         cost =
           current.cost + (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1)
       if (cost >= (costs.get(id) ?? Infinity)) continue
-      const key =
-        current.id < id ? `${current.id},${id}` : `${id},${current.id}`
+      const low = Math.min(current.id, id),
+        high = Math.max(current.id, id)
+      const key = useNumericEdgeKeys
+        ? low * gridNodeCount + high
+        : `${low},${high}`
       let permitted = edgeCache.get(key)
       if (permitted === undefined) {
         permitted = clear(a, b)
