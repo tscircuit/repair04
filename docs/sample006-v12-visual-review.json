@@ -1,0 +1,35 @@
+{
+  "version": "v12",
+  "scope": "Native GraphicsObject SVG and Resvg PNG inspected with view_image; saved-output measurement only, no routing executed",
+  "reviewConclusion": "no-material-visual-blocker",
+  "source": {
+    "coreCommit": "5b840f89af83a19f74e9d03e6eed8b8cac4487d3",
+    "routerCommit": "97c7ded4754e976d3ad0d94c52630a81b268984a",
+    "bundleSha256": "d7ef0e288462a617df48fc1061e4f4cd8757c3c82dc7b1423f6a6a4e68a4fef1",
+    "outputHashes": {
+      "baseline": "49e071ce60347410a3c564b9083348cac9ed66fd3fd513bf177c82580c5c7374",
+      "candidate": "5759feedac35c8d677d4a5139f51be0541b4916d6c3b9649c50356c9529c2801",
+      "context": "4af238c34af6be0fbbca3ef407baccca72f117c45ad7159341b85c8469361f55"
+    }
+  },
+  "auditSha256": "2df3499a077169ad9b566608b72887fdd6f8b9f6178deda114d7f528b4b92b4d",
+  "svgSha256": "302d43c3f82ea806669ffb7a30235f28b53b9a9d2e79c927e155b05cc24d6b80",
+  "pngSha256": "3ddf2362bd1f538816eee0eccad2faf3c7529a3a21cfe46c91c6f173a89ab723",
+  "rendererSha256": "b4d98517fb87d5893359d47971354cd97c10389ae537c0f45e9ecabfc0cda036",
+  "fullOutputCounts": {
+    "strictBefore": 1,
+    "strictAfter": 0,
+    "relaxedBefore": 1,
+    "relaxedAfter": 0
+  },
+  "observations": [
+    "Both overview panels use the same16\u00d716mm window and scale; the detail panels use the same enlarged window.",
+    "Measured baseline contact is circled; candidate trace detours below the pad row. The neighbouring via and pad geometry align between panels.",
+    "All10 complete physical via identities match, including owners, connectsTo, ordinals, XY, spans, copper/drill diameters and additional fields.",
+    "Only source_trace_19__source_net_5_0 changes; every trace endpoint, trace metadata, copper width and nontrace property is preserved.",
+    "Full expanded default/relaxed DRC each measure1\u21920. Labels separately identify the trace-only pass and normal joint stage; no isolated local0 or dataset claim.",
+    "Title, scale bars, callout, legend, explanatory text and frozen source footer are legible without clipping."
+  ],
+  "originalAuditSha256": "c171f6ecce0614e18cd44f2b089805b5e5dadce6d844e982f71e22153857f085",
+  "documentationNote": "The core documentation audit is reformatted JSON with identical parsed values to the original hash-bound work audit; raw source outputs and SVG/PNG are unchanged."
+}
