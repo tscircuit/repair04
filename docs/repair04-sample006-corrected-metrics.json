@@ -38,10 +38,7 @@
       {
         "pcb_trace_id": "source_net_0_mst1_0",
         "connection_name": "source_net_0",
-        "connectsTo": [
-          "pcb_port_13",
-          "pcb_port_2"
-        ],
+        "connectsTo": ["pcb_port_13", "pcb_port_2"],
         "viaOrdinal": 0,
         "via": {
           "route_type": "via",
@@ -56,10 +53,7 @@
       {
         "pcb_trace_id": "source_net_0_mst2_0",
         "connection_name": "source_net_0",
-        "connectsTo": [
-          "pcb_port_2",
-          "pcb_port_27"
-        ],
+        "connectsTo": ["pcb_port_2", "pcb_port_27"],
         "viaOrdinal": 0,
         "via": {
           "route_type": "via",
@@ -74,10 +68,7 @@
       {
         "pcb_trace_id": "source_net_0_mst2_0",
         "connection_name": "source_net_0",
-        "connectsTo": [
-          "pcb_port_2",
-          "pcb_port_27"
-        ],
+        "connectsTo": ["pcb_port_2", "pcb_port_27"],
         "viaOrdinal": 1,
         "via": {
           "route_type": "via",
@@ -92,10 +83,7 @@
       {
         "pcb_trace_id": "source_net_0_mst3_0",
         "connection_name": "source_net_0",
-        "connectsTo": [
-          "pcb_port_29",
-          "pcb_port_12"
-        ],
+        "connectsTo": ["pcb_port_29", "pcb_port_12"],
         "viaOrdinal": 0,
         "via": {
           "route_type": "via",
@@ -110,10 +98,7 @@
       {
         "pcb_trace_id": "source_net_0_mst3_0",
         "connection_name": "source_net_0",
-        "connectsTo": [
-          "pcb_port_29",
-          "pcb_port_12"
-        ],
+        "connectsTo": ["pcb_port_29", "pcb_port_12"],
         "viaOrdinal": 1,
         "via": {
           "route_type": "via",
@@ -128,10 +113,7 @@
       {
         "pcb_trace_id": "source_trace_21__source_net_1_mst1_0",
         "connection_name": "source_trace_21",
-        "connectsTo": [
-          "pcb_port_9",
-          "pcb_port_14"
-        ],
+        "connectsTo": ["pcb_port_9", "pcb_port_14"],
         "viaOrdinal": 0,
         "via": {
           "route_type": "via",
@@ -146,10 +128,7 @@
       {
         "pcb_trace_id": "source_trace_22_0",
         "connection_name": "source_trace_22",
-        "connectsTo": [
-          "pcb_port_26",
-          "pcb_port_4"
-        ],
+        "connectsTo": ["pcb_port_26", "pcb_port_4"],
         "viaOrdinal": 0,
         "via": {
           "route_type": "via",
@@ -164,10 +143,7 @@
       {
         "pcb_trace_id": "source_trace_22_0",
         "connection_name": "source_trace_22",
-        "connectsTo": [
-          "pcb_port_26",
-          "pcb_port_4"
-        ],
+        "connectsTo": ["pcb_port_26", "pcb_port_4"],
         "viaOrdinal": 1,
         "via": {
           "route_type": "via",
@@ -182,10 +158,7 @@
       {
         "pcb_trace_id": "source_trace_23__source_trace_24__source_trace_25__source_trace_26__source_net_2_mst2_0",
         "connection_name": "source_trace_23",
-        "connectsTo": [
-          "pcb_port_7",
-          "pcb_port_5"
-        ],
+        "connectsTo": ["pcb_port_7", "pcb_port_5"],
         "viaOrdinal": 0,
         "via": {
           "route_type": "via",
@@ -200,10 +173,7 @@
       {
         "pcb_trace_id": "source_trace_23__source_trace_24__source_trace_25__source_trace_26__source_net_2_mst2_0",
         "connection_name": "source_trace_23",
-        "connectsTo": [
-          "pcb_port_7",
-          "pcb_port_5"
-        ],
+        "connectsTo": ["pcb_port_7", "pcb_port_5"],
         "viaOrdinal": 1,
         "via": {
           "route_type": "via",
@@ -217,9 +187,7 @@
       }
     ]
   },
-  "changedTraceIds": [
-    "source_trace_19__source_net_5_0"
-  ],
+  "changedTraceIds": ["source_trace_19__source_net_5_0"],
   "allEndpointsExact": true,
   "allCopperWidthsPreserved": true,
   "allTraceMetadataExact": true,
@@ -252,11 +220,7 @@
           "source_trace_id": "",
           "pcb_trace_error_id": "overlap_source_trace_19__source_net_5_0_pcb_smtpad_11",
           "pcb_component_ids": [],
-          "pcb_port_ids": [
-            "pcb_port_1",
-            "pcb_port_21",
-            "pcb_port_0"
-          ]
+          "pcb_port_ids": ["pcb_port_1", "pcb_port_21", "pcb_port_0"]
         }
       ]
     }
