@@ -15,3 +15,6 @@ export type {
   NewViaPadViolation,
   NewViaPadViolationInput,
 } from "./getNewViaPadViolations"
+
+export { getRepairViaGeometry } from "./getRepairViaGeometry"
+export type { RepairViaGeometry } from "./getRepairViaGeometry"

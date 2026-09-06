@@ -1,3 +1,4 @@
+import { getRepairViaGeometry } from "./getRepairViaGeometry"
 import { segmentToBoundsMinDistance } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
@@ -20,59 +21,8 @@ export type NewViaPadViolationInput = {
   previousRoutes: readonly HighDensityRoute[]
   routes: readonly HighDensityRoute[]
   viaClearance?: number
-}
-
-type Via = {
-  x: number
-  y: number
-  minZ: number
-  maxZ: number
-  diameter: number
-  identity: string
-}
-
-const getVias = (route: HighDensityRoute, layerCount: number): Via[] => {
-  const vias: Via[] = []
-  for (let i = 1; i < route.route.length; i++) {
-    const a = route.route[i - 1]!
-    const b = route.route[i]!
-    if (a.z === b.z) continue
-    if (
-      a.x !== b.x ||
-      a.y !== b.y ||
-      ![a.x, a.y, a.z, b.z, route.viaDiameter].every(Number.isFinite) ||
-      !Number.isInteger(a.z) ||
-      !Number.isInteger(b.z) ||
-      Math.min(a.z, b.z) < 0 ||
-      Math.max(a.z, b.z) >= layerCount ||
-      route.viaDiameter <= 0
-    ) {
-      throw new Error("repair04 new-via guard requires valid colocated vias")
-    }
-    let minZ = Math.min(a.z, b.z)
-    let maxZ = Math.max(a.z, b.z)
-    // Redundant wire vertices or explicit intermediate layers do not create a
-    // different physical via. Its identity is the entire coincident span.
-    while (i + 1 < route.route.length) {
-      const next = route.route[i + 1]!
-      if (next.x !== b.x || next.y !== b.y) break
-      if (!Number.isInteger(next.z) || next.z < 0 || next.z >= layerCount) {
-        throw new Error("repair04 new-via guard found an invalid layer span")
-      }
-      minZ = Math.min(minZ, next.z)
-      maxZ = Math.max(maxZ, next.z)
-      i++
-    }
-    vias.push({
-      x: b.x,
-      y: b.y,
-      minZ,
-      maxZ,
-      diameter: route.viaDiameter,
-      identity: JSON.stringify([b.x, b.y, minZ, maxZ, route.viaDiameter]),
-    })
-  }
-  return vias
+  /** Optional existing via ordinals to score even before they move. */
+  includeExistingVias?: readonly { routeIndex: number; viaIndex: number }[]
 }
 
 /**
@@ -86,6 +36,7 @@ export const getNewViaPadViolations = ({
   previousRoutes,
   routes,
   viaClearance = 0.1,
+  includeExistingVias = [],
 }: NewViaPadViolationInput): NewViaPadViolation[] => {
   if (previousRoutes.length !== routes.length) {
     throw new Error("repair04 new-via guard requires matching route ordering")
@@ -110,13 +61,23 @@ export const getNewViaPadViolations = ({
     const unchanged = new Set(
       route.connectionName === previous.connectionName &&
         route.rootConnectionName === previous.rootConnectionName
-        ? getVias(previous, srj.layerCount).map((via): string => via.identity)
+        ? getRepairViaGeometry(previous, srj.layerCount).map(
+            (via): string => via.identity,
+          )
         : [],
     )
-    const vias = getVias(route, srj.layerCount)
+    const vias = getRepairViaGeometry(route, srj.layerCount)
     for (let viaIndex = 0; viaIndex < vias.length; viaIndex++) {
       const via = vias[viaIndex]!
-      if (unchanged.has(via.identity)) continue
+      if (
+        unchanged.has(via.identity) &&
+        !includeExistingVias.some(
+          (selected): boolean =>
+            selected.routeIndex === routeIndex &&
+            selected.viaIndex === viaIndex,
+        )
+      )
+        continue
       for (
         let obstacleIndex = 0;
         obstacleIndex < srj.obstacles.length;

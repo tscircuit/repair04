@@ -16,6 +16,7 @@ import { getFixedObstacleViolations } from "./getFixedObstacleViolations"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { findClearancePath } from "./findClearancePath"
 import { getNewViaPadViolations } from "./getNewViaPadViolations"
+import { getRepairViaGeometry } from "./getRepairViaGeometry"
 
 type Point = HighDensityRoute["route"][number]
 type Candidate = { routeIndex: number; route: HighDensityRoute }
@@ -33,6 +34,8 @@ export type Repair04SolverInput = RepairRegionInput & {
   viaClearance?: number
   /** Opt in to moving/adding vias; defaults to trace-only edits with fixed vias. */
   allowLayerChanges?: boolean
+  /** Only these existing via ordinals may move in XY; count, span and diameter remain fixed. */
+  movableVias?: readonly { routeIndex: number; viaIndex: number }[]
 }
 
 function inside(point: Point, bounds: Bounds): boolean {
@@ -152,6 +155,22 @@ export class Repair04Solver extends BaseSolver {
           !inside(p, this.mutableBounds),
       )
     })
+    for (const selected of input.movableVias ?? []) {
+      const route = this.routes[selected.routeIndex]
+      const via =
+        route &&
+        getRepairViaGeometry(route, input.srj.layerCount)[selected.viaIndex]
+      if (
+        !via ||
+        via.pointIndices.some((index): boolean =>
+          this.isLocked(selected.routeIndex, route!.route[index]!),
+        )
+      ) {
+        throw new Error(
+          "repair04: movable via must identify an unlocked existing via",
+        )
+      }
+    }
     this.maxCandidates = input.maxCandidates ?? 8000
     if (!Number.isInteger(this.maxCandidates) || this.maxCandidates < 1) {
       throw new Error("repair04: maxCandidates must be a positive integer")
@@ -181,6 +200,24 @@ export class Repair04Solver extends BaseSolver {
         type: "pcb_trace_error",
         error_type: "pcb_trace_error",
         message: `repair04 fixed obstacle clearance: ${violation.key}`,
+        center: violation.center,
+        minimum_clearance: violation.severity,
+        actual_clearance: 0,
+        pcb_trace_id: `repair04_${violation.routeIndex}`,
+        pcb_trace_error_id: violation.key,
+      })
+    }
+    for (const violation of getNewViaPadViolations({
+      srj: this.input.srj,
+      previousRoutes: routes,
+      routes,
+      viaClearance: this.input.viaClearance,
+      includeExistingVias: this.input.movableVias,
+    })) {
+      errors.push({
+        type: "pcb_trace_error",
+        error_type: "pcb_trace_error",
+        message: `repair04 selected existing via pad clearance: ${violation.key}`,
         center: violation.center,
         minimum_clearance: violation.severity,
         actual_clearance: 0,
@@ -290,7 +327,68 @@ export class Repair04Solver extends BaseSolver {
     }
   }
 
+  private preservesViaPermissions(
+    routeIndex: number,
+    route: HighDensityRoute,
+  ): boolean {
+    const original = this.input.routes[routeIndex]!
+    const before = getRepairViaGeometry(original, this.input.srj.layerCount)
+    const after = getRepairViaGeometry(route, this.input.srj.layerCount)
+    if (
+      route.connectionName !== original.connectionName ||
+      route.rootConnectionName !== original.rootConnectionName ||
+      route.viaDiameter !== original.viaDiameter ||
+      before.length !== after.length
+    )
+      return false
+    return before.every((via, viaIndex): boolean => {
+      const next = after[viaIndex]!
+      if (
+        JSON.stringify(via.layerSequence) !==
+          JSON.stringify(next.layerSequence) ||
+        via.diameter !== next.diameter
+      )
+        return false
+      const allowed = this.input.movableVias?.some(
+        (selected): boolean =>
+          selected.routeIndex === routeIndex && selected.viaIndex === viaIndex,
+      )
+      return allowed === true || (via.x === next.x && via.y === next.y)
+    })
+  }
+
+  private *generateExistingViaCandidates(): Generator<Candidate> {
+    for (const selected of this.input.movableVias ?? []) {
+      const route = this.routes[selected.routeIndex]!
+      const via = getRepairViaGeometry(route, this.input.srj.layerCount)[
+        selected.viaIndex
+      ]!
+      if (
+        via.pointIndices.some((index): boolean =>
+          this.isLocked(selected.routeIndex, route.route[index]!),
+        )
+      )
+        continue
+      for (const amount of [0.025, 0.05, 0.1, 0.2, 0.35, 0.5, 0.8, 1.2]) {
+        for (let direction = 0; direction < 16; direction++) {
+          const x = via.x + amount * Math.cos((direction * Math.PI) / 8)
+          const y = via.y + amount * Math.sin((direction * Math.PI) / 8)
+          if (!inside({ x, y, z: via.minZ }, this.mutableBounds)) continue
+          const moved = route.route.map(
+            (point, index): Point =>
+              via.pointIndices.includes(index) ? { ...point, x, y } : point,
+          )
+          yield {
+            routeIndex: selected.routeIndex,
+            route: rebuildVias({ ...route, route: moved }),
+          }
+        }
+      }
+    }
+  }
+
   private *generateCandidates(): Generator<Candidate> {
+    yield* this.generateExistingViaCandidates()
     for (const allowLayerChanges of this.input.allowLayerChanges === true
       ? [false, true]
       : [false]) {
@@ -301,7 +399,13 @@ export class Repair04Solver extends BaseSolver {
         if (!allowLayerChanges) {
           const previous = this.routes[candidate.routeIndex]!
           if (
-            getViaGeometryKey(candidate.route) !== getViaGeometryKey(previous)
+            this.input.movableVias?.length
+              ? !this.preservesViaPermissions(
+                  candidate.routeIndex,
+                  candidate.route,
+                )
+              : getViaGeometryKey(candidate.route) !==
+                getViaGeometryKey(previous)
           )
             continue
           if (
@@ -633,6 +737,14 @@ export class Repair04Solver extends BaseSolver {
       } else this.solved = true
       return
     }
+    // Every generator shares the same physical-via acceptance invariant,
+    // including atomic moves that can otherwise collapse neighboring stacks.
+    if (
+      (this.input.allowLayerChanges !== true ||
+        this.input.movableVias?.length) &&
+      !this.preservesViaPermissions(next.value.routeIndex, next.value.route)
+    )
+      return
     const candidate = this.routes.slice()
     candidate[next.value.routeIndex] = next.value.route
     const score = this.evaluate(candidate)
