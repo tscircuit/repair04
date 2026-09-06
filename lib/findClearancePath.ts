@@ -7,6 +7,7 @@ import type {
   SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
+import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 
 type Point = RepairRoutePoint
@@ -102,6 +103,25 @@ export function findClearancePath(input: {
       : name === "bottom"
         ? srj.layerCount - 1
         : Number(name.slice(5))
+  // Tight bounds are only used where rounding is small relative to the
+  // outward margin. Outside this ordinary PCB domain, preserve the old path.
+  const ordinaryBoundsDomain = [
+    bounds.minX,
+    bounds.maxX,
+    bounds.minY,
+    bounds.maxY,
+    start.x,
+    start.y,
+    end.x,
+    end.y,
+    traceThickness,
+    route.viaDiameter,
+    input.traceClearance,
+    input.viaClearance,
+    srj.defaultObstacleMargin ?? 0,
+    srj.minTraceToPadEdgeClearance ?? 0,
+    srj.minViaEdgeToPadEdgeClearance ?? 0,
+  ].every((value) => Number.isFinite(value) && Math.abs(value) <= 10_000)
   const barriers: Barrier[] = []
   const add = (
     a: Point,
@@ -111,14 +131,33 @@ export function findClearancePath(input: {
     viaOnly = false,
   ): void => {
     const extent = rect ? Math.hypot(rect.width, rect.height) / 2 : radius
+    const rectCos = rect ? Math.cos(rect.rotation) : 1
+    const rectSin = rect ? Math.sin(rect.rotation) : 0
+    const originalBounds = {
+      minX: Math.min(a.x, b.x) - extent,
+      maxX: Math.max(a.x, b.x) + extent,
+      minY: Math.min(a.y, b.y) - extent,
+      maxY: Math.max(a.y, b.y) + extent,
+    }
+    const barrierBounds =
+      rect && ordinaryBoundsDomain
+        ? getConservativeRectBarrierBounds(
+            a,
+            b,
+            rect,
+            rectCos,
+            rectSin,
+            originalBounds,
+          )
+        : originalBounds
     barriers.push({
       a,
       b,
       radius,
       rect,
       viaOnly,
-      rectCos: rect ? Math.cos(rect.rotation) : 1,
-      rectSin: rect ? Math.sin(rect.rotation) : 0,
+      rectCos,
+      rectSin,
       rectBounds: rect
         ? {
             minX: -rect.width / 2,
@@ -128,10 +167,7 @@ export function findClearancePath(input: {
           }
         : undefined,
       visitedQuery: 0,
-      minX: Math.min(a.x, b.x) - extent,
-      maxX: Math.max(a.x, b.x) + extent,
-      minY: Math.min(a.y, b.y) - extent,
-      maxY: Math.max(a.y, b.y) + extent,
+      ...barrierBounds,
       minZ: Math.min(a.z, b.z),
       maxZ: Math.max(a.z, b.z),
     })
@@ -198,7 +234,7 @@ export function findClearancePath(input: {
         )
     }
   }
-  const cells = new Map<string, Barrier[]>()
+  const cells = new Map<number, Map<number, Barrier[]>>()
   const queryReach =
     Math.max(route.viaDiameter, traceThickness) / 2 +
     Math.max(
@@ -214,17 +250,22 @@ export function findClearancePath(input: {
       let x = Math.floor(Math.max(barrier.minX, bounds.minX - queryReach));
       x <= Math.floor(Math.min(barrier.maxX, bounds.maxX + queryReach));
       x++
-    )
+    ) {
+      let column = cells.get(x)
       for (
         let y = Math.floor(Math.max(barrier.minY, bounds.minY - queryReach));
         y <= Math.floor(Math.min(barrier.maxY, bounds.maxY + queryReach));
         y++
       ) {
-        const key = `${x},${y}`
-        const bucket = cells.get(key)
+        if (!column) {
+          column = new Map<number, Barrier[]>()
+          cells.set(x, column)
+        }
+        const bucket = column.get(y)
         if (bucket) bucket.push(barrier)
-        else cells.set(key, [barrier])
+        else column.set(y, [barrier])
       }
+    }
   }
   let queryId = 0
   const clear = (a: Point, b: Point): boolean => {
@@ -249,13 +290,15 @@ export function findClearancePath(input: {
       let x = Math.floor(Math.min(a.x, b.x) - reach);
       x <= Math.floor(Math.max(a.x, b.x) + reach);
       x++
-    )
+    ) {
+      const column = cells.get(x)
+      if (!column) continue
       for (
         let y = Math.floor(Math.min(a.y, b.y) - reach);
         y <= Math.floor(Math.max(a.y, b.y) + reach);
         y++
       )
-        for (const barrier of cells.get(`${x},${y}`) ?? []) {
+        for (const barrier of column.get(y) ?? []) {
           if (barrier.viaOnly && !isVia) continue
           if (barrier.visitedQuery === currentQuery) continue
           barrier.visitedQuery = currentQuery
@@ -301,6 +344,7 @@ export function findClearancePath(input: {
               barrier.radius
           if (distance < clearance) return false
         }
+    }
     return true
   }
   if (!clear(start, start) || !clear(end, end)) return null

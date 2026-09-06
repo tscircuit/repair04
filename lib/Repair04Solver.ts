@@ -249,6 +249,7 @@ export class Repair04Solver extends BaseSolver {
     this.engine = new AutoroutingDrcEngine(this.input.srj, {
       cacheStaticObstacleNetMembership: true,
       cacheImmutableTraceGeometry: true,
+      useTransientDynamicQueryMarkers: true,
       useConservativeRectObstaclePrecheck: true,
       traceClearance: input.traceClearance ?? 0.1,
       viaClearance: input.viaClearance ?? 0.1,
