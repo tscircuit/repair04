@@ -13,7 +13,7 @@ import {
   REGION_EPSILON,
 } from "./repairRegionGeometry"
 import {
-  getFixedObstacleViolations,
+  createFixedObstacleViolationEvaluator,
   type FixedObstacleViolation,
 } from "./getFixedObstacleViolations"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
@@ -131,6 +131,9 @@ export class Repair04Solver extends BaseSolver {
     Map<number, RouteCache>
   >()
   private readonly fixedObstacleNetContext: HighDensityRoute[]
+  private readonly fixedObstacleEvaluator: ReturnType<
+    typeof createFixedObstacleViolationEvaluator
+  >
   private readonly viaPadEvaluator: ReturnType<
     typeof createNewViaPadViolationEvaluator
   >
@@ -163,6 +166,12 @@ export class Repair04Solver extends BaseSolver {
     this.fixedObstacleNetContext = this.input.routes.map(
       (route): HighDensityRoute => ({ ...route, route: [] }),
     )
+    this.fixedObstacleEvaluator = createFixedObstacleViolationEvaluator({
+      srj: this.input.srj,
+      routes: this.fixedObstacleNetContext,
+      traceClearance: this.input.traceClearance,
+      viaClearance: this.input.viaClearance,
+    })
     this.fixedTraces = (input.srj.traces ?? []).map((trace) =>
       normalizeRepairTrace(trace, input.srj.minTraceWidth),
     )
@@ -237,7 +246,8 @@ export class Repair04Solver extends BaseSolver {
       throw new Error("repair04: maxCandidates must be a positive integer")
     }
     this.MAX_ITERATIONS = this.maxCandidates * 2 + 4
-    this.engine = new AutoroutingDrcEngine(input.srj, {
+    this.engine = new AutoroutingDrcEngine(this.input.srj, {
+      cacheStaticObstacleNetMembership: true,
       traceClearance: input.traceClearance ?? 0.1,
       viaClearance: input.viaClearance ?? 0.1,
       includeTraceViaOwnerMetadata: true,
@@ -378,13 +388,7 @@ export class Repair04Solver extends BaseSolver {
   private getFixedViolations(
     routes: HighDensityRoute[],
   ): FixedObstacleViolation[] {
-    if (routes.length === 0)
-      return getFixedObstacleViolations({
-        srj: this.input.srj,
-        routes,
-        traceClearance: this.input.traceClearance,
-        viaClearance: this.input.viaClearance,
-      })
+    if (routes.length === 0) return this.fixedObstacleEvaluator(routes)
     const missing = routes.flatMap((route, routeIndex): number[] =>
       this.getRouteCache(routeIndex, route).fixedViolations === undefined
         ? [routeIndex]
@@ -394,12 +398,7 @@ export class Repair04Solver extends BaseSolver {
       const context = this.fixedObstacleNetContext.slice()
       for (const routeIndex of missing)
         context[routeIndex] = routes[routeIndex]!
-      const violations = getFixedObstacleViolations({
-        srj: this.input.srj,
-        routes: context,
-        traceClearance: this.input.traceClearance,
-        viaClearance: this.input.viaClearance,
-      })
+      const violations = this.fixedObstacleEvaluator(context)
       // Prime all initial routes in one check; subsequent candidates normally
       // contain only one uncached route. Never retain rejected candidates.
       for (const routeIndex of missing)
