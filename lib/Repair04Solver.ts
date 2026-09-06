@@ -19,7 +19,7 @@ import {
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { findClearancePath } from "./findClearancePath"
 import {
-  getNewViaPadViolations,
+  createNewViaPadViolationEvaluator,
   type NewViaPadViolation,
 } from "./getNewViaPadViolations"
 import {
@@ -111,6 +111,9 @@ export class Repair04Solver extends BaseSolver {
   private evaluated = 0
   private accepted = 0
   private readonly maxCandidates: number
+  // Exact candidates can recur when radii clamp to the same segment endpoints.
+  // Scores are valid only while every other route remains in the same state.
+  private readonly candidateScores = new Map<string, Score>()
   // Only solver-owned clones and immutable candidate routes enter these caches.
   // A route may occur at multiple indices, so index-dependent IDs stay separate.
   private readonly routeCache = new WeakMap<
@@ -118,6 +121,9 @@ export class Repair04Solver extends BaseSolver {
     Map<number, RouteCache>
   >()
   private readonly fixedObstacleNetContext: HighDensityRoute[]
+  private readonly viaPadEvaluator: ReturnType<
+    typeof createNewViaPadViolationEvaluator
+  >
   private readonly viaGeometryCache = new WeakMap<
     HighDensityRoute,
     RepairViaGeometry[]
@@ -137,6 +143,10 @@ export class Repair04Solver extends BaseSolver {
       throw new Error("repair04: bounds must be finite and at least 10 × 10 mm")
     }
     this.input = structuredClone(input)
+    this.viaPadEvaluator = createNewViaPadViolationEvaluator({
+      srj: this.input.srj,
+      viaClearance: this.input.viaClearance,
+    })
     this.routes = structuredClone(input.routes)
     // Candidate generators preserve route ownership. Retain every alias when
     // checking one route, without repeatedly checking unchanged copper.
@@ -248,11 +258,9 @@ export class Repair04Solver extends BaseSolver {
   ): NewViaPadViolation[] {
     // Preserve the guard's validation even for an empty region.
     if (routes.length === 0)
-      return getNewViaPadViolations({
-        srj: this.input.srj,
+      return this.viaPadEvaluator({
         previousRoutes: [],
         routes: [],
-        viaClearance: this.input.viaClearance,
       })
     return routes.flatMap((route, routeIndex): NewViaPadViolation[] => {
       const cache = this.getRouteCache(routeIndex, route)
@@ -279,13 +287,11 @@ export class Repair04Solver extends BaseSolver {
                   routeIndex: 0,
                   viaIndex: selected.viaIndex,
                 }))
-        cache[key] = getNewViaPadViolations({
-          srj: this.input.srj,
+        cache[key] = this.viaPadEvaluator({
           previousRoutes: [
             scoreExisting ? route : this.input.routes[routeIndex]!,
           ],
           routes: [route],
-          viaClearance: this.input.viaClearance,
           includeExistingVias,
         }).map(
           (violation): NewViaPadViolation => ({
@@ -883,6 +889,7 @@ export class Repair04Solver extends BaseSolver {
     if (this.score.count === 0 || this.evaluated >= this.maxCandidates) {
       if (this.bestAdjustment) {
         this.routes = this.bestAdjustment.routes
+        this.candidateScores.clear()
         this.score = this.bestAdjustment.score
         this.accepted++
         this.bestAdjustment = null
@@ -899,6 +906,7 @@ export class Repair04Solver extends BaseSolver {
     if (next.done) {
       if (this.bestAdjustment) {
         this.routes = this.bestAdjustment.routes
+        this.candidateScores.clear()
         this.score = this.bestAdjustment.score
         this.bestAdjustment = null
         this.accepted++
@@ -916,26 +924,47 @@ export class Repair04Solver extends BaseSolver {
       return
     const candidate = this.routes.slice()
     candidate[next.value.routeIndex] = next.value.route
-    const score = this.evaluate(candidate)
-    this.evaluated++
+    // Validate candidate copper even when the mandatory via-pad guard rejects
+    // it. Rejected proposals cannot be accepted, so avoid rebuilding indexed DRC.
+    this.getFixedViolations(candidate)
     const preservesViaPadClearance =
       this.getViaPadViolations(candidate, false).length === 0
-    const preservesFixedObstacles = [...score.fixedViolations].every(
-      ([key, severity]) =>
-        this.score!.fixedViolations.has(key) &&
-        severity <= this.score!.fixedViolations.get(key)! + REGION_EPSILON,
-    )
+    let score: Score | undefined
+    if (preservesViaPadClearance) {
+      const candidateKey = JSON.stringify([
+        next.value.routeIndex,
+        next.value.route,
+      ])
+      score = this.candidateScores.get(candidateKey)
+      if (!score) {
+        score = this.evaluate(candidate)
+        if (this.candidateScores.size >= 128)
+          this.candidateScores.delete(this.candidateScores.keys().next().value!)
+        this.candidateScores.set(candidateKey, score)
+      }
+    }
+    this.evaluated++
+    const preservesFixedObstacles =
+      score !== undefined &&
+      [...score.fixedViolations].every(
+        ([key, severity]) =>
+          this.score!.fixedViolations.has(key) &&
+          severity <= this.score!.fixedViolations.get(key)! + REGION_EPSILON,
+      )
     if (
+      score &&
       preservesViaPadClearance &&
       preservesFixedObstacles &&
       score.count < this.score.count
     ) {
       this.routes = candidate
+      this.candidateScores.clear()
       this.score = score
       this.accepted++
       this.bestAdjustment = null
       this.candidates = this.generateCandidates()
     } else if (
+      score &&
       preservesFixedObstacles &&
       preservesViaPadClearance &&
       score.count === this.score.count &&
