@@ -45,7 +45,9 @@ const candidate = mergeRepairRegion({
 - Original endpoints, port points, tee contacts, shared vias, boundary segments, and atomic through-obstacle spans are fixed. The merge validates both geometry and metadata and rejects stale source state.
 - Fixed preloaded copper, relevant pads and keepouts, and local board edges remain in the regional context. Unrelated geometry and embedded full-board state are excluded.
 - `Repair04Solver` takes only the serializable local problem. The caller retains source provenance and the enclosing board. Use extraction to provide fixed cut points where traces cross the mutable boundary.
+- Structured cloning and JSON transport of the local problem are supported. Metadata comparisons treat omitted and `undefined` object members alike; defined values, `null`, and array contents remain distinct. Keep source provenance with the caller and use JSON-compatible metadata when transporting through JSON.
 - New bends retain copper width. Existing vias keep their exact positions, layer transitions, and diameters by default. Explicitly permitted vias move as complete layer transitions, and new/moved vias must clear every pad. Variable-width spans are not simplified into narrower copper.
+- Marked `through_obstacle` transitions remain fixed atomic copper, whether their attachment points are colocated or separated. They are not physical vias and do not consume physical-via ordinals or authorize via movement.
 
 A step evaluates at most one candidate. `maxCandidates` gives a deterministic search budget. Clearance paths use a bounded 0.1 mm grid, refined to half the copper width for traces at most 0.1 mm wide, with at most 30,000 expanded states per path. `solved` means that the optimization finished; unresolved DRC is reported by `stats.finalErrorCount`. Invalid geometry throws. `getOutput()` is available only after a completed solve and returns a copy.
 

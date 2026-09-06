@@ -19,7 +19,9 @@ export const getRepairViaGeometry = (
   for (let i = 1; i < route.route.length; i++) {
     const a = route.route[i - 1]!
     const b = route.route[i]!
-    if (a.z === b.z) continue
+    // A plated obstacle can connect layers without a physical drilled via,
+    // including when both attachment points happen to have the same XY.
+    if (a.z === b.z || a.toNextSegmentType === "through_obstacle") continue
     if (
       a.x !== b.x ||
       a.y !== b.y ||
@@ -39,6 +41,7 @@ export const getRepairViaGeometry = (
     // Redundant wire vertices or explicit intermediate layers do not create a
     // different physical via. Its identity is the entire coincident span.
     while (i + 1 < route.route.length) {
+      if (route.route[i]!.toNextSegmentType === "through_obstacle") break
       const next = route.route[i + 1]!
       if (next.x !== b.x || next.y !== b.y) break
       if (!Number.isInteger(next.z) || next.z < 0 || next.z >= layerCount) {

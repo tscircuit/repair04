@@ -78,11 +78,12 @@ export const sameRepairPoint = (
   )
 }
 
-/** Canonical serialization also compares inert metadata, independent of key order. */
+/** Compare metadata independent of key order and omitted undefined object fields. */
 export const repairValueKey = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(repairValueKey).join(",")}]`
   if (value !== null && typeof value === "object") {
     return `{${Object.keys(value)
+      .filter((key) => (value as Record<string, unknown>)[key] !== undefined)
       .sort()
       .map(
         (key) =>

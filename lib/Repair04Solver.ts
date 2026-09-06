@@ -54,7 +54,7 @@ function rebuildVias(route: HighDensityRoute): HighDensityRoute {
   for (let i = 1; i < route.route.length; i++) {
     const a = route.route[i - 1]!
     const b = route.route[i]!
-    if (a.z !== b.z) {
+    if (a.z !== b.z && a.toNextSegmentType !== "through_obstacle") {
       if (a.x !== b.x || a.y !== b.y) {
         throw new Error(
           "repair04: a layer transition must have coincident endpoints",
@@ -72,7 +72,7 @@ function getViaGeometryKey(route: HighDensityRoute): string {
   for (let index = 1; index < route.route.length; index++) {
     const before = route.route[index - 1]!
     const after = route.route[index]!
-    if (before.z !== after.z)
+    if (before.z !== after.z && before.toNextSegmentType !== "through_obstacle")
       transitions.push([before.x, before.y, before.z, after.z])
   }
   return JSON.stringify([route.viaDiameter, transitions])

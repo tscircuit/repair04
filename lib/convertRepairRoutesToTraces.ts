@@ -17,6 +17,7 @@ export function convertRepairRoutesToTraces(
       const previous = route.route[i - 1]
       if (
         previous &&
+        previous.toNextSegmentType !== "through_obstacle" &&
         previous.z !== point.z &&
         previous.x === point.x &&
         previous.y === point.y
