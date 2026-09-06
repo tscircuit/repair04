@@ -209,12 +209,32 @@ export class Repair04Solver extends BaseSolver {
         pcb_trace_error_id: violation.key,
       })
     }
+    // Layer repair must also see existing same-net via-pad defects. The wire
+    // checker permits own-pad contact; omitting these can falsely end the
+    // search at zero errors. Locked vias remain outside the mutable score.
     for (const violation of getNewViaPadViolations({
       srj: this.input.srj,
       previousRoutes: routes,
       routes,
       viaClearance: this.input.viaClearance,
-      includeExistingVias: this.input.movableVias,
+      includeExistingVias:
+        this.input.allowLayerChanges === true && !this.input.movableVias?.length
+          ? routes.flatMap(
+              (route, routeIndex): { routeIndex: number; viaIndex: number }[] =>
+                getRepairViaGeometry(route, this.input.srj.layerCount).flatMap(
+                  (
+                    via,
+                    viaIndex,
+                  ): { routeIndex: number; viaIndex: number }[] =>
+                    via.pointIndices.every(
+                      (index): boolean =>
+                        !this.isLocked(routeIndex, route.route[index]!),
+                    )
+                      ? [{ routeIndex, viaIndex }]
+                      : [],
+                ),
+            )
+          : this.input.movableVias,
     })) {
       errors.push({
         type: "pcb_trace_error",
