@@ -248,6 +248,8 @@ export class Repair04Solver extends BaseSolver {
     this.MAX_ITERATIONS = this.maxCandidates * 2 + 4
     this.engine = new AutoroutingDrcEngine(this.input.srj, {
       cacheStaticObstacleNetMembership: true,
+      cacheImmutableTraceGeometry: true,
+      useConservativeRectObstaclePrecheck: true,
       traceClearance: input.traceClearance ?? 0.1,
       viaClearance: input.viaClearance ?? 0.1,
       includeTraceViaOwnerMetadata: true,
