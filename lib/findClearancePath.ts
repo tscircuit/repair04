@@ -7,6 +7,7 @@ import type {
   SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
+import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 
 type Point = RepairRoutePoint
@@ -102,6 +103,25 @@ export function findClearancePath(input: {
       : name === "bottom"
         ? srj.layerCount - 1
         : Number(name.slice(5))
+  // Tight bounds are only used where rounding is small relative to the
+  // outward margin. Outside this ordinary PCB domain, preserve the old path.
+  const ordinaryBoundsDomain = [
+    bounds.minX,
+    bounds.maxX,
+    bounds.minY,
+    bounds.maxY,
+    start.x,
+    start.y,
+    end.x,
+    end.y,
+    traceThickness,
+    route.viaDiameter,
+    input.traceClearance,
+    input.viaClearance,
+    srj.defaultObstacleMargin ?? 0,
+    srj.minTraceToPadEdgeClearance ?? 0,
+    srj.minViaEdgeToPadEdgeClearance ?? 0,
+  ].every((value) => Number.isFinite(value) && Math.abs(value) <= 10_000)
   const barriers: Barrier[] = []
   const add = (
     a: Point,
@@ -111,14 +131,33 @@ export function findClearancePath(input: {
     viaOnly = false,
   ): void => {
     const extent = rect ? Math.hypot(rect.width, rect.height) / 2 : radius
+    const rectCos = rect ? Math.cos(rect.rotation) : 1
+    const rectSin = rect ? Math.sin(rect.rotation) : 0
+    const originalBounds = {
+      minX: Math.min(a.x, b.x) - extent,
+      maxX: Math.max(a.x, b.x) + extent,
+      minY: Math.min(a.y, b.y) - extent,
+      maxY: Math.max(a.y, b.y) + extent,
+    }
+    const barrierBounds =
+      rect && ordinaryBoundsDomain
+        ? getConservativeRectBarrierBounds(
+            a,
+            b,
+            rect,
+            rectCos,
+            rectSin,
+            originalBounds,
+          )
+        : originalBounds
     barriers.push({
       a,
       b,
       radius,
       rect,
       viaOnly,
-      rectCos: rect ? Math.cos(rect.rotation) : 1,
-      rectSin: rect ? Math.sin(rect.rotation) : 0,
+      rectCos,
+      rectSin,
       rectBounds: rect
         ? {
             minX: -rect.width / 2,
@@ -128,10 +167,7 @@ export function findClearancePath(input: {
           }
         : undefined,
       visitedQuery: 0,
-      minX: Math.min(a.x, b.x) - extent,
-      maxX: Math.max(a.x, b.x) + extent,
-      minY: Math.min(a.y, b.y) - extent,
-      maxY: Math.max(a.y, b.y) + extent,
+      ...barrierBounds,
       minZ: Math.min(a.z, b.z),
       maxZ: Math.max(a.z, b.z),
     })
@@ -198,7 +234,7 @@ export function findClearancePath(input: {
         )
     }
   }
-  const cells = new Map<string, Barrier[]>()
+  const cells = new Map<number, Map<number, Barrier[]>>()
   const queryReach =
     Math.max(route.viaDiameter, traceThickness) / 2 +
     Math.max(
@@ -214,19 +250,27 @@ export function findClearancePath(input: {
       let x = Math.floor(Math.max(barrier.minX, bounds.minX - queryReach));
       x <= Math.floor(Math.min(barrier.maxX, bounds.maxX + queryReach));
       x++
-    )
+    ) {
+      let column = cells.get(x)
       for (
         let y = Math.floor(Math.max(barrier.minY, bounds.minY - queryReach));
         y <= Math.floor(Math.min(barrier.maxY, bounds.maxY + queryReach));
         y++
       ) {
-        const key = `${x},${y}`
-        const bucket = cells.get(key)
+        if (!column) {
+          column = new Map<number, Barrier[]>()
+          cells.set(x, column)
+        }
+        const bucket = column.get(y)
         if (bucket) bucket.push(barrier)
-        else cells.set(key, [barrier])
+        else column.set(y, [barrier])
       }
+    }
   }
   let queryId = 0
+  // Exact-distance helpers are synchronous and retain no point references.
+  const localA = { x: 0, y: 0 }
+  const localB = { x: 0, y: 0 }
   const clear = (a: Point, b: Point): boolean => {
     const isVia = a.z !== b.z
     const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
@@ -245,25 +289,23 @@ export function findClearancePath(input: {
       maxX = Math.max(a.x, b.x)
     const minY = Math.min(a.y, b.y),
       maxY = Math.max(a.y, b.y)
-    for (
-      let x = Math.floor(Math.min(a.x, b.x) - reach);
-      x <= Math.floor(Math.max(a.x, b.x) + reach);
-      x++
-    )
+    const minZ = Math.min(a.z, b.z),
+      maxZ = Math.max(a.z, b.z)
+    for (let x = Math.floor(minX - reach); x <= Math.floor(maxX + reach); x++) {
+      const column = cells.get(x)
+      if (!column) continue
       for (
-        let y = Math.floor(Math.min(a.y, b.y) - reach);
-        y <= Math.floor(Math.max(a.y, b.y) + reach);
+        let y = Math.floor(minY - reach);
+        y <= Math.floor(maxY + reach);
         y++
-      )
-        for (const barrier of cells.get(`${x},${y}`) ?? []) {
+      ) {
+        const bucket = column.get(y)
+        if (!bucket) continue
+        for (const barrier of bucket) {
           if (barrier.viaOnly && !isVia) continue
           if (barrier.visitedQuery === currentQuery) continue
           barrier.visitedQuery = currentQuery
-          if (
-            barrier.maxZ < Math.min(a.z, b.z) ||
-            barrier.minZ > Math.max(a.z, b.z)
-          )
-            continue
+          if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
           const requiredGap = barrier.rect
             ? margin
             : isVia && barrier.minZ !== barrier.maxZ
@@ -282,17 +324,21 @@ export function findClearancePath(input: {
             continue
           let distance: number
           if (barrier.rect) {
-            const local = (p: Point): { x: number; y: number } => ({
-              x:
-                (p.x - barrier.a.x) * barrier.rectCos +
-                (p.y - barrier.a.y) * barrier.rectSin,
-              y:
-                -(p.x - barrier.a.x) * barrier.rectSin +
-                (p.y - barrier.a.y) * barrier.rectCos,
-            })
+            localA.x =
+              (a.x - barrier.a.x) * barrier.rectCos +
+              (a.y - barrier.a.y) * barrier.rectSin
+            localA.y =
+              -(a.x - barrier.a.x) * barrier.rectSin +
+              (a.y - barrier.a.y) * barrier.rectCos
+            localB.x =
+              (b.x - barrier.a.x) * barrier.rectCos +
+              (b.y - barrier.a.y) * barrier.rectSin
+            localB.y =
+              -(b.x - barrier.a.x) * barrier.rectSin +
+              (b.y - barrier.a.y) * barrier.rectCos
             distance = segmentToBoundsMinDistance(
-              local(a),
-              local(b),
+              localA,
+              localB,
               barrier.rectBounds!,
             )
           } else
@@ -301,6 +347,8 @@ export function findClearancePath(input: {
               barrier.radius
           if (distance < clearance) return false
         }
+      }
+    }
     return true
   }
   if (!clear(start, start) || !clear(end, end)) return null
@@ -375,7 +423,19 @@ export function findClearancePath(input: {
       previous.set(id, -1)
       push({ id, cost, priority: cost + heuristic(p) })
     }
-  const edgeCache = new Map<string, boolean>()
+  const gridNodeCount = nx * ny * srj.layerCount
+  // Only pack edges when every grid-node pair has an exact integer key.
+  const useNumericEdgeKeys =
+    nx > 0 &&
+    ny > 0 &&
+    Number.isSafeInteger(srj.layerCount) &&
+    Number.isSafeInteger(gridNodeCount) &&
+    gridNodeCount > 0 &&
+    Number.isSafeInteger(gridNodeCount * gridNodeCount - 1) &&
+    Number.isInteger(start.z) &&
+    start.z >= 0 &&
+    start.z < srj.layerCount
+  const edgeCache = new Map<number | string, boolean>()
   let expanded = 0
   while (heap.length && expanded < (input.maxNodes ?? 30000)) {
     const current = pop()
@@ -430,8 +490,11 @@ export function findClearancePath(input: {
         cost =
           current.cost + (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1)
       if (cost >= (costs.get(id) ?? Infinity)) continue
-      const key =
-        current.id < id ? `${current.id},${id}` : `${id},${current.id}`
+      const low = Math.min(current.id, id),
+        high = Math.max(current.id, id)
+      const key = useNumericEdgeKeys
+        ? low * gridNodeCount + high
+        : `${low},${high}`
       let permitted = edgeCache.get(key)
       if (permitted === undefined) {
         permitted = clear(a, b)
