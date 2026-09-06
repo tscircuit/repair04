@@ -28,6 +28,10 @@ type Barrier = {
   visitedQuery: number
 }
 type SearchNode = { id: number; cost: number; priority: number }
+export type ClearancePathSearchStats = {
+  nodesPopped: number
+  completionReason: "found" | "no-path" | "node-limit"
+}
 
 /** Clearance-aware routing between fixed anchors, using only cropped context. */
 export function findClearancePath(input: {
@@ -43,8 +47,21 @@ export function findClearancePath(input: {
   gridSize?: number
   /** Disable layer changes when searching for a trace-only repair. */
   allowLayerChanges?: boolean
+  /** Maximum actual heap pops in this search; defaults to 30000. */
+  maxNodes?: number
+  /** Optional output accounting, overwritten for this synchronous call. */
+  stats?: ClearancePathSearchStats
 }): Point[] | null {
   const { srj, routes, routeIndex, start, end, bounds, traceThickness } = input
+  if (
+    input.maxNodes !== undefined &&
+    (!Number.isSafeInteger(input.maxNodes) || input.maxNodes < 1)
+  )
+    throw new Error("repair04: maxNodes must be a positive safe integer")
+  if (input.stats) {
+    input.stats.nodesPopped = 0
+    input.stats.completionReason = "no-path"
+  }
   if (input.allowLayerChanges === false && start.z !== end.z) return null
   const route = routes[routeIndex]!
   const parents = new Map<string, string>()
@@ -360,8 +377,10 @@ export function findClearancePath(input: {
     }
   const edgeCache = new Map<string, boolean>()
   let expanded = 0
-  while (heap.length && expanded++ < 30000) {
+  while (heap.length && expanded < (input.maxNodes ?? 30000)) {
     const current = pop()
+    expanded++
+    if (input.stats) input.stats.nodesPopped = expanded
     if (current.cost !== costs.get(current.id)) continue
     const a = point(current.id)
     if (
@@ -384,6 +403,7 @@ export function findClearancePath(input: {
         simplified.push(path[furthest]!)
         i = furthest + 1
       }
+      if (input.stats) input.stats.completionReason = "found"
       return simplified
     }
     const x = current.id % nx,
@@ -423,5 +443,7 @@ export function findClearancePath(input: {
       push({ id, cost, priority: cost + heuristic(b) })
     }
   }
+  if (input.stats)
+    input.stats.completionReason = heap.length ? "node-limit" : "no-path"
   return null
 }

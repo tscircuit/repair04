@@ -17,7 +17,10 @@ import {
   type FixedObstacleViolation,
 } from "./getFixedObstacleViolations"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
-import { findClearancePath } from "./findClearancePath"
+import {
+  findClearancePath,
+  type ClearancePathSearchStats,
+} from "./findClearancePath"
 import {
   createNewViaPadViolationEvaluator,
   type NewViaPadViolation,
@@ -45,6 +48,10 @@ type Score = {
 export type Repair04SolverInput = RepairRegionInput & {
   /** Deterministic candidate budget; each step evaluates at most one candidate. */
   maxCandidates?: number
+  /** Maximum yielded proposals, including permission rejections; cumulative across accepted states. */
+  maxCandidateAttempts?: number
+  /** Total actual A* heap pops across all searches and accepted states. */
+  maxPathSearchNodes?: number
   traceClearance?: number
   viaClearance?: number
   /** Permit layer bridges and general via edits unless movableVias constrains them; defaults to false. */
@@ -111,6 +118,9 @@ export class Repair04Solver extends BaseSolver {
   private evaluated = 0
   private accepted = 0
   private readonly maxCandidates: number
+  private candidateAttempts = 0
+  private pathSearchNodes = 0
+  private pathSearchCalls = 0
   // Exact candidates can recur when radii clamp to the same segment endpoints.
   // Scores are valid only while every other route remains in the same state.
   private readonly candidateScores = new Map<string, Score>()
@@ -214,6 +224,14 @@ export class Repair04Solver extends BaseSolver {
         )
       }
     }
+    for (const name of [
+      "maxCandidateAttempts",
+      "maxPathSearchNodes",
+    ] as const) {
+      const limit = input[name]
+      if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1))
+        throw new Error(`repair04: ${name} must be a positive safe integer`)
+    }
     this.maxCandidates = input.maxCandidates ?? 8000
     if (!Number.isInteger(this.maxCandidates) || this.maxCandidates < 1) {
       throw new Error("repair04: maxCandidates must be a positive integer")
@@ -224,6 +242,55 @@ export class Repair04Solver extends BaseSolver {
       viaClearance: input.viaClearance ?? 0.1,
       includeTraceViaOwnerMetadata: true,
     })
+  }
+
+  private getWorkLimitReason():
+    | "candidate-attempt-limit"
+    | "path-search-node-limit"
+    | null {
+    if (
+      this.input.maxCandidateAttempts !== undefined &&
+      this.candidateAttempts >= this.input.maxCandidateAttempts
+    )
+      return "candidate-attempt-limit"
+    if (
+      this.input.maxPathSearchNodes !== undefined &&
+      this.pathSearchNodes >= this.input.maxPathSearchNodes
+    )
+      return "path-search-node-limit"
+    return null
+  }
+
+  private updateWorkStats(completionReason?: string): void {
+    if (
+      this.input.maxCandidateAttempts === undefined &&
+      this.input.maxPathSearchNodes === undefined
+    )
+      return
+    this.stats = {
+      ...this.stats,
+      candidateAttempts: this.candidateAttempts,
+      pathSearchNodes: this.pathSearchNodes,
+      pathSearchCalls: this.pathSearchCalls,
+      ...(completionReason === undefined ? {} : { completionReason }),
+    }
+  }
+
+  private finishSearch(completionReason: string): void {
+    if (this.bestAdjustment) {
+      this.routes = this.bestAdjustment.routes
+      this.candidateScores.clear()
+      this.score = this.bestAdjustment.score
+      this.accepted++
+      this.bestAdjustment = null
+      this.stats = {
+        ...this.stats,
+        finalErrorCount: this.score.count,
+        accepted: this.accepted,
+      }
+    }
+    this.updateWorkStats(completionReason)
+    this.solved = true
   }
 
   private getRouteCache(
@@ -474,7 +541,20 @@ export class Repair04Solver extends BaseSolver {
       )
       if (widths.size !== 1) continue
       const traceThickness = [...widths][0]!
+      if (this.getWorkLimitReason() === "path-search-node-limit") return
+      const searchStats: ClearancePathSearchStats = {
+        nodesPopped: 0,
+        completionReason: "no-path",
+      }
       const path = findClearancePath({
+        maxNodes:
+          this.input.maxPathSearchNodes === undefined
+            ? undefined
+            : Math.min(
+                30000,
+                this.input.maxPathSearchNodes - this.pathSearchNodes,
+              ),
+        stats: searchStats,
         allowLayerChanges,
         srj: this.input.srj,
         routes: this.routes,
@@ -487,6 +567,9 @@ export class Repair04Solver extends BaseSolver {
         traceClearance: this.input.traceClearance ?? 0.1,
         viaClearance: this.input.viaClearance ?? 0.1,
       })
+      this.pathSearchCalls++
+      this.pathSearchNodes += searchStats.nodesPopped
+      this.updateWorkStats()
       if (!path) continue
       yield {
         routeIndex: ri,
@@ -567,6 +650,7 @@ export class Repair04Solver extends BaseSolver {
         ? [true]
         : [false, true]
       : [false]) {
+      if (this.getWorkLimitReason() === "path-search-node-limit") return
       let traceCandidates = 0
       for (const candidate of this.generateCandidatesForMode(
         allowLayerChanges,
@@ -642,6 +726,7 @@ export class Repair04Solver extends BaseSolver {
     )
     // Try same-layer paths first, keeping every existing via in place.
     yield* this.generateClearanceCandidates(targets, allowLayerChanges)
+    if (this.getWorkLimitReason() === "path-search-node-limit") return
     // Replace a short polyline span as a unit, so a dense sequence of tiny
     // segments does not trap the search at a single bend.
     const spanned = new Set<string>()
@@ -885,25 +970,30 @@ export class Repair04Solver extends BaseSolver {
         accepted: 0,
       }
       this.candidates = this.generateCandidates()
+      this.updateWorkStats()
     }
-    if (this.score.count === 0 || this.evaluated >= this.maxCandidates) {
-      if (this.bestAdjustment) {
-        this.routes = this.bestAdjustment.routes
-        this.candidateScores.clear()
-        this.score = this.bestAdjustment.score
-        this.accepted++
-        this.bestAdjustment = null
-        this.stats = {
-          ...this.stats,
-          finalErrorCount: this.score.count,
-          accepted: this.accepted,
-        }
-      }
-      this.solved = true
+    const workLimitReason = this.getWorkLimitReason()
+    if (
+      this.score.count === 0 ||
+      this.evaluated >= this.maxCandidates ||
+      workLimitReason
+    ) {
+      this.finishSearch(
+        this.score.count === 0
+          ? "clean"
+          : this.evaluated >= this.maxCandidates
+            ? "candidate-limit"
+            : workLimitReason!,
+      )
       return
     }
     const next = this.candidates!.next()
     if (next.done) {
+      const exhausted = this.getWorkLimitReason()
+      if (exhausted) {
+        this.finishSearch(exhausted)
+        return
+      }
       if (this.bestAdjustment) {
         this.routes = this.bestAdjustment.routes
         this.candidateScores.clear()
@@ -911,9 +1001,14 @@ export class Repair04Solver extends BaseSolver {
         this.bestAdjustment = null
         this.accepted++
         this.candidates = this.generateCandidates()
-      } else this.solved = true
+      } else {
+        this.updateWorkStats("search-exhausted")
+        this.solved = true
+      }
       return
     }
+    this.candidateAttempts++
+    this.updateWorkStats()
     // Every generator shares the same physical-via acceptance invariant,
     // including atomic moves that can otherwise collapse neighboring stacks.
     if (
