@@ -1,15 +1,17 @@
 {
   "sample": "sample006",
-  "scope": "Complete saved Pipeline9 final outputs, disabled versus enabled repair04; same normal downstream stages",
+  "scope": "Complete saved baseline and V10 candidate Pipeline9 final outputs; one-board example, not a dataset improvement claim",
   "source": {
-    "coreCommit": "924ad489e1757278f14b3fb59d2cdd7f05d9e25b",
-    "routerCommit": "318f07d9682c115e86475248b27b76b73718345f",
-    "baselineFile": "/Users/seve/Documents/Codex/2026-09-05/please-create-a-new-solver-repo-3/work/repair04-benchmark/baseline-v9/sample006.output.json",
-    "candidateFile": "/Users/seve/Documents/Codex/2026-09-05/please-create-a-new-solver-repo-3/work/repair04-benchmark/candidate-v9-a/sample006.candidate.json",
-    "baselineSha256": "49e071ce60347410a3c564b9083348cac9ed66fd3fd513bf177c82580c5c7374",
-    "candidateSha256": "0a984b9fbb70df7fe638c23e34d70c5e95a21ba9c32fc9043d64d019cd9d1eb6",
-    "localProductionProbeSha256": "0a984b9fbb70df7fe638c23e34d70c5e95a21ba9c32fc9043d64d019cd9d1eb6",
-    "checkpointSha256": "169f369793f2393a25b0aae420bd459073a17bdd12230c877f38d1a448e88c0e"
+    "coreCommit": "fc78a05d4c65cb41dc38214bbeed5f4d5657055d",
+    "routerCommit": "0e9cd6f8f4d31a09439948fed6e7f0155290ad8c",
+    "bundleSha256": "87327ab808627d4635513fb8b5b3268f11451da8d01fb73f98293fd5371ad4cc",
+    "outputHashes": {
+      "originalBaseline": "49e071ce60347410a3c564b9083348cac9ed66fd3fd513bf177c82580c5c7374",
+      "v9Baseline": "49e071ce60347410a3c564b9083348cac9ed66fd3fd513bf177c82580c5c7374",
+      "v9Candidate": "0a984b9fbb70df7fe638c23e34d70c5e95a21ba9c32fc9043d64d019cd9d1eb6",
+      "candidate": "5759feedac35c8d677d4a5139f51be0541b4916d6c3b9649c50356c9529c2801",
+      "context": "169f369793f2393a25b0aae420bd459073a17bdd12230c877f38d1a448e88c0e"
+    }
   },
   "validationSuite": "repair04-via-pad-v1",
   "checkerOptions": {
@@ -32,18 +34,6 @@
     "beforeCount": 10,
     "afterCount": 10,
     "allFieldsExactlyEqual": true,
-    "comparedFields": [
-      "pcb_trace_id",
-      "connection_name",
-      "connectsTo",
-      "x",
-      "y",
-      "from_layer",
-      "to_layer",
-      "via_diameter",
-      "via_hole_diameter",
-      "all additional via fields"
-    ],
     "identities": [
       {
         "pcb_trace_id": "source_net_0_mst1_0",
@@ -52,6 +42,7 @@
           "pcb_port_13",
           "pcb_port_2"
         ],
+        "viaOrdinal": 0,
         "via": {
           "route_type": "via",
           "x": -1.9,
@@ -69,6 +60,7 @@
           "pcb_port_2",
           "pcb_port_27"
         ],
+        "viaOrdinal": 0,
         "via": {
           "route_type": "via",
           "x": 1.972919496455596,
@@ -86,6 +78,7 @@
           "pcb_port_2",
           "pcb_port_27"
         ],
+        "viaOrdinal": 1,
         "via": {
           "route_type": "via",
           "x": 2.789,
@@ -103,23 +96,7 @@
           "pcb_port_29",
           "pcb_port_12"
         ],
-        "via": {
-          "route_type": "via",
-          "x": -0.010179477208412814,
-          "y": 7.413,
-          "from_layer": "bottom",
-          "to_layer": "top",
-          "via_diameter": 0.3,
-          "via_hole_diameter": 0.15
-        }
-      },
-      {
-        "pcb_trace_id": "source_net_0_mst3_0",
-        "connection_name": "source_net_0",
-        "connectsTo": [
-          "pcb_port_29",
-          "pcb_port_12"
-        ],
+        "viaOrdinal": 0,
         "via": {
           "route_type": "via",
           "x": -1.525,
@@ -131,12 +108,31 @@
         }
       },
       {
+        "pcb_trace_id": "source_net_0_mst3_0",
+        "connection_name": "source_net_0",
+        "connectsTo": [
+          "pcb_port_29",
+          "pcb_port_12"
+        ],
+        "viaOrdinal": 1,
+        "via": {
+          "route_type": "via",
+          "x": -0.010179477208412814,
+          "y": 7.413,
+          "from_layer": "bottom",
+          "to_layer": "top",
+          "via_diameter": 0.3,
+          "via_hole_diameter": 0.15
+        }
+      },
+      {
         "pcb_trace_id": "source_trace_21__source_net_1_mst1_0",
         "connection_name": "source_trace_21",
         "connectsTo": [
           "pcb_port_9",
           "pcb_port_14"
         ],
+        "viaOrdinal": 0,
         "via": {
           "route_type": "via",
           "x": -0.107,
@@ -154,6 +150,7 @@
           "pcb_port_26",
           "pcb_port_4"
         ],
+        "viaOrdinal": 0,
         "via": {
           "route_type": "via",
           "x": 0.5997955999999999,
@@ -171,6 +168,7 @@
           "pcb_port_26",
           "pcb_port_4"
         ],
+        "viaOrdinal": 1,
         "via": {
           "route_type": "via",
           "x": 3,
@@ -188,12 +186,13 @@
           "pcb_port_7",
           "pcb_port_5"
         ],
+        "viaOrdinal": 0,
         "via": {
           "route_type": "via",
-          "x": 0.6666247825360592,
-          "y": 2.7251199529466303,
-          "from_layer": "bottom",
-          "to_layer": "top",
+          "x": 1.505,
+          "y": 2.734,
+          "from_layer": "top",
+          "to_layer": "bottom",
           "via_diameter": 0.3,
           "via_hole_diameter": 0.15
         }
@@ -205,12 +204,13 @@
           "pcb_port_7",
           "pcb_port_5"
         ],
+        "viaOrdinal": 1,
         "via": {
           "route_type": "via",
-          "x": 1.505,
-          "y": 2.734,
-          "from_layer": "top",
-          "to_layer": "bottom",
+          "x": 0.6666247825360592,
+          "y": 2.7251199529466303,
+          "from_layer": "bottom",
+          "to_layer": "top",
           "via_diameter": 0.3,
           "via_hole_diameter": 0.15
         }
@@ -218,129 +218,28 @@
     ]
   },
   "changedTraceIds": [
-    "source_trace_22_0",
     "source_trace_19__source_net_5_0"
   ],
+  "allEndpointsExact": true,
+  "allCopperWidthsPreserved": true,
+  "allTraceMetadataExact": true,
+  "nonTracePropertiesExact": true,
+  "baselineReplayByteExact": true,
   "stageAudit": {
-    "normalDefault": true,
-    "referenceBefore": 2,
-    "referenceAfter": 1,
-    "existingViaCount": 10,
-    "allViaFieldsExactlyPreserved": true,
-    "inputUnchanged": true,
-    "stats": {
-      "regions": 6,
+    "repair04Stats": {
+      "regions": 3,
       "acceptedRegions": 1,
       "indexedErrors": 1,
       "referenceErrors": 1
     },
-    "elapsedMs": 12644.012917
+    "jointInputReferenceErrors": 1,
+    "jointOutputReferenceErrors": 0,
+    "repair04AdvancedStats": {},
+    "advancedSkippedCleanInput": true
   },
   "errorsBefore": {
-    "strict": {
-      "errors": [
-        {
-          "type": "pcb_trace_error",
-          "error_type": "pcb_trace_error",
-          "message": "PCB trace trace[port[pcb_port_1], port[pcb_port_21]] overlaps with pcb_smtpad \"pcb_port[#pcb_port_0]\" (accidental contact)",
-          "pcb_trace_id": "source_trace_19__source_net_5_0",
-          "center": {
-            "x": -0.9001506000000001,
-            "y": -1.57251115
-          },
-          "source_trace_id": "",
-          "pcb_trace_error_id": "overlap_source_trace_19__source_net_5_0_pcb_smtpad_11",
-          "pcb_component_ids": [],
-          "pcb_port_ids": [
-            "pcb_port_1",
-            "pcb_port_21",
-            "pcb_port_0"
-          ]
-        }
-      ],
-      "errorsWithCenters": [
-        {
-          "type": "pcb_trace_error",
-          "error_type": "pcb_trace_error",
-          "message": "PCB trace trace[port[pcb_port_1], port[pcb_port_21]] overlaps with pcb_smtpad \"pcb_port[#pcb_port_0]\" (accidental contact)",
-          "pcb_trace_id": "source_trace_19__source_net_5_0",
-          "center": {
-            "x": -0.9001506000000001,
-            "y": -1.57251115
-          },
-          "source_trace_id": "",
-          "pcb_trace_error_id": "overlap_source_trace_19__source_net_5_0_pcb_smtpad_11",
-          "pcb_component_ids": [],
-          "pcb_port_ids": [
-            "pcb_port_1",
-            "pcb_port_21",
-            "pcb_port_0"
-          ]
-        }
-      ],
-      "locationAwareErrors": [
-        {
-          "type": "pcb_trace_error",
-          "error_type": "pcb_trace_error",
-          "message": "PCB trace trace[port[pcb_port_1], port[pcb_port_21]] overlaps with pcb_smtpad \"pcb_port[#pcb_port_0]\" (accidental contact)",
-          "pcb_trace_id": "source_trace_19__source_net_5_0",
-          "center": {
-            "x": -0.9001506000000001,
-            "y": -1.57251115
-          },
-          "source_trace_id": "",
-          "pcb_trace_error_id": "overlap_source_trace_19__source_net_5_0_pcb_smtpad_11",
-          "pcb_component_ids": [],
-          "pcb_port_ids": [
-            "pcb_port_1",
-            "pcb_port_21",
-            "pcb_port_0"
-          ]
-        }
-      ]
-    },
     "relaxed": {
-      "errors": [
-        {
-          "type": "pcb_trace_error",
-          "error_type": "pcb_trace_error",
-          "message": "PCB trace trace[port[pcb_port_1], port[pcb_port_21]] overlaps with pcb_smtpad \"pcb_port[#pcb_port_0]\" (accidental contact)",
-          "pcb_trace_id": "source_trace_19__source_net_5_0",
-          "center": {
-            "x": -0.9001506000000001,
-            "y": -1.57251115
-          },
-          "source_trace_id": "",
-          "pcb_trace_error_id": "overlap_source_trace_19__source_net_5_0_pcb_smtpad_11",
-          "pcb_component_ids": [],
-          "pcb_port_ids": [
-            "pcb_port_1",
-            "pcb_port_21",
-            "pcb_port_0"
-          ]
-        }
-      ],
       "errorsWithCenters": [
-        {
-          "type": "pcb_trace_error",
-          "error_type": "pcb_trace_error",
-          "message": "PCB trace trace[port[pcb_port_1], port[pcb_port_21]] overlaps with pcb_smtpad \"pcb_port[#pcb_port_0]\" (accidental contact)",
-          "pcb_trace_id": "source_trace_19__source_net_5_0",
-          "center": {
-            "x": -0.9001506000000001,
-            "y": -1.57251115
-          },
-          "source_trace_id": "",
-          "pcb_trace_error_id": "overlap_source_trace_19__source_net_5_0_pcb_smtpad_11",
-          "pcb_component_ids": [],
-          "pcb_port_ids": [
-            "pcb_port_1",
-            "pcb_port_21",
-            "pcb_port_0"
-          ]
-        }
-      ],
-      "locationAwareErrors": [
         {
           "type": "pcb_trace_error",
           "error_type": "pcb_trace_error",
@@ -363,27 +262,8 @@
     }
   },
   "errorsAfter": {
-    "strict": {
-      "errors": [],
-      "errorsWithCenters": [],
-      "locationAwareErrors": []
-    },
-    "relaxed": {
-      "errors": [],
-      "errorsWithCenters": [],
-      "locationAwareErrors": []
-    }
+    "strict": [],
+    "relaxed": []
   },
-  "viewBounds": {
-    "minX": -8,
-    "maxX": 8,
-    "minY": -7.5,
-    "maxY": 8.5
-  },
-  "detailBounds": {
-    "minX": -4.65,
-    "maxX": -0.15,
-    "minY": -3.1,
-    "maxY": -0.56875
-  }
+  "independentAuditSha256": "c35d22df7a037695d1d06685cfae688422bd70ad2f1e1dd2b1cd45c10d00bd76"
 }
