@@ -1,8 +1,8 @@
 # repair04
 
-> **Benchmark correction:** the original wrapper omitted dedicated via-in-pad and via-to-pad checks. Its reported passing-board totals are withdrawn. The sample006 repair is corrected; the complete dataset is being rerun with both checks. PR #2420 remains in draft.
+> **Benchmark correction:** the original wrapper omitted dedicated via-in-pad and via-to-pad checks. Its reported passing-board totals are withdrawn. The complete corrected V9 run passes 1/15 current boards and 1/37 older boards, up from zero; the requested +30% improvement is not established. PR #2420 remains in draft.
 
-A bounded, incremental DRC repair solver for routed Simple Route JSON. By default it searches for same-layer clearance paths, adjusts bends, replaces short polyline spans, and adds doglegs while preserving every existing via, region boundary, terminal, and required electrical junction. Via movement and local layer bridges require `allowLayerChanges: true`; new or moved vias must clear pads even on the same net.
+A bounded, incremental DRC repair solver for routed Simple Route JSON. By default it searches for same-layer clearance paths, adjusts bends, replaces short polyline spans, and adds doglegs while preserving every existing via, region boundary, terminal, and required electrical junction. Callers can separately permit selected existing vias to move with `movableVias`, or enable local layer bridges with `allowLayerChanges: true`. New or moved vias must clear pads even on the same net.
 
 ```sh
 bun add github:tscircuit/repair04
@@ -45,9 +45,15 @@ const candidate = mergeRepairRegion({
 - Original endpoints, port points, tee contacts, shared vias, boundary segments, and atomic through-obstacle spans are fixed. The merge validates both geometry and metadata and rejects stale source state.
 - Fixed preloaded copper, relevant pads and keepouts, and local board edges remain in the regional context. Unrelated geometry and embedded full-board state are excluded.
 - `Repair04Solver` takes only the serializable local problem. The caller retains source provenance and the enclosing board. Use extraction to provide fixed cut points where traces cross the mutable boundary.
-- New bends retain copper width. Existing vias keep their exact positions, layer transitions, and diameters by default. With `allowLayerChanges: true`, vias move as complete layer transitions and new/moved vias must clear every pad. Variable-width spans are not simplified into narrower copper.
+- New bends retain copper width. Existing vias keep their exact positions, layer transitions, and diameters by default. Explicitly permitted vias move as complete layer transitions, and new/moved vias must clear every pad. Variable-width spans are not simplified into narrower copper.
 
-A step evaluates at most one candidate. `maxCandidates` gives a deterministic search budget. Clearance paths use a bounded 0.1 mm grid, refined to half the copper width for traces at most 0.1 mm wide, with at most 30,000 expanded states per path. With explicit `allowLayerChanges: true`, they can change layers using the existing via diameter after a bounded trace-only search. `solved` means that the optimization finished; unresolved DRC is reported by `stats.finalErrorCount`. Invalid geometry throws. `getOutput()` is available only after a completed solve and returns a copy.
+A step evaluates at most one candidate. `maxCandidates` gives a deterministic search budget. Clearance paths use a bounded 0.1 mm grid, refined to half the copper width for traces at most 0.1 mm wide, with at most 30,000 expanded states per path. `solved` means that the optimization finished; unresolved DRC is reported by `stats.finalErrorCount`. Invalid geometry throws. `getOutput()` is available only after a completed solve and returns a copy.
+
+The optional geometry permissions and search order are separate:
+
+- `movableVias: [{ routeIndex, viaIndex }]` permits only the listed existing local vias to move in XY, even when `allowLayerChanges` is false. `routeIndex` refers to the cropped input routes; `viaIndex` is the physical via ordinal returned by `getRepairViaGeometry(route, layerCount)`. Selected vias must be unlocked. A nonempty list preserves every via's count, owner, layer sequence, and diameter and fixes all unselected positions, including when `allowLayerChanges` is true. Adding, removing, or merging vias is forbidden in this mode.
+- `allowLayerChanges: true` enables local bridges and general via movement when no nonempty `movableVias` constraint is supplied. Bridges use the route's existing via diameter. The default is false.
+- `traceOnlyFirst` defaults to true. With layer changes permitted, false skips the preliminary planar search, for callers that already ran a planar pass. It never grants permission to add or move a via. When layer changes are disabled, the path search stays on the same layer regardless of this flag; selected existing-via relocation remains controlled separately by `movableVias`.
 
 The local score combines repair03's indexed copper checks with generic and rotated obstacle checks. Wire vertices on both sides of each via are explicit, so neither via-adjacent trace segment disappears from the score. A caller must still validate the merged board with its independent DRC implementation. Pipeline9 performs that check before accepting a region.
 
@@ -82,6 +88,8 @@ The Pipeline9 integration includes full-run and checkpoint replay scripts. Repla
 
 The integration and complete benchmark report are tracked in [tscircuit-autorouter PR #2420](https://github.com/tscircuit/tscircuit-autorouter/pull/2420).
 
-The original 5/15 and 8/37 passing totals used incomplete via-pad coverage and are withdrawn. The corrected full benchmark uses production solver commit `924ad489e1757278f14b3fb59d2cdd7f05d9e25b`, identical expanded checks on both sides, and every board in each published dataset revision. A +30% improvement is not currently established.
+The original 5/15 and 8/37 passing totals used incomplete via-pad coverage and are withdrawn. The complete corrected V9 benchmark uses solver commit `924ad489e1757278f14b3fb59d2cdd7f05d9e25b` and autorouter commit `318f07d9682c115e86475248b27b76b73718345f`, identical expanded checks on both sides, and every board in each published dataset revision. It changes the current 15-board revision from 0 to 1 passing board (+6.67 percentage points) and the older 37-board revision from 0 to 1 (+2.70 points). Eight of 37 candidate runs time out, including seven of the current 15; every timeout remains in its denominator. A relative increase is undefined from a zero-pass baseline, and a +30-percentage-point improvement is not established.
+
+V9 also has a known regression outside SRJ33: bugreport94 reproduces 14 DRC errors against an unchanged limit of 5, taking about 1,387 seconds and exceeding its 300-second test budget. The current selected-via and search-order APIs have focused safety coverage; these API changes do not establish a new complete dataset result or an all-green CI run.
 
 The [benchmark report and saved-output verification](https://github.com/tscircuit/tscircuit-autorouter/blob/codex/repair04-bounded-drc/docs/benchmarks/repair04/repair04-srj33-report.md) are being replaced with corrected results and provenance. Historical V8 evidence is explicitly superseded.

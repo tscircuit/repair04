@@ -32,11 +32,11 @@ export type Repair04SolverInput = RepairRegionInput & {
   maxCandidates?: number
   traceClearance?: number
   viaClearance?: number
-  /** Opt in to moving/adding vias; defaults to trace-only edits with fixed vias. */
+  /** Permit layer bridges and general via edits unless movableVias constrains them; defaults to false. */
   allowLayerChanges?: boolean
-  /** Run a planar search before permitted layer changes; defaults to true. */
+  /** Search planar paths first (default true); false only changes search order and grants no via permission. */
   traceOnlyFirst?: boolean
-  /** Only these existing via ordinals may move in XY; count, span and diameter remain fixed. */
+  /** Permit selected existing vias to move in XY independently of allowLayerChanges; a nonempty list fixes all other via geometry, counts, spans, and diameters. */
   movableVias?: readonly { routeIndex: number; viaIndex: number }[]
 }
 
