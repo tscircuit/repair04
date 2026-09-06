@@ -1,7 +1,6 @@
 # repair04
 
-> **Correction in progress:** the original benchmark omitted the dedicated via-in-pad and via-to-pad checks. Several saved outputs, including sample006, therefore contain violations despite passing that narrower checker. The original passing-board totals below are historical and do not establish the requested DRC improvement with these checks included. PR #2420 is back in draft while the repair and benchmark are corrected.
-
+> **Benchmark correction:** the original wrapper omitted dedicated via-in-pad and via-to-pad checks. Its reported passing-board totals are withdrawn. The sample006 repair is corrected; the complete dataset is being rerun with both checks. PR #2420 remains in draft.
 
 A bounded, incremental DRC repair solver for routed Simple Route JSON. By default it searches for same-layer clearance paths, adjusts bends, replaces short polyline spans, and adds doglegs while preserving every existing via, region boundary, terminal, and required electrical junction. Via movement and local layer bridges require `allowLayerChanges: true`; new or moved vias must clear pads even on the same net.
 
@@ -52,7 +51,11 @@ A step evaluates at most one candidate. `maxCandidates` gives a deterministic se
 
 The local score combines repair03's indexed copper checks with generic and rotated obstacle checks. Wire vertices on both sides of each via are explicit, so neither via-adjacent trace segment disappears from the score. A caller must still validate the merged board with its independent DRC implementation. Pipeline9 performs that check before accepting a region.
 
-The corrected Pipeline9 sample006 result passes default and relaxed DRC including via-in-pad and via-to-pad checks. Its complete before/after outputs have the same ten via locations: repair04 uses trace-only edits. The corrected illustration and full dataset revalidation are being prepared in PR #2420.
+The corrected sample006 comparison uses complete final Pipeline9 outputs: the disabled baseline has **1 DRC issue**, and the enabled candidate has **0** under both default and relaxed checks, including via-in-pad and via-to-pad checks. All **10 vias are exactly identical** between final outputs, including trace/net ownership, positions, layer spans, copper diameters, and drill diameters; only two traces change geometry. Within the pipeline, repair04 reduces the issue count from 2 to 1 while preserving every existing via, and the normal downstream joint stage resolves the remaining issue. This is a one-board example, not a dataset improvement claim.
+
+![Corrected sample006 final-output comparison: one DRC issue to zero, with all ten vias unchanged](docs/repair04-sample006-corrected.svg)
+
+The [independent audit and exact input/output hashes](docs/repair04-sample006-corrected-metrics.json) record the complete checks and via identities. The overview shows a 16 × 16 mm viewing window, with enlarged detail of the trace rerouted below the pad row.
 
 ## Development
 
@@ -79,6 +82,6 @@ The Pipeline9 integration includes full-run and checkpoint replay scripts. Repla
 
 The integration and complete benchmark report are tracked in [tscircuit-autorouter PR #2420](https://github.com/tscircuit/tscircuit-autorouter/pull/2420).
 
-The complete current published SRJ33 revision improves from **0/15 to 5/15 passing boards (+33.33 percentage points)**. The older autorouter-pinned revision improves from **0/37 to 8/37 (+21.62 points)**. Default and relaxed DRC agree. These results measure repair04 together with the integration's downstream joint-proposal acceptance guard; relative improvement is undefined from a zero-pass baseline. Two candidate timeouts remain failures, and older board 036 increases from three errors to four.
+The original 5/15 and 8/37 passing totals used incomplete via-pad coverage and are withdrawn. The corrected full benchmark uses production solver commit `924ad489e1757278f14b3fb59d2cdd7f05d9e25b`, identical expanded checks on both sides, and every board in each published dataset revision. A +30% improvement is not currently established.
 
-The [full report and saved-output verification](https://github.com/tscircuit/tscircuit-autorouter/blob/codex/repair04-bounded-drc/docs/benchmarks/repair04/repair04-srj33-report.md) include every board, exact source and dataset revisions, replay identity gates, and runtime limitations. The benchmarked solver code is commit `a284c44ff77a6ad30131fb8c78e8663ae54f4bf6`; subsequent README changes do not change that code.
+The [benchmark report and saved-output verification](https://github.com/tscircuit/tscircuit-autorouter/blob/codex/repair04-bounded-drc/docs/benchmarks/repair04/repair04-srj33-report.md) are being replaced with corrected results and provenance. Historical V8 evidence is explicitly superseded.
