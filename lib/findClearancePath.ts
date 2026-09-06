@@ -268,6 +268,9 @@ export function findClearancePath(input: {
     }
   }
   let queryId = 0
+  // Exact-distance helpers are synchronous and retain no point references.
+  const localA = { x: 0, y: 0 }
+  const localB = { x: 0, y: 0 }
   const clear = (a: Point, b: Point): boolean => {
     const isVia = a.z !== b.z
     const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
@@ -286,27 +289,23 @@ export function findClearancePath(input: {
       maxX = Math.max(a.x, b.x)
     const minY = Math.min(a.y, b.y),
       maxY = Math.max(a.y, b.y)
-    for (
-      let x = Math.floor(Math.min(a.x, b.x) - reach);
-      x <= Math.floor(Math.max(a.x, b.x) + reach);
-      x++
-    ) {
+    const minZ = Math.min(a.z, b.z),
+      maxZ = Math.max(a.z, b.z)
+    for (let x = Math.floor(minX - reach); x <= Math.floor(maxX + reach); x++) {
       const column = cells.get(x)
       if (!column) continue
       for (
-        let y = Math.floor(Math.min(a.y, b.y) - reach);
-        y <= Math.floor(Math.max(a.y, b.y) + reach);
+        let y = Math.floor(minY - reach);
+        y <= Math.floor(maxY + reach);
         y++
-      )
-        for (const barrier of column.get(y) ?? []) {
+      ) {
+        const bucket = column.get(y)
+        if (!bucket) continue
+        for (const barrier of bucket) {
           if (barrier.viaOnly && !isVia) continue
           if (barrier.visitedQuery === currentQuery) continue
           barrier.visitedQuery = currentQuery
-          if (
-            barrier.maxZ < Math.min(a.z, b.z) ||
-            barrier.minZ > Math.max(a.z, b.z)
-          )
-            continue
+          if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
           const requiredGap = barrier.rect
             ? margin
             : isVia && barrier.minZ !== barrier.maxZ
@@ -325,17 +324,21 @@ export function findClearancePath(input: {
             continue
           let distance: number
           if (barrier.rect) {
-            const local = (p: Point): { x: number; y: number } => ({
-              x:
-                (p.x - barrier.a.x) * barrier.rectCos +
-                (p.y - barrier.a.y) * barrier.rectSin,
-              y:
-                -(p.x - barrier.a.x) * barrier.rectSin +
-                (p.y - barrier.a.y) * barrier.rectCos,
-            })
+            localA.x =
+              (a.x - barrier.a.x) * barrier.rectCos +
+              (a.y - barrier.a.y) * barrier.rectSin
+            localA.y =
+              -(a.x - barrier.a.x) * barrier.rectSin +
+              (a.y - barrier.a.y) * barrier.rectCos
+            localB.x =
+              (b.x - barrier.a.x) * barrier.rectCos +
+              (b.y - barrier.a.y) * barrier.rectSin
+            localB.y =
+              -(b.x - barrier.a.x) * barrier.rectSin +
+              (b.y - barrier.a.y) * barrier.rectCos
             distance = segmentToBoundsMinDistance(
-              local(a),
-              local(b),
+              localA,
+              localB,
               barrier.rectBounds!,
             )
           } else
@@ -344,6 +347,7 @@ export function findClearancePath(input: {
               barrier.radius
           if (distance < clearance) return false
         }
+      }
     }
     return true
   }
