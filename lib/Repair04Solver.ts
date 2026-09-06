@@ -34,6 +34,8 @@ export type Repair04SolverInput = RepairRegionInput & {
   viaClearance?: number
   /** Opt in to moving/adding vias; defaults to trace-only edits with fixed vias. */
   allowLayerChanges?: boolean
+  /** Run a planar search before permitted layer changes; defaults to true. */
+  traceOnlyFirst?: boolean
   /** Only these existing via ordinals may move in XY; count, span and diameter remain fixed. */
   movableVias?: readonly { routeIndex: number; viaIndex: number }[]
 }
@@ -390,7 +392,9 @@ export class Repair04Solver extends BaseSolver {
   private *generateCandidates(): Generator<Candidate> {
     yield* this.generateExistingViaCandidates()
     for (const allowLayerChanges of this.input.allowLayerChanges === true
-      ? [false, true]
+      ? this.input.traceOnlyFirst === false
+        ? [true]
+        : [false, true]
       : [false]) {
       let traceCandidates = 0
       for (const candidate of this.generateCandidatesForMode(
