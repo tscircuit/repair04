@@ -12,15 +12,30 @@ import {
   getSegmentBoundsInterval,
   REGION_EPSILON,
 } from "./repairRegionGeometry"
-import { getFixedObstacleViolations } from "./getFixedObstacleViolations"
+import {
+  getFixedObstacleViolations,
+  type FixedObstacleViolation,
+} from "./getFixedObstacleViolations"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { findClearancePath } from "./findClearancePath"
-import { getNewViaPadViolations } from "./getNewViaPadViolations"
-import { getRepairViaGeometry } from "./getRepairViaGeometry"
+import {
+  getNewViaPadViolations,
+  type NewViaPadViolation,
+} from "./getNewViaPadViolations"
+import {
+  getRepairViaGeometry,
+  type RepairViaGeometry,
+} from "./getRepairViaGeometry"
 
 type Point = HighDensityRoute["route"][number]
 type Candidate = { routeIndex: number; route: HighDensityRoute }
 type RepairTarget = { ri: number; pi: number; distance: number; t: number }
+type RouteCache = {
+  trace?: SimplifiedPcbTrace
+  fixedViolations?: FixedObstacleViolation[]
+  scoredViaViolations?: NewViaPadViolation[]
+  newViaViolations?: NewViaPadViolation[]
+}
 type Score = {
   count: number
   severity: number
@@ -96,6 +111,17 @@ export class Repair04Solver extends BaseSolver {
   private evaluated = 0
   private accepted = 0
   private readonly maxCandidates: number
+  // Only solver-owned clones and immutable candidate routes enter these caches.
+  // A route may occur at multiple indices, so index-dependent IDs stay separate.
+  private readonly routeCache = new WeakMap<
+    HighDensityRoute,
+    Map<number, RouteCache>
+  >()
+  private readonly fixedObstacleNetContext: HighDensityRoute[]
+  private readonly viaGeometryCache = new WeakMap<
+    HighDensityRoute,
+    RepairViaGeometry[]
+  >()
 
   constructor(input: Repair04SolverInput) {
     super()
@@ -112,6 +138,11 @@ export class Repair04Solver extends BaseSolver {
     }
     this.input = structuredClone(input)
     this.routes = structuredClone(input.routes)
+    // Candidate generators preserve route ownership. Retain every alias when
+    // checking one route, without repeatedly checking unchanged copper.
+    this.fixedObstacleNetContext = this.input.routes.map(
+      (route): HighDensityRoute => ({ ...route, route: [] }),
+    )
     this.fixedTraces = (input.srj.traces ?? []).map((trace) =>
       normalizeRepairTrace(trace, input.srj.minTraceWidth),
     )
@@ -185,18 +216,157 @@ export class Repair04Solver extends BaseSolver {
     })
   }
 
+  private getRouteCache(
+    routeIndex: number,
+    route: HighDensityRoute,
+  ): RouteCache {
+    let byIndex = this.routeCache.get(route)
+    if (!byIndex) {
+      byIndex = new Map()
+      this.routeCache.set(route, byIndex)
+    }
+    let cached = byIndex.get(routeIndex)
+    if (!cached) {
+      cached = {}
+      byIndex.set(routeIndex, cached)
+    }
+    return cached
+  }
+
+  private getViaGeometry(route: HighDensityRoute): RepairViaGeometry[] {
+    let geometry = this.viaGeometryCache.get(route)
+    if (!geometry) {
+      geometry = getRepairViaGeometry(route, this.input.srj.layerCount)
+      this.viaGeometryCache.set(route, geometry)
+    }
+    return geometry
+  }
+
+  private getViaPadViolations(
+    routes: HighDensityRoute[],
+    scoreExisting: boolean,
+  ): NewViaPadViolation[] {
+    // Preserve the guard's validation even for an empty region.
+    if (routes.length === 0)
+      return getNewViaPadViolations({
+        srj: this.input.srj,
+        previousRoutes: [],
+        routes: [],
+        viaClearance: this.input.viaClearance,
+      })
+    return routes.flatMap((route, routeIndex): NewViaPadViolation[] => {
+      const cache = this.getRouteCache(routeIndex, route)
+      const key = scoreExisting ? "scoredViaViolations" : "newViaViolations"
+      if (!cache[key]) {
+        const includeExistingVias = !scoreExisting
+          ? []
+          : this.input.allowLayerChanges === true &&
+              !this.input.movableVias?.length
+            ? this.getViaGeometry(route).flatMap(
+                (via, viaIndex): { routeIndex: number; viaIndex: number }[] =>
+                  via.pointIndices.every(
+                    (index): boolean =>
+                      !this.isLocked(routeIndex, route.route[index]!),
+                  )
+                    ? [{ routeIndex: 0, viaIndex }]
+                    : [],
+              )
+            : (this.input.movableVias ?? [])
+                .filter(
+                  (selected): boolean => selected.routeIndex === routeIndex,
+                )
+                .map((selected): { routeIndex: number; viaIndex: number } => ({
+                  routeIndex: 0,
+                  viaIndex: selected.viaIndex,
+                }))
+        cache[key] = getNewViaPadViolations({
+          srj: this.input.srj,
+          previousRoutes: [
+            scoreExisting ? route : this.input.routes[routeIndex]!,
+          ],
+          routes: [route],
+          viaClearance: this.input.viaClearance,
+          includeExistingVias,
+        }).map(
+          (violation): NewViaPadViolation => ({
+            ...violation,
+            routeIndex,
+            key: violation.key.replace(
+              "new-via-pad:0:",
+              `new-via-pad:${routeIndex}:`,
+            ),
+          }),
+        )
+      }
+      return cache[key]!
+    })
+  }
+
+  private getFixedViolations(
+    routes: HighDensityRoute[],
+  ): FixedObstacleViolation[] {
+    if (routes.length === 0)
+      return getFixedObstacleViolations({
+        srj: this.input.srj,
+        routes,
+        traceClearance: this.input.traceClearance,
+        viaClearance: this.input.viaClearance,
+      })
+    const missing = routes.flatMap((route, routeIndex): number[] =>
+      this.getRouteCache(routeIndex, route).fixedViolations === undefined
+        ? [routeIndex]
+        : [],
+    )
+    if (missing.length) {
+      const context = this.fixedObstacleNetContext.slice()
+      for (const routeIndex of missing)
+        context[routeIndex] = routes[routeIndex]!
+      const violations = getFixedObstacleViolations({
+        srj: this.input.srj,
+        routes: context,
+        traceClearance: this.input.traceClearance,
+        viaClearance: this.input.viaClearance,
+      })
+      // Prime all initial routes in one check; subsequent candidates normally
+      // contain only one uncached route. Never retain rejected candidates.
+      for (const routeIndex of missing)
+        this.getRouteCache(routeIndex, routes[routeIndex]!).fixedViolations = []
+      for (const violation of violations)
+        this.getRouteCache(
+          violation.routeIndex,
+          routes[violation.routeIndex]!,
+        ).fixedViolations!.push(violation)
+    }
+    // The uncached checker visits obstacles, then routes, then wire/via points.
+    // Stable sorting restores that exact error order and severity summation.
+    return routes
+      .flatMap(
+        (route, routeIndex): FixedObstacleViolation[] =>
+          this.getRouteCache(routeIndex, route).fixedViolations!,
+      )
+      .sort(
+        (a, b): number =>
+          a.obstacleIndex - b.obstacleIndex || a.routeIndex - b.routeIndex,
+      )
+  }
+
   private evaluate(routes: HighDensityRoute[]): Score {
     const { errors } = this.engine.evaluate([
       ...this.fixedTraces,
-      ...convertRepairRoutesToTraces(routes, this.input.srj.layerCount),
+      ...routes.map((route, routeIndex): SimplifiedPcbTrace => {
+        const cache = this.getRouteCache(routeIndex, route)
+        if (!cache.trace) {
+          cache.trace = convertRepairRoutesToTraces(
+            [route],
+            this.input.srj.layerCount,
+          )[0]!
+          cache.trace.pcb_trace_id = `repair04_${routeIndex}`
+        }
+        return cache.trace
+      }),
     ])
     const fixedViolations = new Map<string, number>()
-    for (const violation of getFixedObstacleViolations({
-      srj: this.input.srj,
-      routes,
-      traceClearance: this.input.traceClearance,
-      viaClearance: this.input.viaClearance,
-    })) {
+    for (const violation of this.getFixedViolations(routes)) {
       fixedViolations.set(violation.key, violation.severity)
       errors.push({
         type: "pcb_trace_error",
@@ -212,30 +382,7 @@ export class Repair04Solver extends BaseSolver {
     // Layer repair must also see existing same-net via-pad defects. The wire
     // checker permits own-pad contact; omitting these can falsely end the
     // search at zero errors. Locked vias remain outside the mutable score.
-    for (const violation of getNewViaPadViolations({
-      srj: this.input.srj,
-      previousRoutes: routes,
-      routes,
-      viaClearance: this.input.viaClearance,
-      includeExistingVias:
-        this.input.allowLayerChanges === true && !this.input.movableVias?.length
-          ? routes.flatMap(
-              (route, routeIndex): { routeIndex: number; viaIndex: number }[] =>
-                getRepairViaGeometry(route, this.input.srj.layerCount).flatMap(
-                  (
-                    via,
-                    viaIndex,
-                  ): { routeIndex: number; viaIndex: number }[] =>
-                    via.pointIndices.every(
-                      (index): boolean =>
-                        !this.isLocked(routeIndex, route.route[index]!),
-                    )
-                      ? [{ routeIndex, viaIndex }]
-                      : [],
-                ),
-            )
-          : this.input.movableVias,
-    })) {
+    for (const violation of this.getViaPadViolations(routes, true)) {
       errors.push({
         type: "pcb_trace_error",
         error_type: "pcb_trace_error",
@@ -354,8 +501,8 @@ export class Repair04Solver extends BaseSolver {
     route: HighDensityRoute,
   ): boolean {
     const original = this.input.routes[routeIndex]!
-    const before = getRepairViaGeometry(original, this.input.srj.layerCount)
-    const after = getRepairViaGeometry(route, this.input.srj.layerCount)
+    const before = this.getViaGeometry(original)
+    const after = this.getViaGeometry(route)
     if (
       route.connectionName !== original.connectionName ||
       route.rootConnectionName !== original.rootConnectionName ||
@@ -382,9 +529,7 @@ export class Repair04Solver extends BaseSolver {
   private *generateExistingViaCandidates(): Generator<Candidate> {
     for (const selected of this.input.movableVias ?? []) {
       const route = this.routes[selected.routeIndex]!
-      const via = getRepairViaGeometry(route, this.input.srj.layerCount)[
-        selected.viaIndex
-      ]!
+      const via = this.getViaGeometry(route)[selected.viaIndex]!
       if (
         via.pointIndices.some((index): boolean =>
           this.isLocked(selected.routeIndex, route.route[index]!),
@@ -774,12 +919,7 @@ export class Repair04Solver extends BaseSolver {
     const score = this.evaluate(candidate)
     this.evaluated++
     const preservesViaPadClearance =
-      getNewViaPadViolations({
-        srj: this.input.srj,
-        previousRoutes: this.input.routes,
-        routes: candidate,
-        viaClearance: this.input.viaClearance,
-      }).length === 0
+      this.getViaPadViolations(candidate, false).length === 0
     const preservesFixedObstacles = [...score.fixedViolations].every(
       ([key, severity]) =>
         this.score!.fixedViolations.has(key) &&

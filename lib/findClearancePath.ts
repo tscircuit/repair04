@@ -22,6 +22,10 @@ type Barrier = {
   a: Point
   b: Point
   rect?: { width: number; height: number; rotation: number }
+  rectCos: number
+  rectSin: number
+  rectBounds?: Bounds
+  visitedQuery: number
 }
 type SearchNode = { id: number; cost: number; priority: number }
 
@@ -96,6 +100,17 @@ export function findClearancePath(input: {
       radius,
       rect,
       viaOnly,
+      rectCos: rect ? Math.cos(rect.rotation) : 1,
+      rectSin: rect ? Math.sin(rect.rotation) : 0,
+      rectBounds: rect
+        ? {
+            minX: -rect.width / 2,
+            maxX: rect.width / 2,
+            minY: -rect.height / 2,
+            maxY: rect.height / 2,
+          }
+        : undefined,
+      visitedQuery: 0,
       minX: Math.min(a.x, b.x) - extent,
       maxX: Math.max(a.x, b.x) + extent,
       minY: Math.min(a.y, b.y) - extent,
@@ -194,6 +209,7 @@ export function findClearancePath(input: {
         else cells.set(key, [barrier])
       }
   }
+  let queryId = 0
   const clear = (a: Point, b: Point): boolean => {
     const isVia = a.z !== b.z
     const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
@@ -205,7 +221,13 @@ export function findClearancePath(input: {
         : (srj.minTraceToPadEdgeClearance ?? 0),
     )
     const reach = radius + margin + 1e-5
-    const seen = new Set<Barrier>()
+    // Barriers belong to this synchronous search only. A visit stamp preserves
+    // the original first-seen order without allocating a Set for each edge.
+    const currentQuery = ++queryId
+    const minX = Math.min(a.x, b.x),
+      maxX = Math.max(a.x, b.x)
+    const minY = Math.min(a.y, b.y),
+      maxY = Math.max(a.y, b.y)
     for (
       let x = Math.floor(Math.min(a.x, b.x) - reach);
       x <= Math.floor(Math.max(a.x, b.x) + reach);
@@ -218,40 +240,49 @@ export function findClearancePath(input: {
       )
         for (const barrier of cells.get(`${x},${y}`) ?? []) {
           if (barrier.viaOnly && !isVia) continue
-          if (seen.has(barrier)) continue
-          seen.add(barrier)
+          if (barrier.visitedQuery === currentQuery) continue
+          barrier.visitedQuery = currentQuery
           if (
             barrier.maxZ < Math.min(a.z, b.z) ||
             barrier.minZ > Math.max(a.z, b.z)
           )
             continue
-          let distance: number
-          if (barrier.rect) {
-            const { rotation, width, height } = barrier.rect
-            const local = (p: Point): { x: number; y: number } => ({
-              x:
-                (p.x - barrier.a.x) * Math.cos(rotation) +
-                (p.y - barrier.a.y) * Math.sin(rotation),
-              y:
-                -(p.x - barrier.a.x) * Math.sin(rotation) +
-                (p.y - barrier.a.y) * Math.cos(rotation),
-            })
-            distance = segmentToBoundsMinDistance(local(a), local(b), {
-              minX: -width / 2,
-              maxX: width / 2,
-              minY: -height / 2,
-              maxY: height / 2,
-            })
-          } else
-            distance =
-              segmentToSegmentMinDistance(a, b, barrier.a, barrier.b) -
-              barrier.radius
           const requiredGap = barrier.rect
             ? margin
             : isVia && barrier.minZ !== barrier.maxZ
               ? input.viaClearance
               : input.traceClearance
-          if (distance < radius + requiredGap + 1e-5) return false
+          const clearance = radius + requiredGap + 1e-5
+          // These bounds enclose the entire copper/rotated obstacle. Strict
+          // separation can only rule out a collision; exact boundary cases
+          // still use the same distance calculation and tolerance below.
+          if (
+            maxX + clearance < barrier.minX ||
+            minX - clearance > barrier.maxX ||
+            maxY + clearance < barrier.minY ||
+            minY - clearance > barrier.maxY
+          )
+            continue
+          let distance: number
+          if (barrier.rect) {
+            const local = (p: Point): { x: number; y: number } => ({
+              x:
+                (p.x - barrier.a.x) * barrier.rectCos +
+                (p.y - barrier.a.y) * barrier.rectSin,
+              y:
+                -(p.x - barrier.a.x) * barrier.rectSin +
+                (p.y - barrier.a.y) * barrier.rectCos,
+            })
+            distance = segmentToBoundsMinDistance(
+              local(a),
+              local(b),
+              barrier.rectBounds!,
+            )
+          } else
+            distance =
+              segmentToSegmentMinDistance(a, b, barrier.a, barrier.b) -
+              barrier.radius
+          if (distance < clearance) return false
         }
     return true
   }

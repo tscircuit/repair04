@@ -102,16 +102,6 @@ const getObstacleZLayers = (
   return layers
 }
 
-const toObstacleCoordinates = (point: Point, obstacle: Obstacle): Point => {
-  const radians = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
-  const dx = point.x - obstacle.center.x
-  const dy = point.y - obstacle.center.y
-  return {
-    x: dx * Math.cos(radians) + dy * Math.sin(radians),
-    y: -dx * Math.sin(radians) + dy * Math.cos(radians),
-  }
-}
-
 /**
  * Supplement repair03's pad DRC with generic keepouts and exact rotated
  * rectangles. Axis-aligned recognized pads remain with the existing engine.
@@ -160,6 +150,24 @@ export const getFixedObstacleViolations = ({
       minY: -obstacle.height / 2,
       maxY: obstacle.height / 2,
     }
+    const radians = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
+    const cosine = Math.cos(radians)
+    const sine = Math.sin(radians)
+    const extent = Math.hypot(obstacle.width, obstacle.height) / 2
+    const toLocal = (point: Point): Point => {
+      const dx = point.x - obstacle.center.x
+      const dy = point.y - obstacle.center.y
+      return { x: dx * cosine + dy * sine, y: -dx * sine + dy * cosine }
+    }
+    const separated = (
+      start: Point,
+      end: Point,
+      copperReach: number,
+    ): boolean =>
+      Math.max(start.x, end.x) + copperReach < obstacle.center.x - extent ||
+      Math.min(start.x, end.x) - copperReach > obstacle.center.x + extent ||
+      Math.max(start.y, end.y) + copperReach < obstacle.center.y - extent ||
+      Math.min(start.y, end.y) - copperReach > obstacle.center.y + extent
     const isBoardEdge =
       obstacle.obstacleId?.startsWith("repair04_board_edge_") === true
     const wireGap = isBoardEdge
@@ -193,8 +201,6 @@ export const getFixedObstacleViolations = ({
         const start = route.route[pointIndex - 1]! as RepairRoutePoint
         const end = route.route[pointIndex]! as RepairRoutePoint
         if (start.toNextSegmentType === "through_obstacle") continue
-        const localStart = toObstacleCoordinates(start, obstacle)
-        const localEnd = toObstacleCoordinates(end, obstacle)
         if (start.z !== end.z) {
           if (
             !Array.from(zLayers).some(
@@ -208,6 +214,10 @@ export const getFixedObstacleViolations = ({
             Math.abs(start.y - end.y) > 1e-8
           )
             throw new Error("repair04 found a non-colocated via transition")
+          // Validate the transition above before rejecting distant geometry.
+          if (separated(start, start, route.viaDiameter / 2 + viaGap + 1e-8))
+            continue
+          const localStart = toLocal(start)
           const distance = segmentToBoundsMinDistance(
             localStart,
             localStart,
@@ -233,9 +243,12 @@ export const getFixedObstacleViolations = ({
             start.traceThickness ?? route.traceThickness,
             end.traceThickness ?? route.traceThickness,
           ) / 2
+        // A circumscribed rectangle bound can only reject strict separation;
+        // near-boundary copper still receives the original exact calculation.
+        if (separated(start, end, radius + wireGap + 1e-8)) continue
         const distance = segmentToBoundsMinDistance(
-          localStart,
-          localEnd,
+          toLocal(start),
+          toLocal(end),
           obstacleBounds,
         )
         const severity = radius + wireGap - distance

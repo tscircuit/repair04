@@ -122,6 +122,18 @@ export const getNewViaPadViolations = ({
             "repair04 new-via guard found invalid obstacle geometry",
           )
         }
+        // Keep all layer/geometry validation above the conservative rejection.
+        // The diagonal radius encloses the obstacle at every rotation.
+        const reach =
+          Math.hypot(obstacle.width, obstacle.height) / 2 +
+          via.diameter / 2 +
+          clearance +
+          1e-8
+        if (
+          Math.abs(via.x - obstacle.center.x) > reach ||
+          Math.abs(via.y - obstacle.center.y) > reach
+        )
+          continue
         const radians = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
         const dx = via.x - obstacle.center.x
         const dy = via.y - obstacle.center.y
