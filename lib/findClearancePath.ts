@@ -20,7 +20,6 @@ type Barrier = {
   maxZ: number
   radius: number
   viaOnly?: boolean
-  wireOnly?: boolean
   pad?: boolean
   a: Point
   b: Point
@@ -131,7 +130,6 @@ export function findClearancePath(input: {
     radius: number,
     rect?: Barrier["rect"],
     viaOnly = false,
-    wireOnly = false,
     pad = false,
   ): void => {
     const extent = rect ? Math.hypot(rect.width, rect.height) / 2 : radius
@@ -160,7 +158,6 @@ export function findClearancePath(input: {
       radius,
       rect,
       viaOnly,
-      wireOnly,
       pad,
       rectCos,
       rectSin,
@@ -186,7 +183,7 @@ export function findClearancePath(input: {
       obstacle.zLayers ??
       obstacle.layers.map(layer)
     for (const z of zs) {
-      if (obstacle.type === "oval" && !viaOnly) {
+      if (obstacle.type === "oval") {
         const angle = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
         const horizontal = obstacle.width >= obstacle.height
         const halfSpine = Math.abs(obstacle.width - obstacle.height) / 2
@@ -196,8 +193,9 @@ export function findClearancePath(input: {
           { x: obstacle.center.x - dx, y: obstacle.center.y - dy, z },
           { x: obstacle.center.x + dx, y: obstacle.center.y + dy, z },
           Math.min(obstacle.width, obstacle.height) / 2,
-          undefined, false, true, true,
+          undefined, viaOnly, true,
         )
+        continue
       }
       add(
         { ...obstacle.center, z },
@@ -208,7 +206,7 @@ export function findClearancePath(input: {
           height: obstacle.height,
           rotation: ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180,
         },
-        viaOnly || obstacle.type === "oval",
+        viaOnly,
       )
     }
   }
@@ -322,7 +320,7 @@ export function findClearancePath(input: {
         const bucket = column.get(y)
         if (!bucket) continue
         for (const barrier of bucket) {
-          if ((barrier.viaOnly && !isVia) || (barrier.wireOnly && isVia)) continue
+          if (barrier.viaOnly && !isVia) continue
           if (barrier.visitedQuery === currentQuery) continue
           barrier.visitedQuery = currentQuery
           if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue

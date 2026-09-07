@@ -1,11 +1,11 @@
 import {
   pointToSegmentClosestPoint,
-  segmentToBoundsMinDistance,
 } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
 } from "high-density-repair03/lib"
+import { getLocalObstacleGeometry, getLocalObstacleDistance, type ObstacleDistanceGeometry } from "./obstacleDistanceGeometry"
 import type { RepairRoutePoint } from "./repairRegionTypes"
 
 export type FixedObstacleViolation = {
@@ -107,7 +107,7 @@ type PreparedObstacle = {
   obstacle: Obstacle
   zLayers: Set<number>
   obstacleNets: Set<string>
-  obstacleBounds: { minX: number; maxX: number; minY: number; maxY: number }
+  shape: ObstacleDistanceGeometry
   toLocal: (point: Point) => Point
   separated: (start: Point, end: Point, copperReach: number) => boolean
   wireGap: number
@@ -171,12 +171,7 @@ const createEvaluator = ({
       const obstacleNets = new Set(
         obstacle.connectedTo.map((name) => nets.get(name) ?? name),
       )
-      const obstacleBounds = {
-        minX: -obstacle.width / 2,
-        maxX: obstacle.width / 2,
-        minY: -obstacle.height / 2,
-        maxY: obstacle.height / 2,
-      }
+      const shape = getLocalObstacleGeometry(obstacle)
       const radians = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
       const cosine = Math.cos(radians)
       const sine = Math.sin(radians)
@@ -216,7 +211,7 @@ const createEvaluator = ({
         obstacle,
         zLayers,
         obstacleNets,
-        obstacleBounds,
+        shape,
         toLocal,
         separated,
         wireGap,
@@ -241,7 +236,7 @@ const createEvaluator = ({
       obstacle,
       zLayers,
       obstacleNets,
-      obstacleBounds,
+      shape,
       toLocal,
       separated,
       wireGap,
@@ -284,10 +279,10 @@ const createEvaluator = ({
             if (separated(start, start, route.viaDiameter / 2 + viaGap + 1e-8))
               continue
             const localStart = toLocal(start)
-            const distance = segmentToBoundsMinDistance(
+            const distance = getLocalObstacleDistance(
               localStart,
               localStart,
-              obstacleBounds,
+              shape,
             )
             const severity = route.viaDiameter / 2 + viaGap - distance
             if (severity <= 1e-8) continue
@@ -312,10 +307,10 @@ const createEvaluator = ({
           // A circumscribed rectangle bound can only reject strict separation;
           // near-boundary copper still receives the original exact calculation.
           if (separated(start, end, radius + wireGap + 1e-8)) continue
-          const distance = segmentToBoundsMinDistance(
+          const distance = getLocalObstacleDistance(
             toLocal(start),
             toLocal(end),
-            obstacleBounds,
+            shape,
           )
           const severity = radius + wireGap - distance
           if (severity <= 1e-8) continue

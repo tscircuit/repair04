@@ -2,7 +2,7 @@ import {
   getRepairViaGeometry,
   type RepairViaGeometry,
 } from "./getRepairViaGeometry"
-import { segmentToBoundsMinDistance } from "@tscircuit/math-utils"
+import { getLocalObstacleGeometry, getLocalObstacleDistance, type ObstacleDistanceGeometry } from "./obstacleDistanceGeometry"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
@@ -45,7 +45,7 @@ type PreparedObstacle = {
     cosine: number
     sine: number
     extent: number
-    bounds: { minX: number; minY: number; maxX: number; maxY: number }
+    shape: ObstacleDistanceGeometry
   }
 }
 
@@ -126,12 +126,7 @@ const createEvaluator = ({
           cosine: Math.cos(radians),
           sine: Math.sin(radians),
           extent: Math.hypot(obstacle.width, obstacle.height) / 2,
-          bounds: {
-            minX: -obstacle.width / 2,
-            maxX: obstacle.width / 2,
-            minY: -obstacle.height / 2,
-            maxY: obstacle.height / 2,
-          },
+          shape: getLocalObstacleGeometry(obstacle),
         }
       }
       const geometry = prepared.geometry
@@ -147,7 +142,7 @@ const createEvaluator = ({
         x: dx * geometry.cosine + dy * geometry.sine,
         y: -dx * geometry.sine + dy * geometry.cosine,
       }
-      const distance = segmentToBoundsMinDistance(local, local, geometry.bounds)
+      const distance = getLocalObstacleDistance(local, local, geometry.shape)
       const severity = via.diameter / 2 + clearance - distance
       if (severity <= 1e-8) continue
       contacts.push({ obstacleIndex, severity })

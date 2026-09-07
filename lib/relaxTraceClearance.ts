@@ -1,6 +1,7 @@
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import type { HighDensityRoute } from "high-density-repair03/lib"
 import { getNewViaPadViolations } from "./getNewViaPadViolations"
+import { getLocalObstacleGeometry, getLocalObstacleDistance, type ObstacleDistanceGeometry } from "./obstacleDistanceGeometry"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
 import type { Bounds, RepairRegionInput, RepairRoutePoint } from "./repairRegionTypes"
 
@@ -17,10 +18,11 @@ type Segment = {
   via: boolean
 }
 type Contact = { s: number; t: number; x: number; y: number; distance: number }
-type ViaPadConstraint = { center: Point; cosine: number; sine: number; halfWidth: number; halfHeight: number; clearance: number }
+type ViaPadConstraint = { center: Point; cosine: number; sine: number; shape: ObstacleDistanceGeometry; clearance: number }
 type PadContact = {
   segment: Segment
   corners: Point[]
+  capsule?: { a: Point; b: Point; radius: number }
 }
 
 const MAX_SWEEPS = 256
@@ -157,11 +159,22 @@ export function relaxTraceClearance(input: RepairRegionInput & {
       if (Math.min(...corners.map((a, i) => segmentToSegmentMinDistance(
         segment.a, segment.b, a, corners[(i + 1) % 4]!,
       ))) > reach) continue
-      padContacts.push({ segment, corners })
+      let capsule: PadContact["capsule"]
+      if (obstacle.type === "oval") {
+        const halfSpine = Math.abs(obstacle.width - obstacle.height) / 2
+        const horizontal = obstacle.width >= obstacle.height
+        const dx = halfSpine * (horizontal ? cosine : -sine)
+        const dy = halfSpine * (horizontal ? sine : cosine)
+        capsule = {
+          a: { x: obstacle.center.x - dx, y: obstacle.center.y - dy },
+          b: { x: obstacle.center.x + dx, y: obstacle.center.y + dy },
+          radius: Math.min(obstacle.width, obstacle.height) / 2,
+        }
+      }
+      padContacts.push({ segment, corners, capsule })
       if (segment.via) {
         const constraint: ViaPadConstraint = {
-          center: obstacle.center, cosine, sine, halfWidth: obstacle.width / 2,
-          halfHeight: obstacle.height / 2,
+          center: obstacle.center, cosine, sine, shape: getLocalObstacleGeometry(obstacle),
           clearance: segment.radius + Math.max(viaClearance,
             input.srj.defaultObstacleMargin ?? 0, input.srj.minViaEdgeToPadEdgeClearance ?? 0),
         }
@@ -192,8 +205,8 @@ export function relaxTraceClearance(input: RepairRegionInput & {
         const dx = x - pad.center.x, dy = y - pad.center.y
         const localX = dx * pad.cosine + dy * pad.sine
         const localY = -dx * pad.sine + dy * pad.cosine
-        return Math.hypot(Math.max(0, Math.abs(localX) - pad.halfWidth),
-          Math.max(0, Math.abs(localY) - pad.halfHeight)) < pad.clearance
+        const local = { x: localX, y: localY }
+        return getLocalObstacleDistance(local, local, pad.shape) < pad.clearance
       })) continue
       vertex.x = x
       vertex.y = y
@@ -211,10 +224,12 @@ export function relaxTraceClearance(input: RepairRegionInput & {
     }
     for (const pad of padContacts) {
       const { segment, corners } = pad
-      const contact = corners.map((a, i) => getContact(segment.a, segment.b, a, corners[(i + 1) % 4]!))
-        .reduce((a, b) => a.distance < b.distance ? a : b)
+      const contact = pad.capsule
+        ? getContact(segment.a, segment.b, pad.capsule.a, pad.capsule.b)
+        : corners.map((a, i) => getContact(segment.a, segment.b, a, corners[(i + 1) % 4]!))
+          .reduce((a, b) => a.distance < b.distance ? a : b)
       if (contact.distance < 1e-10) continue
-      const required = segment.radius + Math.max(
+      const required = segment.radius + (pad.capsule?.radius ?? 0) + Math.max(
         segment.via ? viaClearance : traceClearance, input.srj.defaultObstacleMargin ?? 0,
         segment.via ? (input.srj.minViaEdgeToPadEdgeClearance ?? 0) : (input.srj.minTraceToPadEdgeClearance ?? 0),
       ) + CLEARANCE_SLACK
