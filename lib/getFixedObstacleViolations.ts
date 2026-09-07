@@ -144,7 +144,11 @@ const createEvaluator = ({
         /^(pcb_smtpad_|pcb_plated_hole_|pcb_port_)/.test(id),
       )
       const rotated = Math.abs((obstacle.ccwRotationDegrees ?? 0) % 180) > 1e-8
-      if (recognizedPad && !rotated) {
+      const rectangularPlatedHole =
+        obstacle.type === "rect" &&
+        obstacle.layers.length > 1 &&
+        Math.abs(obstacle.width - obstacle.height) < 0.001
+      if (recognizedPad && !rotated && !rectangularPlatedHole) {
         preparedByIndex.set(obstacleIndex, null)
         continue
       }
@@ -350,7 +354,8 @@ export const createFixedObstacleViolationEvaluator = (
 
 /**
  * Supplement repair03's pad DRC with generic keepouts and exact rotated
- * rectangles. Axis-aligned recognized pads remain with the existing engine.
+ * rectangles. Axis-aligned recognized pads remain with the existing engine,
+ * except near-square multilayer rectangles whose corners its circular model omits.
  * Each public call observes its current input and uses no cross-call cache.
  */
 export const getFixedObstacleViolations = (
