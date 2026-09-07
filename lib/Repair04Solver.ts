@@ -496,6 +496,85 @@ export class Repair04Solver extends BaseSolver {
     )
   }
 
+  private *generateTaperedSegmentCandidates(
+    targets: RepairTarget[],
+  ): Generator<Candidate> {
+    // Uniform-width rerouting cannot preserve a taper. Translate a short run of
+    // free bends together, keeping each width and both surrounding attachments.
+    // At most eight windows, two offsets and eight directions share the normal
+    // candidate budget; no path search or additional via permission is needed.
+    const searched = new Set<string>()
+    for (const { ri, pi } of targets) {
+      if (
+        !this.score!.errors.some(
+          (error): boolean => error.pcb_trace_id === `repair04_${ri}`,
+        )
+      )
+        continue
+      const route = this.routes[ri]!
+      for (const [lo, hi] of [
+        [pi - 2, pi + 1],
+        [pi - 2, pi],
+        [pi - 1, pi + 1],
+        [pi - 1, pi],
+      ] as const) {
+        if (searched.size >= 8) return
+        if (lo <= 0 || hi >= route.route.length - 1) continue
+        const key = `${ri}:${lo}:${hi}`
+        if (searched.has(key)) continue
+        const points = route.route.slice(lo, hi + 1)
+        const layer = points[0]!.z
+        if (
+          !inside(route.route[lo - 1]!, this.mutableBounds) ||
+          !inside(route.route[hi + 1]!, this.mutableBounds) ||
+          route.route[lo - 1]!.z !== layer ||
+          route.route[hi + 1]!.z !== layer ||
+          points.some(
+            (point): boolean =>
+              point.z !== layer ||
+              this.isLocked(ri, point) ||
+              Boolean((point as Point & { portPointId?: string }).portPointId) ||
+              route.vias.some(
+                (via): boolean => via.x === point.x && via.y === point.y,
+              ),
+          )
+        )
+          continue
+        const widths = new Set(
+          points.map(
+            (point): number =>
+              (point as Point & { traceThickness?: number }).traceThickness ??
+              route.traceThickness,
+          ),
+        )
+        if (widths.size < 2) continue
+        searched.add(key)
+        for (const amount of [0.1, 0.05]) {
+          for (let direction = 0; direction < 8; direction++) {
+            const dx = amount * Math.cos((direction * Math.PI) / 4)
+            const dy = amount * Math.sin((direction * Math.PI) / 4)
+            const moved = points.map(
+              (point): Point => ({ ...point, x: point.x + dx, y: point.y + dy }),
+            )
+            if (moved.some((point): boolean => !inside(point, this.mutableBounds)))
+              continue
+            yield {
+              routeIndex: ri,
+              route: {
+                ...route,
+                route: [
+                  ...route.route.slice(0, lo),
+                  ...moved,
+                  ...route.route.slice(hi + 1),
+                ],
+              },
+            }
+          }
+        }
+      }
+    }
+  }
+
   private *generateClearanceCandidates(
     targets: RepairTarget[],
     allowLayerChanges: boolean,
@@ -726,6 +805,7 @@ export class Repair04Solver extends BaseSolver {
     targets.sort(
       (a, b) => a.distance - b.distance || a.ri - b.ri || a.pi - b.pi,
     )
+    yield* this.generateTaperedSegmentCandidates(targets)
     // Try same-layer paths first, keeping every existing via in place.
     yield* this.generateClearanceCandidates(targets, allowLayerChanges)
     if (this.getWorkLimitReason() === "path-search-node-limit") return
