@@ -20,6 +20,8 @@ type Barrier = {
   maxZ: number
   radius: number
   viaOnly?: boolean
+  wireOnly?: boolean
+  pad?: boolean
   a: Point
   b: Point
   rect?: { width: number; height: number; rotation: number }
@@ -129,6 +131,8 @@ export function findClearancePath(input: {
     radius: number,
     rect?: Barrier["rect"],
     viaOnly = false,
+    wireOnly = false,
+    pad = false,
   ): void => {
     const extent = rect ? Math.hypot(rect.width, rect.height) / 2 : radius
     const rectCos = rect ? Math.cos(rect.rotation) : 1
@@ -156,6 +160,8 @@ export function findClearancePath(input: {
       radius,
       rect,
       viaOnly,
+      wireOnly,
+      pad,
       rectCos,
       rectSin,
       rectBounds: rect
@@ -179,7 +185,20 @@ export function findClearancePath(input: {
       (obstacle as typeof obstacle & { __zLayers?: number[] }).__zLayers ??
       obstacle.zLayers ??
       obstacle.layers.map(layer)
-    for (const z of zs)
+    for (const z of zs) {
+      if (obstacle.type === "oval" && !viaOnly) {
+        const angle = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
+        const horizontal = obstacle.width >= obstacle.height
+        const halfSpine = Math.abs(obstacle.width - obstacle.height) / 2
+        const dx = halfSpine * (horizontal ? Math.cos(angle) : -Math.sin(angle))
+        const dy = halfSpine * (horizontal ? Math.sin(angle) : Math.cos(angle))
+        add(
+          { x: obstacle.center.x - dx, y: obstacle.center.y - dy, z },
+          { x: obstacle.center.x + dx, y: obstacle.center.y + dy, z },
+          Math.min(obstacle.width, obstacle.height) / 2,
+          undefined, false, true, true,
+        )
+      }
       add(
         { ...obstacle.center, z },
         { ...obstacle.center, z },
@@ -189,8 +208,9 @@ export function findClearancePath(input: {
           height: obstacle.height,
           rotation: ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180,
         },
-        viaOnly,
+        viaOnly || obstacle.type === "oval",
       )
+    }
   }
   for (const other of routes) {
     if (net(other.connectionName) === owner) continue
@@ -302,11 +322,11 @@ export function findClearancePath(input: {
         const bucket = column.get(y)
         if (!bucket) continue
         for (const barrier of bucket) {
-          if (barrier.viaOnly && !isVia) continue
+          if ((barrier.viaOnly && !isVia) || (barrier.wireOnly && isVia)) continue
           if (barrier.visitedQuery === currentQuery) continue
           barrier.visitedQuery = currentQuery
           if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
-          const requiredGap = barrier.rect
+          const requiredGap = barrier.rect || barrier.pad
             ? margin
             : isVia && barrier.minZ !== barrier.maxZ
               ? input.viaClearance
