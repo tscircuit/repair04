@@ -1075,7 +1075,15 @@ export class Repair04Solver extends BaseSolver {
     const errors = this.score!.errors
     const locations = errors.flatMap((e) => {
       const center = e.center ?? e.pcb_center
-      return center ? [center] : []
+      if (!center) return []
+      // Known indexed contacts belong to their named local routes. Other
+      // contacts (for example via pairs) retain geometric localization.
+      const ids = new Set([
+        e.pcb_trace_id,
+        ...(Array.isArray(e.pcb_trace_ids) ? e.pcb_trace_ids : []),
+        ...(typeof e.pcb_trace_error_id === "string" ? e.pcb_trace_error_id.match(/repair04_\d+/g) ?? [] : []),
+      ].filter((id): id is string => typeof id === "string" && /^repair04_\d+$/.test(id)))
+      return [{ ...center, ids }]
     })
     const targets: RepairTarget[] = []
     for (let ri = 0; ri < this.routes.length; ri++) {
@@ -1096,6 +1104,7 @@ export class Repair04Solver extends BaseSolver {
           dy = b.y - a.y,
           length2 = dx * dx + dy * dy
         for (const p of locations) {
+          if (p.ids.size && !p.ids.has(`repair04_${ri}`)) continue
           const ct = length2
             ? Math.max(
                 0,
