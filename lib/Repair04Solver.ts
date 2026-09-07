@@ -1,3 +1,4 @@
+import { generateThreeRouteCandidates } from "./generateThreeRouteCandidates"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import {
@@ -31,7 +32,16 @@ import {
 } from "./getRepairViaGeometry"
 
 type Point = HighDensityRoute["route"][number]
-type Candidate = { routeIndex: number; route: HighDensityRoute }
+type RouteReplacement = { routeIndex: number; route: HighDensityRoute }
+type Candidate = RouteReplacement & {
+  additionalRoutes?: RouteReplacement[]
+  evaluatedScore?: Score
+}
+type ViaBlockerContext = {
+  oldIds?: Set<string>
+  oldContacts?: Set<string>
+  oldNeighborFixed?: boolean
+}
 type RepairTarget = { ri: number; pi: number; distance: number; t: number }
 type RouteCache = {
   trace?: SimplifiedPcbTrace
@@ -121,6 +131,10 @@ export class Repair04Solver extends BaseSolver {
   private candidateAttempts = 0
   private pathSearchNodes = 0
   private pathSearchCalls = 0
+  private viaBlockerPathSearchCalls = 0
+  private coupledPathSearchCalls = 0
+  private threeRoutePathSearchCalls = 0
+  private threeRoutePathSearchNodes = 0
   // Exact candidates can recur when radii clamp to the same segment endpoints.
   // Scores are valid only while every other route remains in the same state.
   private readonly candidateScores = new Map<string, Score>()
@@ -496,6 +510,213 @@ export class Repair04Solver extends BaseSolver {
     )
   }
 
+  private *generateTaperedSegmentCandidates(
+    targets: RepairTarget[],
+  ): Generator<Candidate> {
+    // Uniform-width rerouting cannot preserve a taper. Translate a short run of
+    // free bends together, keeping each width and both surrounding attachments.
+    // At most eight windows, two offsets and eight directions share the normal
+    // candidate budget; no path search or additional via permission is needed.
+    const searched = new Set<string>()
+    for (const { ri, pi } of targets) {
+      if (
+        !this.score!.errors.some(
+          (error): boolean => error.pcb_trace_id === `repair04_${ri}`,
+        )
+      )
+        continue
+      const route = this.routes[ri]!
+      for (const [lo, hi] of [
+        [pi - 2, pi + 1],
+        [pi - 2, pi],
+        [pi - 1, pi + 1],
+        [pi - 1, pi],
+      ] as const) {
+        if (searched.size >= 8) return
+        if (lo <= 0 || hi >= route.route.length - 1) continue
+        const key = `${ri}:${lo}:${hi}`
+        if (searched.has(key)) continue
+        const points = route.route.slice(lo, hi + 1)
+        const layer = points[0]!.z
+        if (
+          !inside(route.route[lo - 1]!, this.mutableBounds) ||
+          !inside(route.route[hi + 1]!, this.mutableBounds) ||
+          route.route[lo - 1]!.z !== layer ||
+          route.route[hi + 1]!.z !== layer ||
+          points.some(
+            (point): boolean =>
+              point.z !== layer ||
+              this.isLocked(ri, point) ||
+              Boolean((point as Point & { portPointId?: string }).portPointId) ||
+              route.vias.some(
+                (via): boolean => via.x === point.x && via.y === point.y,
+              ),
+          )
+        )
+          continue
+        const widths = new Set(
+          points.map(
+            (point): number =>
+              (point as Point & { traceThickness?: number }).traceThickness ??
+              route.traceThickness,
+          ),
+        )
+        if (widths.size < 2) continue
+        searched.add(key)
+        for (const amount of [0.1, 0.05]) {
+          for (let direction = 0; direction < 8; direction++) {
+            const dx = amount * Math.cos((direction * Math.PI) / 4)
+            const dy = amount * Math.sin((direction * Math.PI) / 4)
+            const moved = points.map(
+              (point): Point => ({ ...point, x: point.x + dx, y: point.y + dy }),
+            )
+            if (moved.some((point): boolean => !inside(point, this.mutableBounds)))
+              continue
+            yield {
+              routeIndex: ri,
+              route: {
+                ...route,
+                route: [
+                  ...route.route.slice(0, lo),
+                  ...moved,
+                  ...route.route.slice(hi + 1),
+                ],
+              },
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private *generateCrossingPairCandidates(): Generator<Candidate> {
+    if (this.coupledPathSearchCalls >= 4 || this.getWorkLimitReason()) return
+    type Segment = { ri: number; pi: number; a: Point; b: Point }
+    const seen = new Set<string>()
+    const crossingErrors = this.score!.errors.filter(
+      (error) =>
+        error.type === "pcb_trace_error" &&
+        typeof error.actual_clearance === "number" &&
+        error.actual_clearance < 0 &&
+        error.center !== undefined,
+    )
+    for (const error of crossingErrors) {
+      const center = error.center!
+      const touching: Segment[] = []
+      for (let ri = 0; ri < this.routes.length; ri++) {
+        const route = this.routes[ri]!
+        if (route.jumpers?.length) continue
+        for (let pi = 1; pi < route.route.length; pi++) {
+          const a = route.route[pi - 1]!, b = route.route[pi]!
+          const dx = b.x - a.x, dy = b.y - a.y
+          const length2 = dx * dx + dy * dy
+          if (a.z !== b.z || length2 < 1e-12) continue
+          const t = ((center.x - a.x) * dx + (center.y - a.y) * dy) / length2
+          if (t < 0 || t > 1) continue
+          if (Math.hypot(center.x - a.x - t * dx, center.y - a.y - t * dy) < 1e-6)
+            touching.push({ ri, pi, a, b })
+        }
+      }
+      for (let i = 0; i < touching.length; i++) {
+        for (let j = i + 1; j < touching.length; j++) {
+          let path = touching[i]!, block = touching[j]!
+          if (path.ri === block.ri || path.a.z !== block.a.z) continue
+          const errorId = error.pcb_trace_error_id
+          if (
+            errorId !== `overlap_repair04_${path.ri}_repair04_${block.ri}` &&
+            errorId !== `overlap_repair04_${block.ri}_repair04_${path.ri}`
+          ) continue
+          if (this.routes[path.ri]!.vias.length === 0) [path, block] = [block, path]
+          const pathRoute = this.routes[path.ri]!, blockRoute = this.routes[block.ri]!
+          if (pathRoute.vias.length === 0 || blockRoute.vias.length !== 0) continue
+          const pairKey = `${path.ri}:${block.ri}`
+          if (seen.has(pairKey)) continue
+          seen.add(pairKey)
+          let blockLo = block.pi - 1, blockHi = block.pi
+          while (blockLo > 0 && !this.isLocked(block.ri, blockRoute.route[blockLo]!)) blockLo--
+          while (blockHi < blockRoute.route.length - 1 && !this.isLocked(block.ri, blockRoute.route[blockHi]!)) blockHi++
+          if (
+            blockHi - blockLo > 64 || blockHi - blockLo < 2 ||
+            !inside(blockRoute.route[blockLo]!, this.mutableBounds) ||
+            !inside(blockRoute.route[blockHi]!, this.mutableBounds)
+          ) continue
+          const blockWidth = (blockRoute.route[blockLo] as Point & { traceThickness?: number }).traceThickness ?? blockRoute.traceThickness
+          if (blockRoute.route.slice(blockLo, blockHi + 1).some((point) =>
+            point.z !== block.a.z || point.toNextSegmentType || point.insideJumperPad ||
+            ((point as Point & { traceThickness?: number }).traceThickness ?? blockRoute.traceThickness) !== blockWidth
+          )) continue
+          const vias = this.getViaGeometry(pathRoute)
+          const nearest = vias.map((via, viaIndex) => ({
+            via, viaIndex,
+            distance: Math.min(...via.pointIndices.map((index) => Math.abs(index - path.pi))),
+          })).sort((a, b) => a.distance - b.distance)[0]
+          if (
+            !nearest || nearest.via.pointIndices.some((index) => this.isLocked(path.ri, pathRoute.route[index]!)) ||
+            (this.input.movableVias?.length && !this.input.movableVias.some(
+              (selected) => selected.routeIndex === path.ri && selected.viaIndex === nearest.viaIndex,
+            ))
+          ) continue
+          const lastViaIndex = Math.max(...nearest.via.pointIndices)
+          let lo = path.pi - 1
+          while (lo > 0 && !this.isLocked(path.ri, pathRoute.route[lo]!)) lo--
+          if (lo >= Math.min(...nearest.via.pointIndices)) continue
+          const dx = block.b.x - block.a.x, dy = block.b.y - block.a.y
+          const axis = Math.abs(dy) >= Math.abs(dx) ? { x: 1, y: 0 } : { x: 0, y: 1 }
+          const offset = 2 * (this.input.traceClearance ?? 0.1) + blockWidth
+          for (const sign of [-1, 1]) {
+            for (const after of [2, 1]) {
+              if (this.coupledPathSearchCalls >= 4 || this.getWorkLimitReason()) return
+              const hi = lastViaIndex + after
+              if (hi >= pathRoute.route.length) continue
+              if (pathRoute.route.slice(lo + 1, hi).some((point) => this.isLocked(path.ri, point))) continue
+              if (!inside(pathRoute.route[lo]!, this.mutableBounds) || !inside(pathRoute.route[hi]!, this.mutableBounds)) continue
+              const width = (pathRoute.route[lo] as Point & { traceThickness?: number }).traceThickness ?? pathRoute.traceThickness
+              if (pathRoute.route.slice(lo, hi + 1).some((point) =>
+                point.toNextSegmentType || point.insideJumperPad ||
+                ((point as Point & { traceThickness?: number }).traceThickness ?? pathRoute.traceThickness) !== width
+              )) continue
+              const moved: HighDensityRoute = {
+                ...blockRoute,
+                route: blockRoute.route.map((point, index) => index > blockLo && index < blockHi
+                  ? { ...point, x: point.x + sign * axis.x * offset, y: point.y + sign * axis.y * offset }
+                  : point),
+              }
+              if (moved.route.some((point, index) => index > blockLo && index < blockHi && !inside(point, this.mutableBounds))) continue
+              const context = this.routes.slice()
+              context[block.ri] = moved
+              const stats: ClearancePathSearchStats = { nodesPopped: 0, completionReason: "no-path" }
+              const maxNodes = Math.min(30000, this.input.maxPathSearchNodes === undefined
+                ? 30000 : this.input.maxPathSearchNodes - this.pathSearchNodes)
+              if (maxNodes < 1) return
+              const found = findClearancePath({
+                srj: this.input.srj, routes: context, routeIndex: path.ri,
+                start: pathRoute.route[lo]!, end: pathRoute.route[hi]!, bounds: this.mutableBounds,
+                traceThickness: width, traceClearance: this.input.traceClearance ?? 0.1,
+                viaClearance: this.input.viaClearance ?? 0.1,
+                gridSize: width <= 0.1 ? width / 2 : 0.1,
+                allowLayerChanges: true, maxNodes, stats,
+              })
+              this.coupledPathSearchCalls++
+              this.pathSearchCalls++
+              this.pathSearchNodes += stats.nodesPopped
+              this.updateWorkStats()
+              if (!found) continue
+              const updated = rebuildVias({ ...pathRoute, route: [
+                ...pathRoute.route.slice(0, lo), ...found, ...pathRoute.route.slice(hi + 1),
+              ] })
+              const afterVias = this.getViaGeometry(updated)
+              if (afterVias.length !== vias.length || afterVias.some((via, index) =>
+                via.diameter !== vias[index]!.diameter ||
+                JSON.stringify(via.layerSequence) !== JSON.stringify(vias[index]!.layerSequence)
+              )) continue
+              yield { routeIndex: path.ri, route: updated, additionalRoutes: [{ routeIndex: block.ri, route: moved }] }
+            }
+          }
+        }
+      }
+    }
+  }
+
   private *generateClearanceCandidates(
     targets: RepairTarget[],
     allowLayerChanges: boolean,
@@ -617,6 +838,173 @@ export class Repair04Solver extends BaseSolver {
     })
   }
 
+  private getIndexedViaIds(
+    routeIndex: number,
+    route: HighDensityRoute,
+    via: RepairViaGeometry,
+  ): Set<string> {
+    const ids = new Set<string>()
+    if (this.getViaGeometry(route).filter((v): boolean =>
+      v.x === via.x && v.y === via.y && v.identity === via.identity,
+    ).length !== 1) return ids
+    const layerName = (z: number): string => z === 0 ? "top" :
+      z === this.input.srj.layerCount - 1 ? "bottom" : `inner${z}`
+    const keys = new Set<string>()
+    for (let i = 1; i < via.layerSequence.length; i++) {
+      keys.add(`${via.x},${via.y},${layerName(via.layerSequence[i - 1]!)},${layerName(via.layerSequence[i]!)}`)
+    }
+    const traces = this.routes.map((current, index): SimplifiedPcbTrace => {
+      const cached = this.getRouteCache(index, index === routeIndex ? route : current).trace
+      if (!cached) throw new Error("repair04: indexed via mapping requires an evaluated route")
+      return cached
+    })
+    const seen = new Set<string>()
+    for (const trace of [...this.fixedTraces, ...traces]) {
+      for (const point of trace.route) {
+        if (point.route_type !== "via") continue
+        const key = `${point.x},${point.y},${point.from_layer},${point.to_layer}`
+        if (seen.has(key)) continue
+        const id = `via_${seen.size}`
+        seen.add(key)
+        if (trace === traces[routeIndex] && keys.has(key)) ids.add(id)
+      }
+    }
+    // A coincident earlier fixed/foreign event owns the contact instead.
+    return ids.size === keys.size ? ids : new Set<string>()
+  }
+
+  private *generateViaBlockerCandidates(
+    selected: { routeIndex: number; viaIndex: number },
+    candidate: Candidate,
+    baselineContext: ViaBlockerContext = {},
+  ): Generator<Candidate> {
+    if (this.viaBlockerPathSearchCalls >= 4 || this.getWorkLimitReason()) return
+    const movedScore = candidate.evaluatedScore
+    if (!movedScore || !this.score || candidate.additionalRoutes?.length ||
+      candidate.routeIndex !== selected.routeIndex) return
+    if (!this.input.movableVias?.some((v): boolean =>
+      v.routeIndex === selected.routeIndex && v.viaIndex === selected.viaIndex,
+    ) || !this.preservesViaPermissions(selected.routeIndex, candidate.route)) return
+    if ([...movedScore.fixedViolations].some(([key, severity]): boolean =>
+      !this.score!.fixedViolations.has(key) ||
+      severity > this.score!.fixedViolations.get(key)! + REGION_EPSILON,
+    )) return
+    const original = this.routes[selected.routeIndex]!
+    const oldVia = this.getViaGeometry(original)[selected.viaIndex]!
+    const movedVia = this.getViaGeometry(candidate.route)[selected.viaIndex]!
+    const oldIds = baselineContext.oldIds ??= this.getIndexedViaIds(selected.routeIndex, original, oldVia)
+    if (!oldIds.size) return
+    const owner = `repair04_${selected.routeIndex}`
+    const contactForeign = (error: AutoroutingDrcError, ids: Set<string>): string | undefined => {
+      const viaId = error.pcb_via_id
+      const foreign = error.pcb_trace_id
+      if (error.type !== "pcb_trace_error" || typeof viaId !== "string" ||
+        !ids.has(viaId) || typeof foreign !== "string" || foreign === owner ||
+        error.pcb_trace_error_id !== `overlap_${foreign}_${viaId}` ||
+        !Array.isArray(error.pcb_trace_ids) || error.pcb_trace_ids.length !== 2 ||
+        !error.pcb_trace_ids.includes(owner) || !error.pcb_trace_ids.includes(foreign)) return undefined
+      return foreign
+    }
+    const contacts = (errors: AutoroutingDrcError[], ids: Set<string>): Set<string> => {
+      const found = new Set<string>()
+      for (const error of errors) {
+        const foreign = contactForeign(error, ids)
+        if (foreign !== undefined) found.add(foreign)
+      }
+      return found
+    }
+    const oldContacts = baselineContext.oldContacts ??= contacts(this.score.errors, oldIds)
+    if (!oldContacts.size) return
+    // This current-copper eligibility is invariant across the selected via's
+    // native offsets. Every accepted state starts a new generator context.
+    const oldNeighborFixed = baselineContext.oldNeighborFixed ??= this.getFixedViolations(this.routes).some((violation): boolean =>
+      violation.kind === "wire" &&
+      oldContacts.has(`repair04_${violation.routeIndex}`),
+    )
+    if (oldNeighborFixed) return
+    const movedIds = this.getIndexedViaIds(selected.routeIndex, candidate.route, movedVia)
+    if (oldIds.size !== movedIds.size) return
+    for (const error of movedScore.errors) {
+      const referenced = [error.pcb_via_id,
+        ...(Array.isArray(error.pcb_via_ids) ? error.pcb_via_ids : []),
+        ...(Array.isArray(error.pcb_pad_ids) ? error.pcb_pad_ids : []),
+      ]
+      if (referenced.some((id): boolean => typeof id === "string" && movedIds.has(id)) &&
+        contactForeign(error, movedIds) === undefined) return
+    }
+    const newContacts = contacts(movedScore.errors, movedIds)
+    if (newContacts.size !== 1 ||
+      [...newContacts].some((id): boolean => oldContacts.has(id))) return
+    const id = [...newContacts][0]!
+    if (!/^repair04_(0|[1-9][0-9]*)$/.test(id)) return
+    const routeIndex = Number(id.slice("repair04_".length))
+    const route = this.routes[routeIndex]
+    if (!route || routeIndex === selected.routeIndex || route.jumpers?.length ||
+      route.connectionName === original.connectionName ||
+      (route.rootConnectionName && route.rootConnectionName === original.rootConnectionName) ||
+      route.route.some((p): boolean => Boolean(p.toNextSegmentType || p.insideJumperPad))) return
+    let pi = -1, nearest = Infinity
+    for (let i = 1; i < route.route.length; i++) {
+      const a = route.route[i - 1]!, b = route.route[i]!
+      if (a.z !== b.z || a.z < movedVia.minZ || a.z > movedVia.maxZ) continue
+      const dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy
+      const t = length2 ? Math.max(0, Math.min(1,
+        ((movedVia.x - a.x) * dx + (movedVia.y - a.y) * dy) / length2,
+      )) : 0
+      const distance = Math.hypot(movedVia.x - a.x - t * dx, movedVia.y - a.y - t * dy)
+      if (distance < nearest) { nearest = distance; pi = i }
+    }
+    if (pi < 1) return
+    const isAnchor = (index: number): boolean => {
+      const point = route.route[index]!
+      return this.isLocked(routeIndex, point) ||
+        (index > 0 && route.route[index - 1]!.z !== point.z) ||
+        (index + 1 < route.route.length && route.route[index + 1]!.z !== point.z)
+    }
+    let lo = pi - 1, hi = pi
+    while (lo > 0 && !isAnchor(lo)) lo--
+    while (hi < route.route.length - 1 && !isAnchor(hi)) hi++
+    const start = route.route[lo]!, end = route.route[hi]!
+    const inMutableClosure = (point: Point): boolean =>
+      point.x >= this.mutableBounds.minX - REGION_EPSILON &&
+      point.x <= this.mutableBounds.maxX + REGION_EPSILON &&
+      point.y >= this.mutableBounds.minY - REGION_EPSILON &&
+      point.y <= this.mutableBounds.maxY + REGION_EPSILON
+    if (start.z !== end.z || !inMutableClosure(start) || !inMutableClosure(end)) return
+    const width = (start as Point & { traceThickness?: number }).traceThickness ?? route.traceThickness
+    if (route.route.slice(lo, hi + 1).some((p): boolean =>
+      ((p as Point & { traceThickness?: number }).traceThickness ?? route.traceThickness) !== width,
+    )) return
+    const maxNodes = Math.min(30000, this.input.maxPathSearchNodes === undefined
+      ? 30000 : this.input.maxPathSearchNodes - this.pathSearchNodes)
+    if (maxNodes < 1) return
+    const context = this.routes.slice()
+    context[selected.routeIndex] = candidate.route
+    const stats: ClearancePathSearchStats = { nodesPopped: 0, completionReason: "no-path" }
+    const path = findClearancePath({
+      srj: this.input.srj, routes: context, routeIndex,
+      start: end, end: start, bounds: this.mutableBounds,
+      traceThickness: width, traceClearance: this.input.traceClearance ?? 0.1,
+      viaClearance: this.input.viaClearance ?? 0.1,
+      gridSize: Math.max(0.025, width / 4), allowLayerChanges: false, maxNodes, stats,
+    })
+    this.viaBlockerPathSearchCalls++
+    this.pathSearchCalls++
+    this.pathSearchNodes += stats.nodesPopped
+    this.updateWorkStats()
+    if (!path) return
+    path.reverse()
+    const replacement = { ...route, route: [
+      ...route.route.slice(0, lo), ...path, ...route.route.slice(hi + 1),
+    ] }
+    if (getViaGeometryKey(replacement) !== getViaGeometryKey(route)) return
+    yield {
+      routeIndex: candidate.routeIndex,
+      route: candidate.route,
+      additionalRoutes: [{ routeIndex, route: replacement }],
+    }
+  }
+
   private *generateExistingViaCandidates(): Generator<Candidate> {
     for (const selected of this.input.movableVias ?? []) {
       const route = this.routes[selected.routeIndex]!
@@ -627,6 +1015,7 @@ export class Repair04Solver extends BaseSolver {
         )
       )
         continue
+      const context: ViaBlockerContext = {}
       for (const amount of [0.025, 0.05, 0.1, 0.2, 0.35, 0.5, 0.8, 1.2]) {
         for (let direction = 0; direction < 16; direction++) {
           const x = via.x + amount * Math.cos((direction * Math.PI) / 8)
@@ -636,10 +1025,14 @@ export class Repair04Solver extends BaseSolver {
             (point, index): Point =>
               via.pointIndices.includes(index) ? { ...point, x, y } : point,
           )
-          yield {
+          const candidate = {
             routeIndex: selected.routeIndex,
             route: rebuildVias({ ...route, route: moved }),
           }
+          yield candidate
+          // Shared _step has already scored this rejected move. Its cache is
+          // discarded with any accepted geometry, so no extra DRC pass is needed.
+          yield* this.generateViaBlockerCandidates(selected, candidate, context)
         }
       }
     }
@@ -653,28 +1046,23 @@ export class Repair04Solver extends BaseSolver {
         : [false, true]
       : [false]) {
       if (this.getWorkLimitReason() === "path-search-node-limit") return
+      const planarLimit = this.input.allowLayerChanges === true
+        ? Math.min(512, Math.floor(this.maxCandidates / 4))
+        : Number.MAX_SAFE_INTEGER
+      if (!allowLayerChanges && planarLimit === 0) continue
       let traceCandidates = 0
       for (const candidate of this.generateCandidatesForMode(
         allowLayerChanges,
       )) {
         if (!allowLayerChanges) {
-          const previous = this.routes[candidate.routeIndex]!
-          if (
+          const replacements = [candidate, ...(candidate.additionalRoutes ?? [])]
+          if (replacements.some(({ routeIndex, route }): boolean =>
             this.input.movableVias?.length
-              ? !this.preservesViaPermissions(
-                  candidate.routeIndex,
-                  candidate.route,
-                )
-              : getViaGeometryKey(candidate.route) !==
-                getViaGeometryKey(previous)
-          )
-            continue
-          if (
-            this.input.allowLayerChanges === true &&
-            traceCandidates++ >=
-              Math.min(512, Math.floor(this.maxCandidates / 4))
-          )
-            break
+              ? !this.preservesViaPermissions(routeIndex, route)
+              : getViaGeometryKey(route) !==
+                getViaGeometryKey(this.routes[routeIndex]!),
+          )) continue
+          if (traceCandidates++ >= planarLimit) break
         }
         yield candidate
       }
@@ -726,6 +1114,32 @@ export class Repair04Solver extends BaseSolver {
     targets.sort(
       (a, b) => a.distance - b.distance || a.ri - b.ri || a.pi - b.pi,
     )
+    if (this.threeRoutePathSearchCalls < 18 && !this.getWorkLimitReason()) {
+      const replacements = generateThreeRouteCandidates({
+        srj: this.input.srj, routes: this.routes, bounds: this.mutableBounds,
+        violations: this.getFixedViolations(this.routes),
+        isLocked: (ri, pi): boolean => this.isLocked(ri, this.routes[ri]!.route[pi]!),
+        traceClearance: this.input.traceClearance ?? 0.1,
+        viaClearance: this.input.viaClearance ?? 0.1,
+        maxSearchCalls: 18 - this.threeRoutePathSearchCalls,
+        remainingNodes: (): number => Math.min(
+          500000 - this.threeRoutePathSearchNodes,
+          this.input.maxPathSearchNodes === undefined ? Number.MAX_SAFE_INTEGER : this.input.maxPathSearchNodes - this.pathSearchNodes,
+        ),
+        onSearch: (stats): void => {
+          this.threeRoutePathSearchCalls++
+          this.threeRoutePathSearchNodes += stats.nodesPopped
+          this.pathSearchCalls++
+          this.pathSearchNodes += stats.nodesPopped
+          this.updateWorkStats()
+        },
+      })
+      for (const [first, ...additionalRoutes] of replacements) {
+        if (first) yield { ...first, additionalRoutes }
+      }
+    }
+    if (allowLayerChanges) yield* this.generateCrossingPairCandidates()
+    yield* this.generateTaperedSegmentCandidates(targets)
     // Try same-layer paths first, keeping every existing via in place.
     yield* this.generateClearanceCandidates(targets, allowLayerChanges)
     if (this.getWorkLimitReason() === "path-search-node-limit") return
@@ -1013,24 +1427,32 @@ export class Repair04Solver extends BaseSolver {
     this.updateWorkStats()
     // Every generator shares the same physical-via acceptance invariant,
     // including atomic moves that can otherwise collapse neighboring stacks.
+    const replacements = [next.value, ...(next.value.additionalRoutes ?? [])]
     if (
-      (this.input.allowLayerChanges !== true ||
-        this.input.movableVias?.length) &&
-      !this.preservesViaPermissions(next.value.routeIndex, next.value.route)
-    )
-      return
+      (this.input.allowLayerChanges !== true || this.input.movableVias?.length) &&
+      replacements.some(({ routeIndex, route }) => !this.preservesViaPermissions(routeIndex, route))
+    ) return
     const candidate = this.routes.slice()
-    candidate[next.value.routeIndex] = next.value.route
+    for (const { routeIndex, route } of replacements) candidate[routeIndex] = route
     // Validate candidate copper even when the mandatory via-pad guard rejects
     // it. Rejected proposals cannot be accepted, so avoid rebuilding indexed DRC.
-    this.getFixedViolations(candidate)
+    const fixedViolations = new Map<string, number>()
+    for (const violation of this.getFixedViolations(candidate)) {
+      fixedViolations.set(violation.key, violation.severity)
+    }
+    const preservesFixedObstacles = [...fixedViolations].every(
+      ([key, severity]): boolean =>
+        this.score!.fixedViolations.has(key) &&
+        severity <= this.score!.fixedViolations.get(key)! + REGION_EPSILON,
+    )
     const preservesViaPadClearance =
       this.getViaPadViolations(candidate, false).length === 0
     let score: Score | undefined
-    if (preservesViaPadClearance) {
+    if (preservesViaPadClearance && preservesFixedObstacles) {
       const candidateKey = JSON.stringify([
         next.value.routeIndex,
         next.value.route,
+        ...(next.value.additionalRoutes ?? []),
       ])
       score = this.candidateScores.get(candidateKey)
       if (!score) {
@@ -1040,14 +1462,8 @@ export class Repair04Solver extends BaseSolver {
         this.candidateScores.set(candidateKey, score)
       }
     }
+    next.value.evaluatedScore = score
     this.evaluated++
-    const preservesFixedObstacles =
-      score !== undefined &&
-      [...score.fixedViolations].every(
-        ([key, severity]) =>
-          this.score!.fixedViolations.has(key) &&
-          severity <= this.score!.fixedViolations.get(key)! + REGION_EPSILON,
-      )
     if (
       score &&
       preservesViaPadClearance &&
