@@ -29,7 +29,7 @@ export type FixedObstacleViolationInput = {
 type Obstacle = SimpleRouteJson["obstacles"][number]
 type Point = { x: number; y: number }
 
-const getNetRepresentatives = (
+export const getNetRepresentatives = (
   srj: SimpleRouteJson,
   routes: HighDensityRoute[],
 ): Map<string, string> => {

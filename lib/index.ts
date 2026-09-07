@@ -18,3 +18,5 @@ export type {
 
 export { getRepairViaGeometry } from "./getRepairViaGeometry"
 export type { RepairViaGeometry } from "./getRepairViaGeometry"
+
+export { relaxTraceClearance } from "./relaxTraceClearance"
