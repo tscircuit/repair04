@@ -37,6 +37,11 @@ type Candidate = RouteReplacement & {
   additionalRoutes?: RouteReplacement[]
   evaluatedScore?: Score
 }
+type ViaBlockerContext = {
+  oldIds?: Set<string>
+  oldContacts?: Set<string>
+  oldNeighborFixed?: boolean
+}
 type RepairTarget = { ri: number; pi: number; distance: number; t: number }
 type RouteCache = {
   trace?: SimplifiedPcbTrace
@@ -871,6 +876,7 @@ export class Repair04Solver extends BaseSolver {
   private *generateViaBlockerCandidates(
     selected: { routeIndex: number; viaIndex: number },
     candidate: Candidate,
+    baselineContext: ViaBlockerContext = {},
   ): Generator<Candidate> {
     if (this.viaBlockerPathSearchCalls >= 4 || this.getWorkLimitReason()) return
     const movedScore = candidate.evaluatedScore
@@ -886,9 +892,8 @@ export class Repair04Solver extends BaseSolver {
     const original = this.routes[selected.routeIndex]!
     const oldVia = this.getViaGeometry(original)[selected.viaIndex]!
     const movedVia = this.getViaGeometry(candidate.route)[selected.viaIndex]!
-    const oldIds = this.getIndexedViaIds(selected.routeIndex, original, oldVia)
-    const movedIds = this.getIndexedViaIds(selected.routeIndex, candidate.route, movedVia)
-    if (!oldIds.size || oldIds.size !== movedIds.size) return
+    const oldIds = baselineContext.oldIds ??= this.getIndexedViaIds(selected.routeIndex, original, oldVia)
+    if (!oldIds.size) return
     const owner = `repair04_${selected.routeIndex}`
     const contactForeign = (error: AutoroutingDrcError, ids: Set<string>): string | undefined => {
       const viaId = error.pcb_via_id
@@ -908,6 +913,17 @@ export class Repair04Solver extends BaseSolver {
       }
       return found
     }
+    const oldContacts = baselineContext.oldContacts ??= contacts(this.score.errors, oldIds)
+    if (!oldContacts.size) return
+    // This current-copper eligibility is invariant across the selected via's
+    // native offsets. Every accepted state starts a new generator context.
+    const oldNeighborFixed = baselineContext.oldNeighborFixed ??= this.getFixedViolations(this.routes).some((violation): boolean =>
+      violation.kind === "wire" &&
+      oldContacts.has(`repair04_${violation.routeIndex}`),
+    )
+    if (oldNeighborFixed) return
+    const movedIds = this.getIndexedViaIds(selected.routeIndex, candidate.route, movedVia)
+    if (oldIds.size !== movedIds.size) return
     for (const error of movedScore.errors) {
       const referenced = [error.pcb_via_id,
         ...(Array.isArray(error.pcb_via_ids) ? error.pcb_via_ids : []),
@@ -916,16 +932,9 @@ export class Repair04Solver extends BaseSolver {
       if (referenced.some((id): boolean => typeof id === "string" && movedIds.has(id)) &&
         contactForeign(error, movedIds) === undefined) return
     }
-    const oldContacts = contacts(this.score.errors, oldIds)
     const newContacts = contacts(movedScore.errors, movedIds)
-    if (!oldContacts.size || newContacts.size !== 1 ||
+    if (newContacts.size !== 1 ||
       [...newContacts].some((id): boolean => oldContacts.has(id))) return
-    // Repair the original neighbor's fixed-obstacle contact first. Moving the
-    // via around it can otherwise leave no clearance corridor for that trace.
-    if (this.getFixedViolations(this.routes).some((violation): boolean =>
-      violation.kind === "wire" &&
-      oldContacts.has(`repair04_${violation.routeIndex}`),
-    )) return
     const id = [...newContacts][0]!
     if (!/^repair04_(0|[1-9][0-9]*)$/.test(id)) return
     const routeIndex = Number(id.slice("repair04_".length))
@@ -1006,6 +1015,7 @@ export class Repair04Solver extends BaseSolver {
         )
       )
         continue
+      const context: ViaBlockerContext = {}
       for (const amount of [0.025, 0.05, 0.1, 0.2, 0.35, 0.5, 0.8, 1.2]) {
         for (let direction = 0; direction < 16; direction++) {
           const x = via.x + amount * Math.cos((direction * Math.PI) / 8)
@@ -1022,7 +1032,7 @@ export class Repair04Solver extends BaseSolver {
           yield candidate
           // Shared _step has already scored this rejected move. Its cache is
           // discarded with any accepted geometry, so no extra DRC pass is needed.
-          yield* this.generateViaBlockerCandidates(selected, candidate)
+          yield* this.generateViaBlockerCandidates(selected, candidate, context)
         }
       }
     }
@@ -1426,11 +1436,19 @@ export class Repair04Solver extends BaseSolver {
     for (const { routeIndex, route } of replacements) candidate[routeIndex] = route
     // Validate candidate copper even when the mandatory via-pad guard rejects
     // it. Rejected proposals cannot be accepted, so avoid rebuilding indexed DRC.
-    this.getFixedViolations(candidate)
+    const fixedViolations = new Map<string, number>()
+    for (const violation of this.getFixedViolations(candidate)) {
+      fixedViolations.set(violation.key, violation.severity)
+    }
+    const preservesFixedObstacles = [...fixedViolations].every(
+      ([key, severity]): boolean =>
+        this.score!.fixedViolations.has(key) &&
+        severity <= this.score!.fixedViolations.get(key)! + REGION_EPSILON,
+    )
     const preservesViaPadClearance =
       this.getViaPadViolations(candidate, false).length === 0
     let score: Score | undefined
-    if (preservesViaPadClearance) {
+    if (preservesViaPadClearance && preservesFixedObstacles) {
       const candidateKey = JSON.stringify([
         next.value.routeIndex,
         next.value.route,
@@ -1446,13 +1464,6 @@ export class Repair04Solver extends BaseSolver {
     }
     next.value.evaluatedScore = score
     this.evaluated++
-    const preservesFixedObstacles =
-      score !== undefined &&
-      [...score.fixedViolations].every(
-        ([key, severity]) =>
-          this.score!.fixedViolations.has(key) &&
-          severity <= this.score!.fixedViolations.get(key)! + REGION_EPSILON,
-      )
     if (
       score &&
       preservesViaPadClearance &&
