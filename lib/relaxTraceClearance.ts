@@ -17,6 +17,7 @@ type Segment = {
   via: boolean
 }
 type Contact = { s: number; t: number; x: number; y: number; distance: number }
+type ViaPadConstraint = { center: Point; cosine: number; sine: number; halfWidth: number; halfHeight: number; clearance: number }
 type PadContact = {
   segment: Segment
   corners: Point[]
@@ -135,6 +136,7 @@ export function relaxTraceClearance(input: RepairRegionInput & {
     }
   }
   const padContacts: PadContact[] = []
+  const viaPadConstraints = new Map<Vertex, ViaPadConstraint[]>()
   for (const obstacle of input.srj.obstacles) {
     const radians = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
     const cosine = Math.cos(radians), sine = Math.sin(radians)
@@ -148,7 +150,7 @@ export function relaxTraceClearance(input: RepairRegionInput & {
       y: obstacle.center.y + sine * x! * obstacle.width / 2 + cosine * y! * obstacle.height / 2,
     }))
     for (const segment of segments) {
-      if (obstacleNets.has(segment.net) || !zs.some((z) => z >= segment.minZ && z <= segment.maxZ)) continue
+      if ((!segment.via && obstacleNets.has(segment.net)) || !zs.some((z) => z >= segment.minZ && z <= segment.maxZ)) continue
       const reach = segment.radius + Math.max(traceClearance, viaClearance,
         input.srj.defaultObstacleMargin ?? 0, input.srj.minTraceToPadEdgeClearance ?? 0,
         input.srj.minViaEdgeToPadEdgeClearance ?? 0) + CLEARANCE_SLACK + Math.SQRT2 * MAX_DISPLACEMENT
@@ -156,6 +158,19 @@ export function relaxTraceClearance(input: RepairRegionInput & {
         segment.a, segment.b, a, corners[(i + 1) % 4]!,
       ))) > reach) continue
       padContacts.push({ segment, corners })
+      if (segment.via) {
+        const constraint: ViaPadConstraint = {
+          center: obstacle.center, cosine, sine, halfWidth: obstacle.width / 2,
+          halfHeight: obstacle.height / 2,
+          clearance: segment.radius + Math.max(viaClearance,
+            input.srj.defaultObstacleMargin ?? 0, input.srj.minViaEdgeToPadEdgeClearance ?? 0),
+        }
+        for (const vertex of new Set([segment.a, segment.b])) {
+          const constraints = viaPadConstraints.get(vertex)
+          if (constraints) constraints.push(constraint)
+          else viaPadConstraints.set(vertex, [constraint])
+        }
+      }
     }
   }
   const project = (weights: [Vertex, number][], nx: number, ny: number, deficit: number): void => {
@@ -167,10 +182,21 @@ export function relaxTraceClearance(input: RepairRegionInput & {
     if (mass < 1e-15) return
     const scale = Math.min(0.05, deficit * 0.7) / mass
     for (const [vertex, weight] of combined) {
-      vertex.x = Math.max(mutable.minX, vertex.original.x - MAX_DISPLACEMENT,
+      const x = Math.max(mutable.minX, vertex.original.x - MAX_DISPLACEMENT,
         Math.min(mutable.maxX, vertex.original.x + MAX_DISPLACEMENT, vertex.x + nx * scale * weight))
-      vertex.y = Math.max(mutable.minY, vertex.original.y - MAX_DISPLACEMENT,
+      const y = Math.max(mutable.minY, vertex.original.y - MAX_DISPLACEMENT,
         Math.min(mutable.maxY, vertex.original.y + MAX_DISPLACEMENT, vertex.y + ny * scale * weight))
+      // Wire constraints must never move a via through a fixed solder pad.
+      // Test its proposed position against every nearby pad before moving it.
+      if (viaPadConstraints.get(vertex)?.some((pad): boolean => {
+        const dx = x - pad.center.x, dy = y - pad.center.y
+        const localX = dx * pad.cosine + dy * pad.sine
+        const localY = -dx * pad.sine + dy * pad.cosine
+        return Math.hypot(Math.max(0, Math.abs(localX) - pad.halfWidth),
+          Math.max(0, Math.abs(localY) - pad.halfHeight)) < pad.clearance
+      })) continue
+      vertex.x = x
+      vertex.y = y
     }
   }
   for (let sweep = 0; sweep < MAX_SWEEPS; sweep++) {
