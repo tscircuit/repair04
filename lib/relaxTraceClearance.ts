@@ -18,6 +18,8 @@ type Point = { x: number; y: number }
 type Vertex = Point & {
   original: Point
   locked: boolean
+  radius: number
+  bounds: Bounds
   points: RepairRoutePoint[]
 }
 type Segment = {
@@ -117,6 +119,8 @@ export function relaxTraceClearance(
     traceClearance?: number
     viaClearance?: number
     allowViaMovement?: boolean
+    /** Minimum board-edge clearance, preserving existing boundary intrusion. */
+    boardEdgeClearance?: number
   },
 ): HighDensityRoute[] {
   const routes = structuredClone(input.routes)
@@ -140,6 +144,8 @@ export function relaxTraceClearance(
           y: point.y,
           original: { x: point.x, y: point.y },
           locked: false,
+          radius: 0,
+          bounds: mutable,
           points: [],
         }
         vertices.set(key, vertex)
@@ -193,6 +199,34 @@ export function relaxTraceClearance(
         routeIndex: ri,
         via,
       })
+    }
+  }
+  for (const segment of segments) {
+    segment.a.radius = Math.max(segment.a.radius, segment.radius)
+    segment.b.radius = Math.max(segment.b.radius, segment.radius)
+  }
+  if (input.boardEdgeClearance !== undefined) {
+    const board = input.srj.bounds
+    for (const vertex of vertices.values()) {
+      const margin = vertex.radius + input.boardEdgeClearance
+      vertex.bounds = {
+        minX: Math.max(
+          mutable.minX,
+          Math.min(vertex.original.x, board.minX + margin),
+        ),
+        maxX: Math.min(
+          mutable.maxX,
+          Math.max(vertex.original.x, board.maxX - margin),
+        ),
+        minY: Math.max(
+          mutable.minY,
+          Math.min(vertex.original.y, board.minY + margin),
+        ),
+        maxY: Math.min(
+          mutable.maxY,
+          Math.max(vertex.original.y, board.maxY - margin),
+        ),
+      }
     }
   }
   const pairs: [Segment, Segment][] = []
@@ -352,19 +386,19 @@ export function relaxTraceClearance(
     const scale = Math.min(0.05, deficit * 0.7) / mass
     for (const [vertex, weight] of combined) {
       const x = Math.max(
-        mutable.minX,
+        vertex.bounds.minX,
         vertex.original.x - MAX_DISPLACEMENT,
         Math.min(
-          mutable.maxX,
+          vertex.bounds.maxX,
           vertex.original.x + MAX_DISPLACEMENT,
           vertex.x + nx * scale * weight,
         ),
       )
       const y = Math.max(
-        mutable.minY,
+        vertex.bounds.minY,
         vertex.original.y - MAX_DISPLACEMENT,
         Math.min(
-          mutable.maxY,
+          vertex.bounds.maxY,
           vertex.original.y + MAX_DISPLACEMENT,
           vertex.y + ny * scale * weight,
         ),
