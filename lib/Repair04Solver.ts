@@ -209,6 +209,15 @@ export class Repair04Solver extends BaseSolver {
         throw new Error("repair04: lock mask length must match its route")
       }
       for (let i = 1; i < route.route.length; i++) {
+        // An explicit fixed-metal bridge is indivisible even when its ends
+        // occupy different layers. Extraction locks both ends rather than
+        // inventing a trace/via cut inside that immutable conductor.
+        if (
+          route.route[i - 1]!.toNextSegmentType === "through_obstacle" &&
+          input.lockedPointIndices[ri]![i - 1] &&
+          input.lockedPointIndices[ri]![i]
+        )
+          continue
         const interval = getSegmentBoundsInterval(
           route.route[i - 1]!,
           route.route[i]!,
