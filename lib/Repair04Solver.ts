@@ -1221,11 +1221,19 @@ export class Repair04Solver extends BaseSolver {
       completionReason: "no-path",
     }
     const path = findClearancePath({
-      srj: this.input.srj, routes: context, routeIndex,
-      start: end, end: start, bounds: this.mutableBounds,
-      traceThickness: width, traceClearance: this.input.traceClearance ?? 0.1,
+      srj: this.input.srj,
+      routes: context,
+      routeIndex,
+      start: end,
+      end: start,
+      bounds: this.mutableBounds,
+      traceThickness: width,
+      traceClearance: this.input.traceClearance ?? 0.1,
       viaClearance: this.input.viaClearance ?? 0.1,
-      gridSize: Math.max(0.025, width / 4), allowLayerChanges: false, maxNodes, stats,
+      gridSize: Math.max(0.025, width / 4),
+      allowLayerChanges: false,
+      maxNodes,
+      stats,
     })
     this.viaBlockerPathSearchCalls++
     this.pathSearchCalls++
@@ -1233,9 +1241,14 @@ export class Repair04Solver extends BaseSolver {
     this.updateWorkStats()
     if (!path) return
     path.reverse()
-    const replacement = { ...route, route: [
-      ...route.route.slice(0, lo), ...path, ...route.route.slice(hi + 1),
-    ] }
+    const replacement = {
+      ...route,
+      route: [
+        ...route.route.slice(0, lo),
+        ...path,
+        ...route.route.slice(hi + 1),
+      ],
+    }
     if (getViaGeometryKey(replacement) !== getViaGeometryKey(route)) return
     yield {
       routeIndex: candidate.routeIndex,
@@ -1286,11 +1299,13 @@ export class Repair04Solver extends BaseSolver {
         [localX, -halfHeight],
         [localX, halfHeight],
       ]
-        .map(([x, y]): Point => ({
-          x: pad.center.x + x! * cosine - y! * sine,
-          y: pad.center.y + x! * sine + y! * cosine,
-          z: via.minZ,
-        }))
+        .map(
+          ([x, y]): Point => ({
+            x: pad.center.x + x! * cosine - y! * sine,
+            y: pad.center.y + x! * sine + y! * cosine,
+            z: via.minZ,
+          }),
+        )
         .sort(
           (a, b): number =>
             Math.hypot(a.x - via.x, a.y - via.y) -
@@ -1304,10 +1319,11 @@ export class Repair04Solver extends BaseSolver {
           routeIndex: contact.routeIndex,
           route: rebuildVias({
             ...route,
-            route: route.route.map((point, index): Point =>
-              via.pointIndices.includes(index)
-                ? { ...point, x: site.x, y: site.y }
-                : point,
+            route: route.route.map(
+              (point, index): Point =>
+                via.pointIndices.includes(index)
+                  ? { ...point, x: site.x, y: site.y }
+                  : point,
             ),
           }),
         }
@@ -1357,22 +1373,29 @@ export class Repair04Solver extends BaseSolver {
         : [false, true]
       : [false]) {
       if (this.getWorkLimitReason() === "path-search-node-limit") return
-      const planarLimit = this.input.allowLayerChanges === true
-        ? Math.min(512, Math.floor(this.maxCandidates / 4))
-        : Number.MAX_SAFE_INTEGER
+      const planarLimit =
+        this.input.allowLayerChanges === true
+          ? Math.min(512, Math.floor(this.maxCandidates / 4))
+          : Number.MAX_SAFE_INTEGER
       if (!allowLayerChanges && planarLimit === 0) continue
       let traceCandidates = 0
       for (const candidate of this.generateCandidatesForMode(
         allowLayerChanges,
       )) {
         if (!allowLayerChanges) {
-          const replacements = [candidate, ...(candidate.additionalRoutes ?? [])]
-          if (replacements.some(({ routeIndex, route }): boolean =>
-            this.input.movableVias?.length
-              ? !this.preservesViaPermissions(routeIndex, route)
-              : getViaGeometryKey(route) !==
-                getViaGeometryKey(this.routes[routeIndex]!),
-          )) continue
+          const replacements = [
+            candidate,
+            ...(candidate.additionalRoutes ?? []),
+          ]
+          if (
+            replacements.some(({ routeIndex, route }): boolean =>
+              this.input.movableVias?.length
+                ? !this.preservesViaPermissions(routeIndex, route)
+                : getViaGeometryKey(route) !==
+                  getViaGeometryKey(this.routes[routeIndex]!),
+            )
+          )
+            continue
           if (traceCandidates++ >= planarLimit) break
         }
         yield candidate
@@ -1389,11 +1412,18 @@ export class Repair04Solver extends BaseSolver {
       if (!center) return []
       // Known indexed contacts belong to their named local routes. Other
       // contacts (for example via pairs) retain geometric localization.
-      const ids = new Set([
-        e.pcb_trace_id,
-        ...(Array.isArray(e.pcb_trace_ids) ? e.pcb_trace_ids : []),
-        ...(typeof e.pcb_trace_error_id === "string" ? e.pcb_trace_error_id.match(/repair04_\d+/g) ?? [] : []),
-      ].filter((id): id is string => typeof id === "string" && /^repair04_\d+$/.test(id)))
+      const ids = new Set(
+        [
+          e.pcb_trace_id,
+          ...(Array.isArray(e.pcb_trace_ids) ? e.pcb_trace_ids : []),
+          ...(typeof e.pcb_trace_error_id === "string"
+            ? (e.pcb_trace_error_id.match(/repair04_\d+/g) ?? [])
+            : []),
+        ].filter(
+          (id): id is string =>
+            typeof id === "string" && /^repair04_\d+$/.test(id),
+        ),
+      )
       return [{ ...center, ids }]
     })
     const targets: RepairTarget[] = []
@@ -1436,16 +1466,22 @@ export class Repair04Solver extends BaseSolver {
     )
     if (this.threeRoutePathSearchCalls < 18 && !this.getWorkLimitReason()) {
       const replacements = generateThreeRouteCandidates({
-        srj: this.input.srj, routes: this.routes, bounds: this.mutableBounds,
+        srj: this.input.srj,
+        routes: this.routes,
+        bounds: this.mutableBounds,
         violations: this.getFixedViolations(this.routes),
-        isLocked: (ri, pi): boolean => this.isLocked(ri, this.routes[ri]!.route[pi]!),
+        isLocked: (ri, pi): boolean =>
+          this.isLocked(ri, this.routes[ri]!.route[pi]!),
         traceClearance: this.input.traceClearance ?? 0.1,
         viaClearance: this.input.viaClearance ?? 0.1,
         maxSearchCalls: 18 - this.threeRoutePathSearchCalls,
-        remainingNodes: (): number => Math.min(
-          500000 - this.threeRoutePathSearchNodes,
-          this.input.maxPathSearchNodes === undefined ? Number.MAX_SAFE_INTEGER : this.input.maxPathSearchNodes - this.pathSearchNodes,
-        ),
+        remainingNodes: (): number =>
+          Math.min(
+            500000 - this.threeRoutePathSearchNodes,
+            this.input.maxPathSearchNodes === undefined
+              ? Number.MAX_SAFE_INTEGER
+              : this.input.maxPathSearchNodes - this.pathSearchNodes,
+          ),
         onSearch: (stats): void => {
           this.threeRoutePathSearchCalls++
           this.threeRoutePathSearchNodes += stats.nodesPopped

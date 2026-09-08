@@ -426,9 +426,13 @@ export function relaxTraceClearance(
   for (const route of routes) {
     route.vias = []
     for (let i = 1; i < route.route.length; i++) {
-      const a = route.route[i - 1]!, b = route.route[i]!
-      if (a.z !== b.z && a.toNextSegmentType !== "through_obstacle" &&
-        !route.vias.some((via) => via.x === b.x && via.y === b.y)) {
+      const a = route.route[i - 1]!,
+        b = route.route[i]!
+      if (
+        a.z !== b.z &&
+        a.toNextSegmentType !== "through_obstacle" &&
+        !route.vias.some((via) => via.x === b.x && via.y === b.y)
+      ) {
         route.vias.push({ x: b.x, y: b.y })
       }
     }
