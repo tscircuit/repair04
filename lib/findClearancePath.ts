@@ -7,7 +7,9 @@ import type {
   SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
+import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
+import { REGION_EPSILON } from "./repairRegionGeometry"
 
 type Point = RepairRoutePoint
 type Barrier = {
@@ -19,11 +21,22 @@ type Barrier = {
   maxZ: number
   radius: number
   viaOnly?: boolean
+  pad?: boolean
   a: Point
   b: Point
   rect?: { width: number; height: number; rotation: number }
+  rectCos: number
+  rectSin: number
+  rectBounds?: Bounds
+  visitedQuery: number
 }
+type ViaPath = { x: number; y: number; previous?: ViaPath }
+
 type SearchNode = { id: number; cost: number; priority: number }
+export type ClearancePathSearchStats = {
+  nodesPopped: number
+  completionReason: "found" | "no-path" | "node-limit"
+}
 
 /** Clearance-aware routing between fixed anchors, using only cropped context. */
 export function findClearancePath(input: {
@@ -39,10 +52,71 @@ export function findClearancePath(input: {
   gridSize?: number
   /** Disable layer changes when searching for a trace-only repair. */
   allowLayerChanges?: boolean
+  /** Maximum actual heap pops in this search; defaults to 30000. */
+  maxNodes?: number
+  /** Optional output accounting, overwritten for this synchronous call. */
+  stats?: ClearancePathSearchStats
+  /** Nonnegative congestion cost; Infinity prohibits the edge. */
+  getAdditionalEdgeCost?: (start: Point, end: Point) => number
+  /** Preserve this route when it already clears hard and movable copper. */
+  existingPath?: Point[]
+  /** Physical drill diameter; unknown drills reserve the copper diameter. */
+  viaHoleDiameter?: number
 }): Point[] | null {
   const { srj, routes, routeIndex, start, end, bounds, traceThickness } = input
+  const extraCost = (a: Point, b: Point): number => {
+    const value = input.getAdditionalEdgeCost?.(a, b) ?? 0
+    if (Number.isNaN(value) || value < 0)
+      throw new Error("repair04: additional edge costs must be nonnegative")
+    return value
+  }
+  if (
+    input.maxNodes !== undefined &&
+    (!Number.isSafeInteger(input.maxNodes) || input.maxNodes < 1)
+  )
+    throw new Error("repair04: maxNodes must be a positive safe integer")
+  if (input.stats) {
+    input.stats.nodesPopped = 0
+    input.stats.completionReason = "no-path"
+  }
   if (input.allowLayerChanges === false && start.z !== end.z) return null
   const route = routes[routeIndex]!
+  const drillDiameter = input.viaHoleDiameter ?? route.viaDiameter
+  if (
+    !Number.isFinite(drillDiameter) ||
+    drillDiameter <= 0 ||
+    drillDiameter > route.viaDiameter
+  )
+    throw new Error(
+      "repair04: via hole diameter must be positive and fit the copper",
+    )
+  const drillSpacing = drillDiameter + input.viaClearance
+  const clearsDrills = (
+    point: Point,
+    viaPath: ViaPath | undefined,
+  ): boolean => {
+    for (let via = viaPath; via; via = via.previous) {
+      if (point.x === via.x && point.y === via.y) continue
+      if (
+        Math.hypot(point.x - via.x, point.y - via.y) + REGION_EPSILON <
+        drillSpacing
+      )
+        return false
+    }
+    return true
+  }
+  const pathClearsDrills = (path: Point[]): boolean => {
+    let vias: ViaPath | undefined
+    for (let index = 1; index < path.length; index++) {
+      const a = path[index - 1]!,
+        b = path[index]!
+      if (a.z === b.z || a.toNextSegmentType === "through_obstacle") continue
+      if (!clearsDrills(a, vias)) return false
+      if (a.x !== vias?.x || a.y !== vias?.y)
+        vias = { x: a.x, y: a.y, previous: vias }
+    }
+    return true
+  }
   const parents = new Map<string, string>()
   const net = (name: string): string => {
     const parent = parents.get(name)
@@ -81,6 +155,25 @@ export function findClearancePath(input: {
       : name === "bottom"
         ? srj.layerCount - 1
         : Number(name.slice(5))
+  // Tight bounds are only used where rounding is small relative to the
+  // outward margin. Outside this ordinary PCB domain, preserve the old path.
+  const ordinaryBoundsDomain = [
+    bounds.minX,
+    bounds.maxX,
+    bounds.minY,
+    bounds.maxY,
+    start.x,
+    start.y,
+    end.x,
+    end.y,
+    traceThickness,
+    route.viaDiameter,
+    input.traceClearance,
+    input.viaClearance,
+    srj.defaultObstacleMargin ?? 0,
+    srj.minTraceToPadEdgeClearance ?? 0,
+    srj.minViaEdgeToPadEdgeClearance ?? 0,
+  ].every((value) => Number.isFinite(value) && Math.abs(value) <= 10_000)
   const barriers: Barrier[] = []
   const add = (
     a: Point,
@@ -88,18 +181,47 @@ export function findClearancePath(input: {
     radius: number,
     rect?: Barrier["rect"],
     viaOnly = false,
+    pad = false,
   ): void => {
     const extent = rect ? Math.hypot(rect.width, rect.height) / 2 : radius
+    const rectCos = rect ? Math.cos(rect.rotation) : 1
+    const rectSin = rect ? Math.sin(rect.rotation) : 0
+    const originalBounds = {
+      minX: Math.min(a.x, b.x) - extent,
+      maxX: Math.max(a.x, b.x) + extent,
+      minY: Math.min(a.y, b.y) - extent,
+      maxY: Math.max(a.y, b.y) + extent,
+    }
+    const barrierBounds =
+      rect && ordinaryBoundsDomain
+        ? getConservativeRectBarrierBounds(
+            a,
+            b,
+            rect,
+            rectCos,
+            rectSin,
+            originalBounds,
+          )
+        : originalBounds
     barriers.push({
       a,
       b,
       radius,
       rect,
       viaOnly,
-      minX: Math.min(a.x, b.x) - extent,
-      maxX: Math.max(a.x, b.x) + extent,
-      minY: Math.min(a.y, b.y) - extent,
-      maxY: Math.max(a.y, b.y) + extent,
+      pad,
+      rectCos,
+      rectSin,
+      rectBounds: rect
+        ? {
+            minX: -rect.width / 2,
+            maxX: rect.width / 2,
+            minY: -rect.height / 2,
+            maxY: rect.height / 2,
+          }
+        : undefined,
+      visitedQuery: 0,
+      ...barrierBounds,
       minZ: Math.min(a.z, b.z),
       maxZ: Math.max(a.z, b.z),
     })
@@ -111,18 +233,30 @@ export function findClearancePath(input: {
       (obstacle as typeof obstacle & { __zLayers?: number[] }).__zLayers ??
       obstacle.zLayers ??
       obstacle.layers.map(layer)
-    for (const z of zs)
+    const circularPlatedHole =
+      obstacle.type === "oval" &&
+      obstacle.width === obstacle.height &&
+      obstacle.ccwRotationDegrees === undefined &&
+      zs.length > 1
+    for (const z of zs) {
+      // Round through-hole copper has a circular outline. SMT pads and other
+      // pad shapes retain the conservative rectangle used for validation.
+      const center = { ...obstacle.center, z }
       add(
-        { ...obstacle.center, z },
-        { ...obstacle.center, z },
-        0,
-        {
-          width: obstacle.width,
-          height: obstacle.height,
-          rotation: ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180,
-        },
+        center,
+        center,
+        circularPlatedHole ? obstacle.width / 2 : 0,
+        circularPlatedHole
+          ? undefined
+          : {
+              width: obstacle.width,
+              height: obstacle.height,
+              rotation: ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180,
+            },
         viaOnly,
+        circularPlatedHole,
       )
+    }
   }
   for (const other of routes) {
     if (net(other.connectionName) === owner) continue
@@ -166,7 +300,7 @@ export function findClearancePath(input: {
         )
     }
   }
-  const cells = new Map<string, Barrier[]>()
+  const cells = new Map<number, Map<number, Barrier[]>>()
   const queryReach =
     Math.max(route.viaDiameter, traceThickness) / 2 +
     Math.max(
@@ -182,18 +316,27 @@ export function findClearancePath(input: {
       let x = Math.floor(Math.max(barrier.minX, bounds.minX - queryReach));
       x <= Math.floor(Math.min(barrier.maxX, bounds.maxX + queryReach));
       x++
-    )
+    ) {
+      let column = cells.get(x)
       for (
         let y = Math.floor(Math.max(barrier.minY, bounds.minY - queryReach));
         y <= Math.floor(Math.min(barrier.maxY, bounds.maxY + queryReach));
         y++
       ) {
-        const key = `${x},${y}`
-        const bucket = cells.get(key)
+        if (!column) {
+          column = new Map<number, Barrier[]>()
+          cells.set(x, column)
+        }
+        const bucket = column.get(y)
         if (bucket) bucket.push(barrier)
-        else cells.set(key, [barrier])
+        else column.set(y, [barrier])
       }
+    }
   }
+  let queryId = 0
+  // Exact-distance helpers are synchronous and retain no point references.
+  const localA = { x: 0, y: 0 }
+  const localB = { x: 0, y: 0 }
   const clear = (a: Point, b: Point): boolean => {
     const isVia = a.z !== b.z
     const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
@@ -205,57 +348,123 @@ export function findClearancePath(input: {
         : (srj.minTraceToPadEdgeClearance ?? 0),
     )
     const reach = radius + margin + 1e-5
-    const seen = new Set<Barrier>()
-    for (
-      let x = Math.floor(Math.min(a.x, b.x) - reach);
-      x <= Math.floor(Math.max(a.x, b.x) + reach);
-      x++
-    )
+    // Barriers belong to this synchronous search only. A visit stamp preserves
+    // the original first-seen order without allocating a Set for each edge.
+    const currentQuery = ++queryId
+    const minX = Math.min(a.x, b.x),
+      maxX = Math.max(a.x, b.x)
+    const minY = Math.min(a.y, b.y),
+      maxY = Math.max(a.y, b.y)
+    const minZ = Math.min(a.z, b.z),
+      maxZ = Math.max(a.z, b.z)
+    for (let x = Math.floor(minX - reach); x <= Math.floor(maxX + reach); x++) {
+      const column = cells.get(x)
+      if (!column) continue
       for (
-        let y = Math.floor(Math.min(a.y, b.y) - reach);
-        y <= Math.floor(Math.max(a.y, b.y) + reach);
+        let y = Math.floor(minY - reach);
+        y <= Math.floor(maxY + reach);
         y++
-      )
-        for (const barrier of cells.get(`${x},${y}`) ?? []) {
+      ) {
+        const bucket = column.get(y)
+        if (!bucket) continue
+        for (const barrier of bucket) {
           if (barrier.viaOnly && !isVia) continue
-          if (seen.has(barrier)) continue
-          seen.add(barrier)
+          if (barrier.visitedQuery === currentQuery) continue
+          barrier.visitedQuery = currentQuery
+          if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
+          const requiredGap =
+            barrier.rect || barrier.pad
+              ? margin
+              : isVia && barrier.minZ !== barrier.maxZ
+                ? input.viaClearance
+                : input.traceClearance
+          const clearance = radius + requiredGap
+          // These bounds enclose the entire copper/rotated obstacle. Strict
+          // separation can only rule out a collision; exact boundary cases
+          // still use the same distance calculation and tolerance below.
           if (
-            barrier.maxZ < Math.min(a.z, b.z) ||
-            barrier.minZ > Math.max(a.z, b.z)
+            maxX + clearance < barrier.minX ||
+            minX - clearance > barrier.maxX ||
+            maxY + clearance < barrier.minY ||
+            minY - clearance > barrier.maxY
           )
             continue
           let distance: number
           if (barrier.rect) {
-            const { rotation, width, height } = barrier.rect
-            const local = (p: Point): { x: number; y: number } => ({
-              x:
-                (p.x - barrier.a.x) * Math.cos(rotation) +
-                (p.y - barrier.a.y) * Math.sin(rotation),
-              y:
-                -(p.x - barrier.a.x) * Math.sin(rotation) +
-                (p.y - barrier.a.y) * Math.cos(rotation),
-            })
-            distance = segmentToBoundsMinDistance(local(a), local(b), {
-              minX: -width / 2,
-              maxX: width / 2,
-              minY: -height / 2,
-              maxY: height / 2,
-            })
+            localA.x =
+              (a.x - barrier.a.x) * barrier.rectCos +
+              (a.y - barrier.a.y) * barrier.rectSin
+            localA.y =
+              -(a.x - barrier.a.x) * barrier.rectSin +
+              (a.y - barrier.a.y) * barrier.rectCos
+            localB.x =
+              (b.x - barrier.a.x) * barrier.rectCos +
+              (b.y - barrier.a.y) * barrier.rectSin
+            localB.y =
+              -(b.x - barrier.a.x) * barrier.rectSin +
+              (b.y - barrier.a.y) * barrier.rectCos
+            distance = segmentToBoundsMinDistance(
+              localA,
+              localB,
+              barrier.rectBounds!,
+            )
           } else
             distance =
               segmentToSegmentMinDistance(a, b, barrier.a, barrier.b) -
               barrier.radius
-          const requiredGap = barrier.rect
-            ? margin
-            : isVia && barrier.minZ !== barrier.maxZ
-              ? input.viaClearance
-              : input.traceClearance
-          if (distance < radius + requiredGap + 1e-5) return false
+          // Keep exactly feasible corridors open within coordinate precision.
+          if (distance + REGION_EPSILON < clearance) return false
         }
+      }
+    }
     return true
   }
   if (!clear(start, start) || !clear(end, end)) return null
+  if (input.existingPath) {
+    const path = input.existingPath
+    const first = path[0],
+      last = path.at(-1)
+    if (
+      !first ||
+      !last ||
+      first.x !== start.x ||
+      first.y !== start.y ||
+      first.z !== start.z ||
+      last.x !== end.x ||
+      last.y !== end.y ||
+      last.z !== end.z
+    )
+      throw new Error(
+        "repair04: existing clearance path must match its anchors",
+      )
+    if (
+      path.some((point, index): boolean => {
+        const previous = path[index - 1]
+        return Boolean(
+          previous &&
+            previous.z !== point.z &&
+            (previous.x !== point.x || previous.y !== point.y),
+        )
+      })
+    )
+      throw new Error(
+        "repair04: existing clearance path has a non-colocated layer transition",
+      )
+    if (
+      pathClearsDrills(path) &&
+      (input.allowLayerChanges !== false ||
+        path.every((point): boolean => point.z === start.z)) &&
+      path
+        .slice(1)
+        .every(
+          (point, index): boolean =>
+            clear(path[index]!, point) && extraCost(path[index]!, point) === 0,
+        )
+    ) {
+      if (input.stats) input.stats.completionReason = "found"
+      return path.map((point): Point => ({ ...point }))
+    }
+  }
   const grid = input.gridSize ?? 0.1
   if (!Number.isFinite(grid) || grid <= 0)
     throw new Error("repair04: clearance grid size must be positive and finite")
@@ -311,6 +520,7 @@ export function findClearancePath(input: {
   }
   const costs = new Map<number, number>()
   const previous = new Map<number, number>()
+  const viaPaths = new Map<number, ViaPath | undefined>()
   const startId = idOf(start),
     sx = startId % nx,
     sy = Math.floor(startId / nx) % ny
@@ -322,21 +532,39 @@ export function findClearancePath(input: {
       const id = idAt(x, y, start.z),
         p = point(id)
       if (!clear(start, p)) continue
-      const cost = Math.hypot(p.x - start.x, p.y - start.y)
+      const cost =
+        Math.hypot(p.x - start.x, p.y - start.y) + extraCost(start, p)
+      if (!Number.isFinite(cost)) continue
       costs.set(id, cost)
       previous.set(id, -1)
       push({ id, cost, priority: cost + heuristic(p) })
     }
-  const edgeCache = new Map<string, boolean>()
+  const gridNodeCount = nx * ny * srj.layerCount
+  // Only pack edges when every grid-node pair has an exact integer key.
+  const useNumericEdgeKeys =
+    nx > 0 &&
+    ny > 0 &&
+    Number.isSafeInteger(srj.layerCount) &&
+    Number.isSafeInteger(gridNodeCount) &&
+    gridNodeCount > 0 &&
+    Number.isSafeInteger(gridNodeCount * gridNodeCount - 1) &&
+    Number.isInteger(start.z) &&
+    start.z >= 0 &&
+    start.z < srj.layerCount
+  const edgeCache = new Map<number | string, boolean>()
   let expanded = 0
-  while (heap.length && expanded++ < 30000) {
+  while (heap.length && expanded < (input.maxNodes ?? 30000)) {
     const current = pop()
+    expanded++
+    if (input.stats) input.stats.nodesPopped = expanded
     if (current.cost !== costs.get(current.id)) continue
     const a = point(current.id)
+    const viaPath = viaPaths.get(current.id)
     if (
       a.z === end.z &&
       Math.hypot(a.x - end.x, a.y - end.y) < grid * 3 &&
-      clear(a, end)
+      clear(a, end) &&
+      Number.isFinite(extraCost(a, end))
     ) {
       const reversed: Point[] = [end]
       for (let id = current.id; id !== -1; id = previous.get(id)!)
@@ -344,15 +572,40 @@ export function findClearancePath(input: {
       reversed.push(start)
       const path = reversed.reverse(),
         simplified: Point[] = [start]
+      const pathCosts = [0]
+      for (let i = 1; input.getAdditionalEdgeCost && i < path.length; i++) {
+        const a = path[i - 1]!,
+          b = path[i]!
+        pathCosts.push(
+          pathCosts[i - 1]! +
+            (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) +
+            extraCost(a, b),
+        )
+      }
+      let anchor = 0
       for (let i = 1; i < path.length; ) {
         let furthest = i
         if (path[i]!.z === simplified.at(-1)!.z) {
           for (let j = i + 1; j < path.length && path[j]!.z === path[i]!.z; j++)
-            if (clear(simplified.at(-1)!, path[j]!)) furthest = j
+            if (
+              clear(simplified.at(-1)!, path[j]!) &&
+              (!input.getAdditionalEdgeCost ||
+                Math.hypot(
+                  path[j]!.x - path[anchor]!.x,
+                  path[j]!.y - path[anchor]!.y,
+                ) +
+                  extraCost(path[anchor]!, path[j]!) <=
+                  pathCosts[j]! - pathCosts[anchor]! + REGION_EPSILON)
+            )
+              furthest = j
         }
         simplified.push(path[furthest]!)
+        anchor = furthest
         i = furthest + 1
       }
+      if (!pathClearsDrills(simplified))
+        throw new Error("repair04: search generated conflicting drill sites")
+      if (input.stats) input.stats.completionReason = "found"
       return simplified
     }
     const x = current.id % nx,
@@ -370,27 +623,38 @@ export function findClearancePath(input: {
           continue
         neighbors.push(idAt(x + dx, y + dy, a.z))
       }
-    if (input.allowLayerChanges !== false) {
+    if (input.allowLayerChanges !== false && clearsDrills(a, viaPath)) {
       for (let z = 0; z < srj.layerCount; z++)
         if (z !== a.z) neighbors.push(idAt(x, y, z))
     }
     for (const id of neighbors) {
       const b = point(id),
         cost =
-          current.cost + (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1)
+          current.cost +
+          (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) +
+          extraCost(a, b)
       if (cost >= (costs.get(id) ?? Infinity)) continue
-      const key =
-        current.id < id ? `${current.id},${id}` : `${id},${current.id}`
+      const low = Math.min(current.id, id),
+        high = Math.max(current.id, id)
+      const key = useNumericEdgeKeys
+        ? low * gridNodeCount + high
+        : `${low},${high}`
       let permitted = edgeCache.get(key)
       if (permitted === undefined) {
         permitted = clear(a, b)
         edgeCache.set(key, permitted)
       }
       if (!permitted) continue
+      if (a.z !== b.z && (a.x !== viaPath?.x || a.y !== viaPath?.y))
+        viaPaths.set(id, { x: a.x, y: a.y, previous: viaPath })
+      else if (viaPath) viaPaths.set(id, viaPath)
+      else viaPaths.delete(id)
       costs.set(id, cost)
       previous.set(id, current.id)
       push({ id, cost, priority: cost + heuristic(b) })
     }
   }
+  if (input.stats)
+    input.stats.completionReason = heap.length ? "node-limit" : "no-path"
   return null
 }

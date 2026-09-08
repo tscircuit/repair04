@@ -9,6 +9,10 @@ import {
   REGION_EPSILON,
 } from "./repairRegionGeometry"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
+import {
+  getLocalObstacleDistance,
+  getLocalObstacleGeometry,
+} from "./obstacleDistanceGeometry"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 
 type Point = { x: number; y: number }
@@ -292,23 +296,64 @@ export const getRepairJunctionAnchors = (
     return root
   }
   const routeByImmutableEndpoint = new Map<string, number>()
+  const padIndicesByPort = new Map<string, number[]>()
+  for (let index = 0; index < srj.obstacles.length; index += 1) {
+    for (const alias of srj.obstacles[index]!.connectedTo) {
+      const indices = padIndicesByPort.get(alias) ?? []
+      indices.push(index)
+      padIndicesByPort.set(alias, indices)
+    }
+  }
   for (let routeIndex = 0; routeIndex < routes.length; routeIndex += 1) {
     const route = routes[routeIndex]!
     for (const point of [route.route[0], route.route.at(-1)]) {
       if (!point?.pcb_port_id) continue
-      const key = JSON.stringify([
-        canonicalNet(route.connectionName),
-        point.pcb_port_id,
-        point.x,
-        point.y,
-        point.z,
-      ])
-      const previousRouteIndex = routeByImmutableEndpoint.get(key)
-      if (previousRouteIndex === undefined)
-        routeByImmutableEndpoint.set(key, routeIndex)
-      else
-        endpointComponents[findEndpointComponent(routeIndex)] =
-          findEndpointComponent(previousRouteIndex)
+      const net = canonicalNet(route.connectionName)
+      const keys = [
+        JSON.stringify([
+          net,
+          "point",
+          point.pcb_port_id,
+          point.x,
+          point.y,
+          point.z,
+        ]),
+      ]
+      // Different immutable terminal coordinates can already be connected
+      // through one physical pad. Prove copper attachment before treating
+      // additional intersections of their routes as redundant junctions.
+      for (const obstacleIndex of padIndicesByPort.get(point.pcb_port_id) ??
+        []) {
+        const obstacle = srj.obstacles[obstacleIndex]!
+        const zs =
+          obstacle.zLayers ??
+          obstacle.layers.map((layer): number => layerZ(layer, srj.layerCount))
+        if (!zs.includes(point.z)) continue
+        const radians = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
+        const dx = point.x - obstacle.center.x,
+          dy = point.y - obstacle.center.y
+        const local = {
+          x: dx * Math.cos(radians) + dy * Math.sin(radians),
+          y: -dx * Math.sin(radians) + dy * Math.cos(radians),
+        }
+        if (
+          getLocalObstacleDistance(
+            local,
+            local,
+            getLocalObstacleGeometry(obstacle),
+          ) > REGION_EPSILON
+        )
+          continue
+        keys.push(JSON.stringify([net, "pad", obstacleIndex]))
+      }
+      for (const key of keys) {
+        const previousRouteIndex = routeByImmutableEndpoint.get(key)
+        if (previousRouteIndex === undefined)
+          routeByImmutableEndpoint.set(key, routeIndex)
+        else
+          endpointComponents[findEndpointComponent(routeIndex)] =
+            findEndpointComponent(previousRouteIndex)
+      }
     }
   }
   const sharesImmutableEndpointComponent = (
