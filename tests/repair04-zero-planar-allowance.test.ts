@@ -11,7 +11,9 @@ test("zero planar allowance skips the expensive planar generator", (): void => {
     generateCandidatesForMode(allowLayerChanges: boolean): Generator<never>
   }
   const modes: boolean[] = []
-  access.generateCandidatesForMode = function* (mode: boolean): Generator<never> {
+  access.generateCandidatesForMode = function* (
+    mode: boolean,
+  ): Generator<never> {
     modes.push(mode)
   }
   expect([...access.generateCandidates()]).toHaveLength(0)

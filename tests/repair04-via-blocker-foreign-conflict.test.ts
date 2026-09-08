@@ -24,9 +24,9 @@ test("unclassified moved-via conflicts cannot trigger coupled repair", (): void 
     solver.evaluate = (): never => {
       throw new Error("Coupling must reuse the existing candidate score")
     }
-    expect(Array.from(solver.generateViaBlockerCandidates(
-      selected, candidate,
-    ))).toEqual([])
+    expect(
+      Array.from(solver.generateViaBlockerCandidates(selected, candidate)),
+    ).toEqual([])
     expect(solver.viaBlockerPathSearchCalls).toBe(0)
     expect(solver.pathSearchCalls).toBe(0)
     expect(solver.pathSearchNodes).toBe(0)

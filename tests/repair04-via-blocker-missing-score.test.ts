@@ -12,9 +12,13 @@ test("a via move without shared-step score feedback cannot start a coupled searc
     throw new Error("Missing feedback must not trigger another DRC evaluation")
   }
   solver.engine.evaluate = (): never => {
-    throw new Error("Missing feedback must not trigger another indexed evaluation")
+    throw new Error(
+      "Missing feedback must not trigger another indexed evaluation",
+    )
   }
-  expect([...solver.generateViaBlockerCandidates(selected, candidate)]).toEqual([])
+  expect([...solver.generateViaBlockerCandidates(selected, candidate)]).toEqual(
+    [],
+  )
   expect(solver.viaBlockerPathSearchCalls).toBe(0)
   expect(solver.pathSearchCalls).toBe(0)
   expect(solver.pathSearchNodes).toBe(0)

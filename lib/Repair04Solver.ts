@@ -556,7 +556,9 @@ export class Repair04Solver extends BaseSolver {
             (point): boolean =>
               point.z !== layer ||
               this.isLocked(ri, point) ||
-              Boolean((point as Point & { portPointId?: string }).portPointId) ||
+              Boolean(
+                (point as Point & { portPointId?: string }).portPointId,
+              ) ||
               route.vias.some(
                 (via): boolean => via.x === point.x && via.y === point.y,
               ),
@@ -577,9 +579,15 @@ export class Repair04Solver extends BaseSolver {
             const dx = amount * Math.cos((direction * Math.PI) / 4)
             const dy = amount * Math.sin((direction * Math.PI) / 4)
             const moved = points.map(
-              (point): Point => ({ ...point, x: point.x + dx, y: point.y + dy }),
+              (point): Point => ({
+                ...point,
+                x: point.x + dx,
+                y: point.y + dy,
+              }),
             )
-            if (moved.some((point): boolean => !inside(point, this.mutableBounds)))
+            if (
+              moved.some((point): boolean => !inside(point, this.mutableBounds))
+            )
               continue
             yield {
               routeIndex: ri,
@@ -616,55 +624,99 @@ export class Repair04Solver extends BaseSolver {
         const route = this.routes[ri]!
         if (route.jumpers?.length) continue
         for (let pi = 1; pi < route.route.length; pi++) {
-          const a = route.route[pi - 1]!, b = route.route[pi]!
-          const dx = b.x - a.x, dy = b.y - a.y
+          const a = route.route[pi - 1]!,
+            b = route.route[pi]!
+          const dx = b.x - a.x,
+            dy = b.y - a.y
           const length2 = dx * dx + dy * dy
           if (a.z !== b.z || length2 < 1e-12) continue
           const t = ((center.x - a.x) * dx + (center.y - a.y) * dy) / length2
           if (t < 0 || t > 1) continue
-          if (Math.hypot(center.x - a.x - t * dx, center.y - a.y - t * dy) < 1e-6)
+          if (
+            Math.hypot(center.x - a.x - t * dx, center.y - a.y - t * dy) < 1e-6
+          )
             touching.push({ ri, pi, a, b })
         }
       }
       for (let i = 0; i < touching.length; i++) {
         for (let j = i + 1; j < touching.length; j++) {
-          let path = touching[i]!, block = touching[j]!
+          let path = touching[i]!,
+            block = touching[j]!
           if (path.ri === block.ri || path.a.z !== block.a.z) continue
           const errorId = error.pcb_trace_error_id
           if (
             errorId !== `overlap_repair04_${path.ri}_repair04_${block.ri}` &&
             errorId !== `overlap_repair04_${block.ri}_repair04_${path.ri}`
-          ) continue
-          if (this.routes[path.ri]!.vias.length === 0) [path, block] = [block, path]
-          const pathRoute = this.routes[path.ri]!, blockRoute = this.routes[block.ri]!
-          if (pathRoute.vias.length === 0 || blockRoute.vias.length !== 0) continue
+          )
+            continue
+          if (this.routes[path.ri]!.vias.length === 0)
+            [path, block] = [block, path]
+          const pathRoute = this.routes[path.ri]!,
+            blockRoute = this.routes[block.ri]!
+          if (pathRoute.vias.length === 0 || blockRoute.vias.length !== 0)
+            continue
           const pairKey = `${path.ri}:${block.ri}`
           if (seen.has(pairKey)) continue
           seen.add(pairKey)
-          let blockLo = block.pi - 1, blockHi = block.pi
-          while (blockLo > 0 && !this.isLocked(block.ri, blockRoute.route[blockLo]!)) blockLo--
-          while (blockHi < blockRoute.route.length - 1 && !this.isLocked(block.ri, blockRoute.route[blockHi]!)) blockHi++
+          let blockLo = block.pi - 1,
+            blockHi = block.pi
+          while (
+            blockLo > 0 &&
+            !this.isLocked(block.ri, blockRoute.route[blockLo]!)
+          )
+            blockLo--
+          while (
+            blockHi < blockRoute.route.length - 1 &&
+            !this.isLocked(block.ri, blockRoute.route[blockHi]!)
+          )
+            blockHi++
           if (
-            blockHi - blockLo > 64 || blockHi - blockLo < 2 ||
+            blockHi - blockLo > 64 ||
+            blockHi - blockLo < 2 ||
             !inside(blockRoute.route[blockLo]!, this.mutableBounds) ||
             !inside(blockRoute.route[blockHi]!, this.mutableBounds)
-          ) continue
-          const blockWidth = (blockRoute.route[blockLo] as Point & { traceThickness?: number }).traceThickness ?? blockRoute.traceThickness
-          if (blockRoute.route.slice(blockLo, blockHi + 1).some((point) =>
-            point.z !== block.a.z || point.toNextSegmentType || point.insideJumperPad ||
-            ((point as Point & { traceThickness?: number }).traceThickness ?? blockRoute.traceThickness) !== blockWidth
-          )) continue
-          const vias = this.getViaGeometry(pathRoute)
-          const nearest = vias.map((via, viaIndex) => ({
-            via, viaIndex,
-            distance: Math.min(...via.pointIndices.map((index) => Math.abs(index - path.pi))),
-          })).sort((a, b) => a.distance - b.distance)[0]
+          )
+            continue
+          const blockWidth =
+            (blockRoute.route[blockLo] as Point & { traceThickness?: number })
+              .traceThickness ?? blockRoute.traceThickness
           if (
-            !nearest || nearest.via.pointIndices.some((index) => this.isLocked(path.ri, pathRoute.route[index]!)) ||
-            (this.input.movableVias?.length && !this.input.movableVias.some(
-              (selected) => selected.routeIndex === path.ri && selected.viaIndex === nearest.viaIndex,
-            ))
-          ) continue
+            blockRoute.route
+              .slice(blockLo, blockHi + 1)
+              .some(
+                (point) =>
+                  point.z !== block.a.z ||
+                  point.toNextSegmentType ||
+                  point.insideJumperPad ||
+                  ((point as Point & { traceThickness?: number })
+                    .traceThickness ?? blockRoute.traceThickness) !==
+                    blockWidth,
+              )
+          )
+            continue
+          const vias = this.getViaGeometry(pathRoute)
+          const nearest = vias
+            .map((via, viaIndex) => ({
+              via,
+              viaIndex,
+              distance: Math.min(
+                ...via.pointIndices.map((index) => Math.abs(index - path.pi)),
+              ),
+            }))
+            .sort((a, b) => a.distance - b.distance)[0]
+          if (
+            !nearest ||
+            nearest.via.pointIndices.some((index) =>
+              this.isLocked(path.ri, pathRoute.route[index]!),
+            ) ||
+            (this.input.movableVias?.length &&
+              !this.input.movableVias.some(
+                (selected) =>
+                  selected.routeIndex === path.ri &&
+                  selected.viaIndex === nearest.viaIndex,
+              ))
+          )
+            continue
           const lastViaIndex = Math.max(...nearest.via.pointIndices)
           let lo = path.pi - 1
           while (lo > 0 && !this.isLocked(path.ri, pathRoute.route[lo]!)) lo--

@@ -3,7 +3,11 @@ import type { HighDensityRoute } from "high-density-repair03/lib"
 import { Repair04Solver } from "../lib"
 import { makeTaperedClearanceInput } from "./fixtures/taperedClearanceFixture"
 
-type Access = { generateTaperedSegmentCandidates(targets: { ri: number; pi: number; distance: number; t: number }[]): Generator<{ routeIndex: number; route: HighDensityRoute }> }
+type Access = {
+  generateTaperedSegmentCandidates(
+    targets: { ri: number; pi: number; distance: number; t: number }[],
+  ): Generator<{ routeIndex: number; route: HighDensityRoute }>
+}
 
 test("tapered translations cannot alter connectors at the immutable collar", (): void => {
   for (const attachment of [0, 3]) {
@@ -16,6 +20,10 @@ test("tapered translations cannot alter connectors at the immutable collar", ():
     // the mutable area and must retain the exact original connector geometry.
     const solver = new Repair04Solver(input)
     solver.step()
-    expect([...(solver as unknown as Access).generateTaperedSegmentCandidates([{ ri: 0, pi: 2, distance: 0, t: 0.5 }])]).toEqual([])
+    expect([
+      ...(solver as unknown as Access).generateTaperedSegmentCandidates([
+        { ri: 0, pi: 2, distance: 0, t: 0.5 },
+      ]),
+    ]).toEqual([])
   }
 })

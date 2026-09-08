@@ -1,9 +1,23 @@
-import type { HighDensityRoute, SimpleRouteJson } from "high-density-repair03/lib"
-import { findClearancePath, type ClearancePathSearchStats } from "./findClearancePath"
+import type {
+  HighDensityRoute,
+  SimpleRouteJson,
+} from "high-density-repair03/lib"
+import {
+  findClearancePath,
+  type ClearancePathSearchStats,
+} from "./findClearancePath"
 import type { FixedObstacleViolation } from "./getFixedObstacleViolations"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 
-type Span = { ri: number; a: number; b: number; z: number; width: number; distance: number; viaEnds: number }
+type Span = {
+  ri: number
+  a: number
+  b: number
+  z: number
+  width: number
+  distance: number
+  viaEnds: number
+}
 type Replacement = { routeIndex: number; route: HighDensityRoute }
 type Input = {
   srj: SimpleRouteJson
@@ -19,43 +33,107 @@ type Input = {
 }
 
 /** Restore every removed span before yielding an atomic same-layer candidate. */
-export function* generateThreeRouteCandidates(input: Input): Generator<Replacement[]> {
+export function* generateThreeRouteCandidates(
+  input: Input,
+): Generator<Replacement[]> {
   const { routes } = input
-  const violations = input.violations.filter((v): boolean => v.kind === "wire")
-    .sort((a, b): number => b.severity - a.severity || a.routeIndex - b.routeIndex || a.obstacleIndex - b.obstacleIndex)
-  if (!violations.length || input.maxSearchCalls <= 0 || input.remainingNodes() <= 0) return
+  const violations = input.violations
+    .filter((v): boolean => v.kind === "wire")
+    .sort(
+      (a, b): number =>
+        b.severity - a.severity ||
+        a.routeIndex - b.routeIndex ||
+        a.obstacleIndex - b.obstacleIndex,
+    )
+  if (
+    !violations.length ||
+    input.maxSearchCalls <= 0 ||
+    input.remainingNodes() <= 0
+  )
+    return
   const spans: Span[] = []
   let calls = 0
-  const distance = (p: { x: number; y: number }, a: RepairRoutePoint, b: RepairRoutePoint): number => {
-    const dx = b.x - a.x, dy = b.y - a.y
+  const distance = (
+    p: { x: number; y: number },
+    a: RepairRoutePoint,
+    b: RepairRoutePoint,
+  ): number => {
+    const dx = b.x - a.x,
+      dy = b.y - a.y
     const length2 = dx * dx + dy * dy
-    const t = length2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length2)) : 0
+    const t = length2
+      ? Math.max(
+          0,
+          Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length2),
+        )
+      : 0
     return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy)
   }
   const viaAt = (route: HighDensityRoute, index: number): boolean => {
     const point = route.route[index]!
     const before = route.route[index - 1]
     const after = route.route[index + 1]
-    return (before !== undefined && before.z !== point.z) ||
+    return (
+      (before !== undefined && before.z !== point.z) ||
       (after !== undefined && after.z !== point.z)
+    )
   }
   const inMutableClosure = (point: RepairRoutePoint): boolean => {
     const b = input.bounds
-    return point.x >= b.minX - 1e-8 && point.x <= b.maxX + 1e-8 &&
-      point.y >= b.minY - 1e-8 && point.y <= b.maxY + 1e-8
+    return (
+      point.x >= b.minX - 1e-8 &&
+      point.x <= b.maxX + 1e-8 &&
+      point.y >= b.minY - 1e-8 &&
+      point.y <= b.maxY + 1e-8
+    )
   }
   for (let ri = 0; ri < routes.length; ri++) {
     const route = routes[ri]!
-    if (route.jumpers?.length || route.route.some((p): boolean => Boolean(p.toNextSegmentType || p.insideJumperPad))) continue
-    const locked = (index: number): boolean => input.isLocked(ri, index) || viaAt(route, index)
-    for (let a = 0; a < route.route.length - 1;) {
+    if (
+      route.jumpers?.length ||
+      route.route.some((p): boolean =>
+        Boolean(p.toNextSegmentType || p.insideJumperPad),
+      )
+    )
+      continue
+    const locked = (index: number): boolean =>
+      input.isLocked(ri, index) || viaAt(route, index)
+    for (let a = 0; a < route.route.length - 1; ) {
       let b = a + 1
-      if (route.route[a]!.z !== route.route[b]!.z) { a = b; continue }
-      while (b < route.route.length - 1 && !locked(b) && route.route[b + 1]!.z === route.route[a]!.z) b++
-      const width = (route.route[a] as RepairRoutePoint).traceThickness ?? route.traceThickness
-      if (b > a && inMutableClosure(route.route[a]!) && inMutableClosure(route.route[b]!) &&
-        route.route.slice(a, b + 1).every((p): boolean => ((p as RepairRoutePoint).traceThickness ?? route.traceThickness) === width)) {
-        spans.push({ ri, a, b, z: route.route[a]!.z, width, distance: Infinity, viaEnds: Number(viaAt(route, a)) + Number(viaAt(route, b)) })
+      if (route.route[a]!.z !== route.route[b]!.z) {
+        a = b
+        continue
+      }
+      while (
+        b < route.route.length - 1 &&
+        !locked(b) &&
+        route.route[b + 1]!.z === route.route[a]!.z
+      )
+        b++
+      const width =
+        (route.route[a] as RepairRoutePoint).traceThickness ??
+        route.traceThickness
+      if (
+        b > a &&
+        inMutableClosure(route.route[a]!) &&
+        inMutableClosure(route.route[b]!) &&
+        route.route
+          .slice(a, b + 1)
+          .every(
+            (p): boolean =>
+              ((p as RepairRoutePoint).traceThickness ??
+                route.traceThickness) === width,
+          )
+      ) {
+        spans.push({
+          ri,
+          a,
+          b,
+          z: route.route[a]!.z,
+          width,
+          distance: Infinity,
+          viaEnds: Number(viaAt(route, a)) + Number(viaAt(route, b)),
+        })
       }
       a = b
     }
