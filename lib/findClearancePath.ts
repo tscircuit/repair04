@@ -82,14 +82,25 @@ export function findClearancePath(input: {
   if (input.allowLayerChanges === false && start.z !== end.z) return null
   const route = routes[routeIndex]!
   const drillDiameter = input.viaHoleDiameter ?? route.viaDiameter
-  if (!Number.isFinite(drillDiameter) || drillDiameter <= 0 ||
-    drillDiameter > route.viaDiameter)
-    throw new Error("repair04: via hole diameter must be positive and fit the copper")
+  if (
+    !Number.isFinite(drillDiameter) ||
+    drillDiameter <= 0 ||
+    drillDiameter > route.viaDiameter
+  )
+    throw new Error(
+      "repair04: via hole diameter must be positive and fit the copper",
+    )
   const drillSpacing = drillDiameter + input.viaClearance
-  const clearsDrills = (point: Point, viaPath: ViaPath | undefined): boolean => {
+  const clearsDrills = (
+    point: Point,
+    viaPath: ViaPath | undefined,
+  ): boolean => {
     for (let via = viaPath; via; via = via.previous) {
       if (point.x === via.x && point.y === via.y) continue
-      if (Math.hypot(point.x - via.x, point.y - via.y) + REGION_EPSILON < drillSpacing)
+      if (
+        Math.hypot(point.x - via.x, point.y - via.y) + REGION_EPSILON <
+        drillSpacing
+      )
         return false
     }
     return true
@@ -97,7 +108,8 @@ export function findClearancePath(input: {
   const pathClearsDrills = (path: Point[]): boolean => {
     let vias: ViaPath | undefined
     for (let index = 1; index < path.length; index++) {
-      const a = path[index - 1]!, b = path[index]!
+      const a = path[index - 1]!,
+        b = path[index]!
       if (a.z === b.z || a.toNextSegmentType === "through_obstacle") continue
       if (!clearsDrills(a, vias)) return false
       if (a.x !== vias?.x || a.y !== vias?.y)
@@ -410,22 +422,45 @@ export function findClearancePath(input: {
   if (!clear(start, start) || !clear(end, end)) return null
   if (input.existingPath) {
     const path = input.existingPath
-    const first = path[0], last = path.at(-1)
-    if (!first || !last || first.x !== start.x || first.y !== start.y ||
-      first.z !== start.z || last.x !== end.x || last.y !== end.y ||
-      last.z !== end.z)
-      throw new Error("repair04: existing clearance path must match its anchors")
-    if (path.some((point, index): boolean => {
-      const previous = path[index - 1]
-      return Boolean(previous && previous.z !== point.z &&
-        (previous.x !== point.x || previous.y !== point.y))
-    }))
-      throw new Error("repair04: existing clearance path has a non-colocated layer transition")
-    if (pathClearsDrills(path) &&
-      (input.allowLayerChanges !== false || path.every((point): boolean => point.z === start.z)) &&
-      path.slice(1).every((point, index): boolean =>
-        clear(path[index]!, point) && extraCost(path[index]!, point) === 0,
-      )) {
+    const first = path[0],
+      last = path.at(-1)
+    if (
+      !first ||
+      !last ||
+      first.x !== start.x ||
+      first.y !== start.y ||
+      first.z !== start.z ||
+      last.x !== end.x ||
+      last.y !== end.y ||
+      last.z !== end.z
+    )
+      throw new Error(
+        "repair04: existing clearance path must match its anchors",
+      )
+    if (
+      path.some((point, index): boolean => {
+        const previous = path[index - 1]
+        return Boolean(
+          previous &&
+            previous.z !== point.z &&
+            (previous.x !== point.x || previous.y !== point.y),
+        )
+      })
+    )
+      throw new Error(
+        "repair04: existing clearance path has a non-colocated layer transition",
+      )
+    if (
+      pathClearsDrills(path) &&
+      (input.allowLayerChanges !== false ||
+        path.every((point): boolean => point.z === start.z)) &&
+      path
+        .slice(1)
+        .every(
+          (point, index): boolean =>
+            clear(path[index]!, point) && extraCost(path[index]!, point) === 0,
+        )
+    ) {
       if (input.stats) input.stats.completionReason = "found"
       return path.map((point): Point => ({ ...point }))
     }
