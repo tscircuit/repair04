@@ -203,7 +203,14 @@ const getFragments = (
             sameRepairPoint(point, { ...jumper.end, z: point.z }),
         )
       const lastPoint = active.points[active.points.length - 1]
-      if (lastPoint && sameRepairPoint(lastPoint, point)) {
+      // A nearby planar vertex cannot replace the exact anchor of a via.
+      // Retain distinct source coordinates when combining segment endpoints.
+      if (
+        lastPoint &&
+        lastPoint.x === point.x &&
+        lastPoint.y === point.y &&
+        lastPoint.z === point.z
+      ) {
         active.locks[active.locks.length - 1] =
           active.locks[active.locks.length - 1]! || fixed
       } else {
