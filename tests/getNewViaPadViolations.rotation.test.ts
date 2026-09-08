@@ -4,6 +4,7 @@ import { newViaPadFixture } from "./fixtures/newViaPadFixture"
 
 test("measures new-via copper edge clearance to a rotated same-net pad", (): void => {
   const input = newViaPadFixture()
+  input.srj.minViaEdgeToPadEdgeClearance = 0.1
   const pad = input.srj.obstacles[0]!
   pad.width = 2
   pad.height = 0.2

@@ -59,7 +59,7 @@ test("an infeasible wire constraint cannot push a clear via into its own solder 
   }
   const output = relaxTraceClearance({ ...input, allowViaMovement: true })
   expect(output[1]).toEqual(routes[1])
-  expect(output[0]!.vias[0]!.x).toBeLessThanOrEqual(-0.375)
+  expect(output[0]!.vias[0]!.x).toBeLessThanOrEqual(-0.275)
   expect(
     getNewViaPadViolations({
       srj: input.srj,

@@ -6,6 +6,7 @@ import {
   type ObstacleDistanceGeometry,
 } from "./obstacleDistanceGeometry"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
+import { getViaPadClearance } from "./getViaPadClearance"
 import { areExpandedBoundsSeparated } from "./areExpandedBoundsSeparated"
 import type {
   Bounds,
@@ -41,6 +42,7 @@ type ViaPadConstraint = {
 type PadContact = {
   segment: Segment
   corners: Point[]
+  required: number
 }
 
 const MAX_SWEEPS = 256
@@ -289,20 +291,27 @@ export function relaxTraceClearance(
         continue
       // Use the enclosing rectangle as a conservative routing constraint for
       // every pad shape. Physical via guards retain the exact obstacle shape.
-      padContacts.push({ segment, corners })
+      const required =
+        segment.radius +
+        (segment.via
+          ? getViaPadClearance(
+              input.srj,
+              viaClearance,
+              obstacleNets.has(segment.net),
+            )
+          : Math.max(
+              traceClearance,
+              input.srj.defaultObstacleMargin ?? 0,
+              input.srj.minTraceToPadEdgeClearance ?? 0,
+            ))
+      padContacts.push({ segment, corners, required })
       if (segment.via) {
         const constraint: ViaPadConstraint = {
           center: obstacle.center,
           cosine,
           sine,
           shape: getLocalObstacleGeometry(obstacle),
-          clearance:
-            segment.radius +
-            Math.max(
-              viaClearance,
-              input.srj.defaultObstacleMargin ?? 0,
-              input.srj.minViaEdgeToPadEdgeClearance ?? 0,
-            ),
+          clearance: required,
         }
         // Topology is unchanged by projection. Existing pad contact may move
         // toward clearance, but no step may worsen its original separation.
@@ -400,16 +409,7 @@ export function relaxTraceClearance(
       )
     }
     for (const pad of padContacts) {
-      const { segment, corners } = pad
-      const required =
-        segment.radius +
-        Math.max(
-          segment.via ? viaClearance : traceClearance,
-          input.srj.defaultObstacleMargin ?? 0,
-          segment.via
-            ? (input.srj.minViaEdgeToPadEdgeClearance ?? 0)
-            : (input.srj.minTraceToPadEdgeClearance ?? 0),
-        )
+      const { segment, corners, required } = pad
       for (const vertex of new Set([segment.a, segment.b])) {
         const interior = getInteriorPadContact(vertex, corners)
         if (interior) {

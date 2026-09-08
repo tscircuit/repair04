@@ -11,6 +11,8 @@ import type {
   HighDensityRoute,
   SimpleRouteJson,
 } from "high-density-repair03/lib"
+import { getNetRepresentatives } from "./getFixedObstacleViolations"
+import { getViaPadClearance } from "./getViaPadClearance"
 
 export type NewViaPadViolation = {
   key: string
@@ -36,6 +38,7 @@ type StaticContext = Pick<
   SimpleRouteJson,
   | "layerCount"
   | "obstacles"
+  | "connections"
   | "defaultObstacleMargin"
   | "minViaEdgeToPadEdgeClearance"
 >
@@ -68,6 +71,12 @@ const createEvaluator = ({
     srj.minViaEdgeToPadEdgeClearance ?? 0,
   ]
   const clearance = Math.max(...margins)
+  const sameNetClearance = getViaPadClearance(srj, viaClearance, true)
+  let ownershipRoutes: Pick<
+    HighDensityRoute,
+    "connectionName" | "rootConnectionName"
+  >[] = []
+  let nets: Map<string, string> | undefined
   const getContacts = (via: RepairViaGeometry): Contact[] => {
     const cached = contactsByVia.get(via.identity)
     if (cached) return cached
@@ -170,9 +179,38 @@ const createEvaluator = ({
         "repair04 new-via guard requires nonnegative finite margins",
       )
     const violations: NewViaPadViolation[] = []
+    // Physical contact caches are independent of ownership. Rebuild aliases
+    // whenever candidate route identities change, including root net changes.
+    if (
+      !nets ||
+      ownershipRoutes.length !== routes.length ||
+      ownershipRoutes.some(
+        (before, index): boolean =>
+          before.connectionName !== routes[index]!.connectionName ||
+          before.rootConnectionName !== routes[index]!.rootConnectionName,
+      )
+    ) {
+      nets = getNetRepresentatives(srj, routes)
+      ownershipRoutes = routes.map((route) => ({
+        connectionName: route.connectionName,
+        rootConnectionName: route.rootConnectionName,
+      }))
+    }
     for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
       const route = routes[routeIndex]!,
         previous = previousRoutes[routeIndex]!
+      const owner = nets.get(route.connectionName) ?? route.connectionName
+      const getRouteContacts = (via: RepairViaGeometry): Contact[] =>
+        getContacts(via).flatMap((contact): Contact[] => {
+          const sameNet = srj.obstacles[contact.obstacleIndex]!.connectedTo.some(
+            (name): boolean => (nets!.get(name) ?? name) === owner,
+          )
+          const severity =
+            contact.severity - (sameNet ? clearance - sameNetClearance : 0)
+          return severity > 1e-8
+            ? [{ obstacleIndex: contact.obstacleIndex, severity }]
+            : []
+        })
       const previousVias = getRepairViaGeometry(previous, srj.layerCount)
       const sameRoute =
         route.connectionName === previous.connectionName &&
@@ -242,7 +280,7 @@ const createEvaluator = ({
               selected.viaIndex === viaIndex,
           )
             ? new Map(
-                getContacts(previousVias[viaIndex]!).map(
+                getRouteContacts(previousVias[viaIndex]!).map(
                   (contact): [number, number] => [
                     contact.obstacleIndex,
                     contact.severity,
@@ -250,7 +288,7 @@ const createEvaluator = ({
                 ),
               )
             : undefined
-        for (const contact of getContacts(via)) {
+        for (const contact of getRouteContacts(via)) {
           const previousSeverity = previousContacts?.get(contact.obstacleIndex)
           if (
             previousSeverity !== undefined &&
@@ -287,6 +325,7 @@ export const createNewViaPadViolationEvaluator = ({
     srj: {
       layerCount: srj.layerCount,
       obstacles: structuredClone(srj.obstacles),
+      connections: structuredClone(srj.connections),
       defaultObstacleMargin: srj.defaultObstacleMargin,
       minViaEdgeToPadEdgeClearance: srj.minViaEdgeToPadEdgeClearance,
     },
@@ -294,7 +333,9 @@ export const createNewViaPadViolationEvaluator = ({
   })
 
 /**
- * New vias must clear every obstacle, including same-net pads.
+ * New vias must clear foreign pads and stay outside same-net pad copper.
+ * Explicit obstacle/pad margins also apply to connected pads; the default
+ * electrical clearance does not introduce an additional same-net gap.
  * Ordinary electrical clearance checks allow same-net copper contact, which
  * does not imply permission to drill a via in a solder pad. Existing physical
  * vias may also improve an existing contact when ordered route transitions

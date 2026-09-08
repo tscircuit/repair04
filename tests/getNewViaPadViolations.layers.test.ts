@@ -17,7 +17,7 @@ test("checks the full new-via span and SRJ margin without touching other layers"
   const violations = getNewViaPadViolations(input)
   expect(violations).toHaveLength(1)
   expect(violations[0]!.obstacleIndex).toBe(0)
-  expect(violations[0]!.severity).toBeCloseTo(0.2, 10)
+  expect(violations[0]!.severity).toBeCloseTo(0.1, 10)
   input.srj.minViaEdgeToPadEdgeClearance = 0.3
   expect(getNewViaPadViolations(input)[0]!.severity).toBeCloseTo(0.4, 10)
 })

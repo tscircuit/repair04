@@ -31,7 +31,7 @@ test("rejects sample006's two new same-net vias inside their solder pads", (): v
     const violations = getNewViaPadViolations(input)
     expect(violations).toHaveLength(1)
     expect(violations[0]!.center).toEqual({ x: location.x, y: location.y })
-    expect(violations[0]!.severity).toBeCloseTo(0.25, 10)
+    expect(violations[0]!.severity).toBeCloseTo(0.15, 10)
     expect(violations[0]!.routeIndex).toBe(0)
     expect(violations[0]!.obstacleIndex).toBe(0)
   }

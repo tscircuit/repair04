@@ -56,7 +56,7 @@ test("projection moves an existing pad via toward clearance without changing its
     ],
   }
   const output = relaxTraceClearance({ ...input, allowViaMovement: true })
-  expect(output[0]!.vias[0]!.x).toBeLessThan(-0.3)
+  expect(output[0]!.vias[0]!.x).toBeLessThanOrEqual(-0.25)
   expect(output[0]!.route.map((point) => point.z)).toEqual(
     input.routes[0]!.route.map((point) => point.z),
   )

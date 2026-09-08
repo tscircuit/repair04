@@ -15,9 +15,11 @@ import {
 } from "./repairRegionGeometry"
 import {
   createFixedObstacleViolationEvaluator,
+  getNetRepresentatives,
   type FixedObstacleViolation,
 } from "./getFixedObstacleViolations"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
+import { getViaPadClearance } from "./getViaPadClearance"
 import {
   findClearancePath,
   type ClearancePathSearchStats,
@@ -1261,6 +1263,7 @@ export class Repair04Solver extends BaseSolver {
     if (this.input.allowLayerChanges !== true || this.input.movableVias?.length)
       return
     const seen = new Set<string>()
+    const nets = getNetRepresentatives(this.input.srj, this.routes)
     for (const contact of this.getViaPadViolations(this.routes, true)) {
       const route = this.routes[contact.routeIndex]!
       const via = this.getViaGeometry(route).find(
@@ -1284,10 +1287,14 @@ export class Repair04Solver extends BaseSolver {
       const localY = -dx * sine + dy * cosine
       const margin =
         via.diameter / 2 +
-        Math.max(
+        getViaPadClearance(
+          this.input.srj,
           this.input.viaClearance ?? 0.1,
-          this.input.srj.defaultObstacleMargin ?? 0,
-          this.input.srj.minViaEdgeToPadEdgeClearance ?? 0,
+          pad.connectedTo.some(
+            (name): boolean =>
+              (nets.get(name) ?? name) ===
+              (nets.get(route.connectionName) ?? route.connectionName),
+          ),
         )
       const halfWidth = pad.width / 2 + margin
       const halfHeight = pad.height / 2 + margin
