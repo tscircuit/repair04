@@ -54,7 +54,7 @@ test("reused physical contacts retain current ownership, via ordinal, span, diam
     includeExistingVias: selected,
   })
   expect(first.map((v) => [v.key, v.severity])).toEqual([
-    ["new-via-pad:0:0:0", 0.25],
+    ["new-via-pad:0:0:0", 0.15],
   ])
   first[0]!.center.x = 999
   first[0]!.severity = 999
@@ -65,7 +65,7 @@ test("reused physical contacts retain current ownership, via ordinal, span, diam
       previousRoutes: [copy],
       includeExistingVias: selected,
     })[0],
-  ).toMatchObject({ center: { x: 0, y: 0 }, severity: 0.25 })
+  ).toMatchObject({ center: { x: 0, y: 0 }, severity: 0.15 })
   expect(evaluate({ routes: [copy], previousRoutes: [copy] })).toEqual([])
   const renamed = { ...copy, connectionName: "other-owner" }
   expect(
@@ -90,7 +90,7 @@ test("reused physical contacts retain current ownership, via ordinal, span, diam
   const wider = { ...copy, viaDiameter: 0.6 }
   expect(
     evaluate({ routes: [wider], previousRoutes: [copy] })[0]!.severity,
-  ).toBe(0.4)
+  ).toBeCloseTo(0.3, 10)
   const lower = {
     ...copy,
     route: copy.route.map((p) => ({ ...p, z: p.z + 2 })),

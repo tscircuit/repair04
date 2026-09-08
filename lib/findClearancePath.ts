@@ -7,6 +7,7 @@ import type {
   SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
+import { getViaPadClearance } from "./getViaPadClearance"
 import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 import { REGION_EPSILON } from "./repairRegionGeometry"
@@ -227,7 +228,7 @@ export function findClearancePath(input: {
     })
   }
   for (const obstacle of srj.obstacles) {
-    // A wire may enter its own pad, but a new via still needs pad clearance.
+    // A wire may enter its own pad. A via's annulus must remain outside it.
     const viaOnly = obstacle.connectedTo.some((name) => net(name) === owner)
     const zs =
       (obstacle as typeof obstacle & { __zLayers?: number[] }).__zLayers ??
@@ -373,11 +374,13 @@ export function findClearancePath(input: {
           barrier.visitedQuery = currentQuery
           if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
           const requiredGap =
-            barrier.rect || barrier.pad
-              ? margin
-              : isVia && barrier.minZ !== barrier.maxZ
-                ? input.viaClearance
-                : input.traceClearance
+            barrier.viaOnly
+              ? getViaPadClearance(srj, input.viaClearance, true)
+              : barrier.rect || barrier.pad
+                ? margin
+                : isVia && barrier.minZ !== barrier.maxZ
+                  ? input.viaClearance
+                  : input.traceClearance
           const clearance = radius + requiredGap
           // These bounds enclose the entire copper/rotated obstacle. Strict
           // separation can only rule out a collision; exact boundary cases
