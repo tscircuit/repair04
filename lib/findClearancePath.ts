@@ -184,22 +184,9 @@ export function findClearancePath(input: {
       obstacle.zLayers ??
       obstacle.layers.map(layer)
     for (const z of zs) {
-      if (obstacle.type === "oval") {
-        const angle = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
-        const horizontal = obstacle.width >= obstacle.height
-        const halfSpine = Math.abs(obstacle.width - obstacle.height) / 2
-        const dx = halfSpine * (horizontal ? Math.cos(angle) : -Math.sin(angle))
-        const dy = halfSpine * (horizontal ? Math.sin(angle) : Math.cos(angle))
-        add(
-          { x: obstacle.center.x - dx, y: obstacle.center.y - dy, z },
-          { x: obstacle.center.x + dx, y: obstacle.center.y + dy, z },
-          Math.min(obstacle.width, obstacle.height) / 2,
-          undefined,
-          viaOnly,
-          true,
-        )
-        continue
-      }
+      // The route evaluator reserves the enclosing rectangle of an SRJ pad.
+      // Plan against that same envelope instead of producing rounded-corner
+      // paths that cannot pass candidate validation.
       add(
         { ...obstacle.center, z },
         { ...obstacle.center, z },
