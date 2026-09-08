@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
-import { createCrossingPairAccess, createCrossingPairInput } from "./fixtures/crossing-pair"
+import {
+  createCrossingPairAccess,
+  createCrossingPairInput,
+} from "./fixtures/crossing-pair"
 
 test("paired path allowance is cumulative across generator restarts and shares the node cap", (): void => {
   const access = createCrossingPairAccess(createCrossingPairInput())

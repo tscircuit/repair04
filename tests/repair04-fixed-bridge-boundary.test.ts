@@ -44,10 +44,9 @@ test("an immutable bridge can cross the mutable collar without being split", ():
   )
   expect(region.routes[0]!.route[bridgeIndex]).toEqual(route.route[1])
   expect(region.routes[0]!.route[bridgeIndex + 1]).toEqual(route.route[2])
-  expect(region.lockedPointIndices[0]!.slice(bridgeIndex, bridgeIndex + 2)).toEqual([
-    true,
-    true,
-  ])
+  expect(
+    region.lockedPointIndices[0]!.slice(bridgeIndex, bridgeIndex + 2),
+  ).toEqual([true, true])
   const solver = new Repair04Solver(region)
   solver.solve()
   expect(solver.solved).toBe(true)

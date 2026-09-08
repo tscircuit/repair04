@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
-import type { HighDensityRoute, SimpleRouteJson } from "high-density-repair03/lib"
+import type {
+  HighDensityRoute,
+  SimpleRouteJson,
+} from "high-density-repair03/lib"
 import {
   Repair04Solver,
   extractRepairRegion,
@@ -46,7 +49,11 @@ test("a pad-contact via moves directly to a legal envelope face without reroutin
       },
     ],
   }
-  const region = extractRepairRegion({ srj, routes: [route], bounds: srj.bounds })
+  const region = extractRepairRegion({
+    srj,
+    routes: [route],
+    bounds: srj.bounds,
+  })
   const before = structuredClone(region)
   const solver = new Repair04Solver({
     ...region,

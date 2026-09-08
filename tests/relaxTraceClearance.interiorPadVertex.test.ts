@@ -55,7 +55,8 @@ test("projection moves a foreign wire vertex out of a pad interior while retaini
     }
     const original = structuredClone(input)
     expect(
-      getFixedObstacleViolations({ srj: input.srj, routes: input.routes }).length,
+      getFixedObstacleViolations({ srj: input.srj, routes: input.routes })
+        .length,
     ).toBeGreaterThan(0)
     const output = relaxTraceClearance(input)
     expect(

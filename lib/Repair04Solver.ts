@@ -970,18 +970,34 @@ export class Repair04Solver extends BaseSolver {
     via: RepairViaGeometry,
   ): Set<string> {
     const ids = new Set<string>()
-    if (this.getViaGeometry(route).filter((v): boolean =>
-      v.x === via.x && v.y === via.y && v.identity === via.identity,
-    ).length !== 1) return ids
-    const layerName = (z: number): string => z === 0 ? "top" :
-      z === this.input.srj.layerCount - 1 ? "bottom" : `inner${z}`
+    if (
+      this.getViaGeometry(route).filter(
+        (v): boolean =>
+          v.x === via.x && v.y === via.y && v.identity === via.identity,
+      ).length !== 1
+    )
+      return ids
+    const layerName = (z: number): string =>
+      z === 0
+        ? "top"
+        : z === this.input.srj.layerCount - 1
+          ? "bottom"
+          : `inner${z}`
     const keys = new Set<string>()
     for (let i = 1; i < via.layerSequence.length; i++) {
-      keys.add(`${via.x},${via.y},${layerName(via.layerSequence[i - 1]!)},${layerName(via.layerSequence[i]!)}`)
+      keys.add(
+        `${via.x},${via.y},${layerName(via.layerSequence[i - 1]!)},${layerName(via.layerSequence[i]!)}`,
+      )
     }
     const traces = this.routes.map((current, index): SimplifiedPcbTrace => {
-      const cached = this.getRouteCache(index, index === routeIndex ? route : current).trace
-      if (!cached) throw new Error("repair04: indexed via mapping requires an evaluated route")
+      const cached = this.getRouteCache(
+        index,
+        index === routeIndex ? route : current,
+      ).trace
+      if (!cached)
+        throw new Error(
+          "repair04: indexed via mapping requires an evaluated route",
+        )
       return cached
     })
     const seen = new Set<string>()
@@ -1006,32 +1022,65 @@ export class Repair04Solver extends BaseSolver {
   ): Generator<Candidate> {
     if (this.viaBlockerPathSearchCalls >= 4 || this.getWorkLimitReason()) return
     const movedScore = candidate.evaluatedScore
-    if (!movedScore || !this.score || candidate.additionalRoutes?.length ||
-      candidate.routeIndex !== selected.routeIndex) return
-    if (!this.input.movableVias?.some((v): boolean =>
-      v.routeIndex === selected.routeIndex && v.viaIndex === selected.viaIndex,
-    ) || !this.preservesViaPermissions(selected.routeIndex, candidate.route)) return
-    if ([...movedScore.fixedViolations].some(([key, severity]): boolean =>
-      !this.score!.fixedViolations.has(key) ||
-      severity > this.score!.fixedViolations.get(key)! + REGION_EPSILON,
-    )) return
+    if (
+      !movedScore ||
+      !this.score ||
+      candidate.additionalRoutes?.length ||
+      candidate.routeIndex !== selected.routeIndex
+    )
+      return
+    if (
+      !this.input.movableVias?.some(
+        (v): boolean =>
+          v.routeIndex === selected.routeIndex &&
+          v.viaIndex === selected.viaIndex,
+      ) ||
+      !this.preservesViaPermissions(selected.routeIndex, candidate.route)
+    )
+      return
+    if (
+      [...movedScore.fixedViolations].some(
+        ([key, severity]): boolean =>
+          !this.score!.fixedViolations.has(key) ||
+          severity > this.score!.fixedViolations.get(key)! + REGION_EPSILON,
+      )
+    )
+      return
     const original = this.routes[selected.routeIndex]!
     const oldVia = this.getViaGeometry(original)[selected.viaIndex]!
     const movedVia = this.getViaGeometry(candidate.route)[selected.viaIndex]!
-    const oldIds = baselineContext.oldIds ??= this.getIndexedViaIds(selected.routeIndex, original, oldVia)
+    const oldIds = (baselineContext.oldIds ??= this.getIndexedViaIds(
+      selected.routeIndex,
+      original,
+      oldVia,
+    ))
     if (!oldIds.size) return
     const owner = `repair04_${selected.routeIndex}`
-    const contactForeign = (error: AutoroutingDrcError, ids: Set<string>): string | undefined => {
+    const contactForeign = (
+      error: AutoroutingDrcError,
+      ids: Set<string>,
+    ): string | undefined => {
       const viaId = error.pcb_via_id
       const foreign = error.pcb_trace_id
-      if (error.type !== "pcb_trace_error" || typeof viaId !== "string" ||
-        !ids.has(viaId) || typeof foreign !== "string" || foreign === owner ||
+      if (
+        error.type !== "pcb_trace_error" ||
+        typeof viaId !== "string" ||
+        !ids.has(viaId) ||
+        typeof foreign !== "string" ||
+        foreign === owner ||
         error.pcb_trace_error_id !== `overlap_${foreign}_${viaId}` ||
-        !Array.isArray(error.pcb_trace_ids) || error.pcb_trace_ids.length !== 2 ||
-        !error.pcb_trace_ids.includes(owner) || !error.pcb_trace_ids.includes(foreign)) return undefined
+        !Array.isArray(error.pcb_trace_ids) ||
+        error.pcb_trace_ids.length !== 2 ||
+        !error.pcb_trace_ids.includes(owner) ||
+        !error.pcb_trace_ids.includes(foreign)
+      )
+        return undefined
       return foreign
     }
-    const contacts = (errors: AutoroutingDrcError[], ids: Set<string>): Set<string> => {
+    const contacts = (
+      errors: AutoroutingDrcError[],
+      ids: Set<string>,
+    ): Set<string> => {
       const found = new Set<string>()
       for (const error of errors) {
         const foreign = contactForeign(error, ids)
@@ -1039,16 +1088,25 @@ export class Repair04Solver extends BaseSolver {
       }
       return found
     }
-    const oldContacts = baselineContext.oldContacts ??= contacts(this.score.errors, oldIds)
+    const oldContacts = (baselineContext.oldContacts ??= contacts(
+      this.score.errors,
+      oldIds,
+    ))
     if (!oldContacts.size) return
     // This current-copper eligibility is invariant across the selected via's
     // native offsets. Every accepted state starts a new generator context.
-    const oldNeighborFixed = baselineContext.oldNeighborFixed ??= this.getFixedViolations(this.routes).some((violation): boolean =>
-      violation.kind === "wire" &&
-      oldContacts.has(`repair04_${violation.routeIndex}`),
-    )
+    const oldNeighborFixed = (baselineContext.oldNeighborFixed ??=
+      this.getFixedViolations(this.routes).some(
+        (violation): boolean =>
+          violation.kind === "wire" &&
+          oldContacts.has(`repair04_${violation.routeIndex}`),
+      ))
     if (oldNeighborFixed) return
-    const movedIds = this.getIndexedViaIds(selected.routeIndex, candidate.route, movedVia)
+    const movedIds = this.getIndexedViaIds(
+      selected.routeIndex,
+      candidate.route,
+      movedVia,
+    )
     if (oldIds.size !== movedIds.size) return
     for (const error of movedScore.errors) {
       const referenced = [error.pcb_via_id,

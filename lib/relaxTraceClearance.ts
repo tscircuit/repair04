@@ -169,12 +169,19 @@ export function relaxTraceClearance(
       const via = a.z !== b.z
       if (via && input.allowViaMovement !== true) va.locked = vb.locked = true
       segments.push({
-        a: va, b: vb, minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z),
-        radius: via ? route.viaDiameter / 2 : Math.max(
-          a.traceThickness ?? route.traceThickness,
-          b.traceThickness ?? route.traceThickness,
-        ) / 2,
-        net: nets.get(route.connectionName)!, routeIndex: ri, via,
+        a: va,
+        b: vb,
+        minZ: Math.min(a.z, b.z),
+        maxZ: Math.max(a.z, b.z),
+        radius: via
+          ? route.viaDiameter / 2
+          : Math.max(
+              a.traceThickness ?? route.traceThickness,
+              b.traceThickness ?? route.traceThickness,
+            ) / 2,
+        net: nets.get(route.connectionName)!,
+        routeIndex: ri,
+        via,
       })
     }
   }
@@ -184,49 +191,109 @@ export function relaxTraceClearance(
     for (let j = i + 1; j < segments.length; j++) {
       const b = segments[j]!
       if (a.net === b.net || a.maxZ < b.minZ || b.maxZ < a.minZ) continue
-      const reach = a.radius + b.radius + Math.max(traceClearance, viaClearance) +
+      const reach =
+        a.radius +
+        b.radius +
+        Math.max(traceClearance, viaClearance) +
         2 * Math.SQRT2 * MAX_DISPLACEMENT
-      if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach) pairs.push([a, b])
+      if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach)
+        pairs.push([a, b])
     }
   }
   const padContacts: PadContact[] = []
   const viaPadConstraints = new Map<Vertex, ViaPadConstraint[]>()
   for (const obstacle of input.srj.obstacles) {
     const radians = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
-    const cosine = Math.cos(radians), sine = Math.sin(radians)
-    const obstacleNets = new Set(obstacle.connectedTo.map((name) => nets.get(name) ?? name))
-    const zs = (obstacle as typeof obstacle & { __zLayers?: number[] }).__zLayers ??
-      obstacle.zLayers ?? obstacle.layers.map((name): number =>
-        name === "top" ? 0 : name === "bottom" ? input.srj.layerCount - 1 : Number(name.slice(5)),
+    const cosine = Math.cos(radians),
+      sine = Math.sin(radians)
+    const obstacleNets = new Set(
+      obstacle.connectedTo.map((name) => nets.get(name) ?? name),
+    )
+    const zs =
+      (obstacle as typeof obstacle & { __zLayers?: number[] }).__zLayers ??
+      obstacle.zLayers ??
+      obstacle.layers.map((name): number =>
+        name === "top"
+          ? 0
+          : name === "bottom"
+            ? input.srj.layerCount - 1
+            : Number(name.slice(5)),
       )
-    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]): Point => ({
-      x: obstacle.center.x + cosine * x! * obstacle.width / 2 - sine * y! * obstacle.height / 2,
-      y: obstacle.center.y + sine * x! * obstacle.width / 2 + cosine * y! * obstacle.height / 2,
-    }))
+    const corners = [
+      [-1, -1],
+      [1, -1],
+      [1, 1],
+      [-1, 1],
+    ].map(
+      ([x, y]): Point => ({
+        x:
+          obstacle.center.x +
+          (cosine * x! * obstacle.width) / 2 -
+          (sine * y! * obstacle.height) / 2,
+        y:
+          obstacle.center.y +
+          (sine * x! * obstacle.width) / 2 +
+          (cosine * y! * obstacle.height) / 2,
+      }),
+    )
     for (const segment of segments) {
-      if ((!segment.via && obstacleNets.has(segment.net)) || !zs.some((z) => z >= segment.minZ && z <= segment.maxZ)) continue
-      const reach = segment.radius + Math.max(traceClearance, viaClearance,
-        input.srj.defaultObstacleMargin ?? 0, input.srj.minTraceToPadEdgeClearance ?? 0,
-        input.srj.minViaEdgeToPadEdgeClearance ?? 0) + Math.SQRT2 * MAX_DISPLACEMENT
-      if (Math.min(...corners.map((a, i) => segmentToSegmentMinDistance(
-        segment.a, segment.b, a, corners[(i + 1) % 4]!,
-      ))) > reach) continue
+      if (
+        (!segment.via && obstacleNets.has(segment.net)) ||
+        !zs.some((z) => z >= segment.minZ && z <= segment.maxZ)
+      )
+        continue
+      const reach =
+        segment.radius +
+        Math.max(
+          traceClearance,
+          viaClearance,
+          input.srj.defaultObstacleMargin ?? 0,
+          input.srj.minTraceToPadEdgeClearance ?? 0,
+          input.srj.minViaEdgeToPadEdgeClearance ?? 0,
+        ) +
+        Math.SQRT2 * MAX_DISPLACEMENT
+      if (
+        Math.min(
+          ...corners.map((a, i) =>
+            segmentToSegmentMinDistance(
+              segment.a,
+              segment.b,
+              a,
+              corners[(i + 1) % 4]!,
+            ),
+          ),
+        ) > reach
+      )
+        continue
       // Use the enclosing rectangle as a conservative routing constraint for
       // every pad shape. Physical via guards retain the exact obstacle shape.
       padContacts.push({ segment, corners })
       if (segment.via) {
         const constraint: ViaPadConstraint = {
-          center: obstacle.center, cosine, sine, shape: getLocalObstacleGeometry(obstacle),
-          clearance: segment.radius + Math.max(viaClearance,
-            input.srj.defaultObstacleMargin ?? 0, input.srj.minViaEdgeToPadEdgeClearance ?? 0),
+          center: obstacle.center,
+          cosine,
+          sine,
+          shape: getLocalObstacleGeometry(obstacle),
+          clearance:
+            segment.radius +
+            Math.max(
+              viaClearance,
+              input.srj.defaultObstacleMargin ?? 0,
+              input.srj.minViaEdgeToPadEdgeClearance ?? 0,
+            ),
         }
         // Topology is unchanged by projection. Existing pad contact may move
         // toward clearance, but no step may worsen its original separation.
         const dx = segment.a.original.x - obstacle.center.x
         const dy = segment.a.original.y - obstacle.center.y
-        const local = { x: dx * cosine + dy * sine, y: -dx * sine + dy * cosine }
-        constraint.clearance = Math.min(constraint.clearance,
-          getLocalObstacleDistance(local, local, constraint.shape))
+        const local = {
+          x: dx * cosine + dy * sine,
+          y: -dx * sine + dy * cosine,
+        }
+        constraint.clearance = Math.min(
+          constraint.clearance,
+          getLocalObstacleDistance(local, local, constraint.shape),
+        )
         for (const vertex of new Set([segment.a, segment.b])) {
           const constraints = viaPadConstraints.get(vertex)
           if (constraints) constraints.push(constraint)

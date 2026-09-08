@@ -172,19 +172,28 @@ export function negotiateTraceClearance(
         (input.allowLayerChanges ||
           fragment.every((point): boolean => point.z === fragment[0]!.z))
       byRoute[ri]!.push(spans.length)
-      spans.push({ routeIndex: ri, mutable: Boolean(mutable),
-        route: withPoints({ ...route, traceThickness: width }, fragment) })
+      spans.push({
+        routeIndex: ri,
+        mutable: Boolean(mutable),
+        route: withPoints({ ...route, traceThickness: width }, fragment),
+      })
     }
   }
   const current = spans.map((span): HighDensityRoute => span.route)
-  const fixed = spans.filter((span): boolean => !span.mutable).map((span): HighDensityRoute => span.route)
+  const fixed = spans
+    .filter((span): boolean => !span.mutable)
+    .map((span): HighDensityRoute => span.route)
   const nets = getNetRepresentatives(input.srj, input.routes)
-  const owner = (route: HighDensityRoute): string => nets.get(route.connectionName) ?? route.connectionName
+  const owner = (route: HighDensityRoute): string =>
+    nets.get(route.connectionName) ?? route.connectionName
   // Span interiors can be displaced, but their fixed anchor sites cannot.
   // Reserve each physical site once even when several same-net branches meet.
   const fixedSites = new Set<string>()
   for (const span of spans) {
-    for (const point of [span.route.route[0]!, span.route.route.at(-1)!] as RepairRoutePoint[]) {
+    for (const point of [
+      span.route.route[0]!,
+      span.route.route.at(-1)!,
+    ] as RepairRoutePoint[]) {
       const width = point.traceThickness ?? span.route.traceThickness
       const key = `${owner(span.route)}|${point.x}|${point.y}|${point.z}|${width}`
       if (fixedSites.has(key)) continue
@@ -204,7 +213,8 @@ export function negotiateTraceClearance(
   const weights = spans.map(({ route }): number => {
     let length = 0
     for (let index = 1; index < route.route.length; index++) {
-      const a = route.route[index - 1]!, b = route.route[index]!
+      const a = route.route[index - 1]!,
+        b = route.route[index]!
       length += a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1
     }
     return length
@@ -221,9 +231,14 @@ export function negotiateTraceClearance(
   spans.forEach((span, index): void => {
     if (dirty.has(span.routeIndex)) enqueue(index)
   })
-  let pathSearchNodes = 0, pathSearchCalls = 0, cursor = 0
-  while (cursor < queue.length && pathSearchNodes < input.maxPathSearchNodes &&
-    pathSearchCalls < input.maxPathSearchCalls) {
+  let pathSearchNodes = 0,
+    pathSearchCalls = 0,
+    cursor = 0
+  while (
+    cursor < queue.length &&
+    pathSearchNodes < input.maxPathSearchNodes &&
+    pathSearchCalls < input.maxPathSearchCalls
+  ) {
     const index = queue[cursor++]!
     queued.delete(index)
     const route = current[index]!
@@ -231,7 +246,8 @@ export function negotiateTraceClearance(
     const cells = new Map<number, Map<number, Copper[]>>()
     for (let si = 0; si < spans.length; si++) {
       if (si === index) continue
-      const other = current[si]!, otherOwner = owner(other)
+      const other = current[si]!,
+        otherOwner = owner(other)
       for (let pi = 1; pi < other.route.length; pi++) {
         const a = other.route[pi - 1]! as RepairRoutePoint,
           b = other.route[pi]! as RepairRoutePoint
@@ -240,18 +256,39 @@ export function negotiateTraceClearance(
         // clearance, including holes in otherwise immutable spans.
         const immutable = !spans[si]!.mutable || frozen.has(si)
         if (a.z === b.z && (otherOwner === selectedOwner || immutable)) continue
-        const radius = (a.z !== b.z ? other.viaDiameter : Math.max(
-          a.traceThickness ?? other.traceThickness,
-          b.traceThickness ?? other.traceThickness,
-        )) / 2
-        const copper: Copper = { a, b, radius, minZ: Math.min(a.z, b.z),
-          maxZ: Math.max(a.z, b.z), spanIndex: si, owner: otherOwner, visited: 0, immutable }
-        for (let x = Math.floor(Math.min(a.x, b.x) - radius);
-          x <= Math.floor(Math.max(a.x, b.x) + radius); x++) {
+        const radius =
+          (a.z !== b.z
+            ? other.viaDiameter
+            : Math.max(
+                a.traceThickness ?? other.traceThickness,
+                b.traceThickness ?? other.traceThickness,
+              )) / 2
+        const copper: Copper = {
+          a,
+          b,
+          radius,
+          minZ: Math.min(a.z, b.z),
+          maxZ: Math.max(a.z, b.z),
+          spanIndex: si,
+          owner: otherOwner,
+          visited: 0,
+          immutable,
+        }
+        for (
+          let x = Math.floor(Math.min(a.x, b.x) - radius);
+          x <= Math.floor(Math.max(a.x, b.x) + radius);
+          x++
+        ) {
           let column = cells.get(x)
-          if (!column) { column = new Map(); cells.set(x, column) }
-          for (let y = Math.floor(Math.min(a.y, b.y) - radius);
-            y <= Math.floor(Math.max(a.y, b.y) + radius); y++) {
+          if (!column) {
+            column = new Map()
+            cells.set(x, column)
+          }
+          for (
+            let y = Math.floor(Math.min(a.y, b.y) - radius);
+            y <= Math.floor(Math.max(a.y, b.y) + radius);
+            y++
+          ) {
             const bucket = column.get(y)
             if (bucket) bucket.push(copper)
             else column.set(y, [copper])
@@ -260,25 +297,36 @@ export function negotiateTraceClearance(
       }
     }
     let queryId = 0
-    const query = (a: RepairRoutePoint, b: RepairRoutePoint): Array<{ copper: Copper; ratio: number }> => {
+    const query = (
+      a: RepairRoutePoint,
+      b: RepairRoutePoint,
+    ): Array<{ copper: Copper; ratio: number }> => {
       const via = a.z !== b.z
-      const reach = (via ? route.viaDiameter : route.traceThickness) / 2 +
+      const reach =
+        (via ? route.viaDiameter : route.traceThickness) / 2 +
         Math.max(input.traceClearance, input.viaClearance)
       const hits: Array<{ copper: Copper; ratio: number }> = []
       const id = ++queryId
-      for (let x = Math.floor(Math.min(a.x, b.x) - reach);
-        x <= Math.floor(Math.max(a.x, b.x) + reach); x++) {
+      for (
+        let x = Math.floor(Math.min(a.x, b.x) - reach);
+        x <= Math.floor(Math.max(a.x, b.x) + reach);
+        x++
+      ) {
         const column = cells.get(x)
         if (!column) continue
-        for (let y = Math.floor(Math.min(a.y, b.y) - reach);
-          y <= Math.floor(Math.max(a.y, b.y) + reach); y++) {
+        for (
+          let y = Math.floor(Math.min(a.y, b.y) - reach);
+          y <= Math.floor(Math.max(a.y, b.y) + reach);
+          y++
+        ) {
           const bucket = column.get(y)
           if (!bucket) continue
           for (const copper of bucket) {
             if (copper.visited === id) continue
             copper.visited = id
             const bothVias = via && copper.minZ !== copper.maxZ
-            const sharedLayers = copper.minZ <= Math.max(a.z, b.z) &&
+            const sharedLayers =
+              copper.minZ <= Math.max(a.z, b.z) &&
               copper.maxZ >= Math.min(a.z, b.z)
             if (!sharedLayers && !bothVias) continue
             if (copper.immutable && !bothVias) continue
