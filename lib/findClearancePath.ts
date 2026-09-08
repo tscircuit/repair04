@@ -9,6 +9,7 @@ import type {
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
+import { REGION_EPSILON } from "./repairRegionGeometry"
 
 type Point = RepairRoutePoint
 type Barrier = {
@@ -332,7 +333,7 @@ export function findClearancePath(input: {
               : isVia && barrier.minZ !== barrier.maxZ
                 ? input.viaClearance
                 : input.traceClearance
-          const clearance = radius + requiredGap + 1e-5
+          const clearance = radius + requiredGap
           // These bounds enclose the entire copper/rotated obstacle. Strict
           // separation can only rule out a collision; exact boundary cases
           // still use the same distance calculation and tolerance below.
@@ -366,7 +367,8 @@ export function findClearancePath(input: {
             distance =
               segmentToSegmentMinDistance(a, b, barrier.a, barrier.b) -
               barrier.radius
-          if (distance < clearance) return false
+          // Keep exactly feasible corridors open within coordinate precision.
+          if (distance + REGION_EPSILON < clearance) return false
         }
       }
     }
