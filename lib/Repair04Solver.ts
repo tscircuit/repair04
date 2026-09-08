@@ -1005,6 +1005,46 @@ export class Repair04Solver extends BaseSolver {
     }
   }
 
+  private *generatePadViaCandidates(): Generator<Candidate> {
+    if (this.input.allowLayerChanges !== true || this.input.movableVias?.length) return
+    const seen = new Set<string>()
+    for (const contact of this.getViaPadViolations(this.routes, true)) {
+      const route = this.routes[contact.routeIndex]!
+      const via = this.getViaGeometry(route).find((candidate): boolean =>
+        candidate.x === contact.center.x && candidate.y === contact.center.y,
+      )
+      if (!via || via.pointIndices.some((index): boolean =>
+        this.isLocked(contact.routeIndex, route.route[index]!),
+      )) continue
+      const pad = this.input.srj.obstacles[contact.obstacleIndex]!
+      const angle = (pad.ccwRotationDegrees ?? 0) * Math.PI / 180
+      const cosine = Math.cos(angle), sine = Math.sin(angle)
+      const dx = via.x - pad.center.x, dy = via.y - pad.center.y
+      const localX = dx * cosine + dy * sine, localY = -dx * sine + dy * cosine
+      const margin = via.diameter / 2 + Math.max(this.input.viaClearance ?? 0.1,
+        this.input.srj.defaultObstacleMargin ?? 0, this.input.srj.minViaEdgeToPadEdgeClearance ?? 0)
+      const halfWidth = pad.width / 2 + margin, halfHeight = pad.height / 2 + margin
+      // Four envelope faces are direct clearance moves; the common physical
+      // guards reject sites that meet another pad or damage fixed copper.
+      const sites = [[-halfWidth, localY], [halfWidth, localY],
+        [localX, -halfHeight], [localX, halfHeight]].map(([x, y]): Point => ({
+          x: pad.center.x + x! * cosine - y! * sine,
+          y: pad.center.y + x! * sine + y! * cosine, z: via.minZ,
+        })).sort((a, b): number => Math.hypot(a.x - via.x, a.y - via.y) - Math.hypot(b.x - via.x, b.y - via.y))
+      for (const site of sites) {
+        const key = `${contact.routeIndex}:${via.identity}:${site.x}:${site.y}`
+        if (seen.has(key) || !inside(site, this.mutableBounds)) continue
+        seen.add(key)
+        yield {
+          routeIndex: contact.routeIndex,
+          route: rebuildVias({ ...route, route: route.route.map((point, index): Point =>
+            via.pointIndices.includes(index) ? { ...point, x: site.x, y: site.y } : point,
+          ) }),
+        }
+      }
+    }
+  }
+
   private *generateExistingViaCandidates(): Generator<Candidate> {
     for (const selected of this.input.movableVias ?? []) {
       const route = this.routes[selected.routeIndex]!
@@ -1039,6 +1079,7 @@ export class Repair04Solver extends BaseSolver {
   }
 
   private *generateCandidates(): Generator<Candidate> {
+    yield* this.generatePadViaCandidates()
     yield* this.generateExistingViaCandidates()
     for (const allowLayerChanges of this.input.allowLayerChanges === true
       ? this.input.traceOnlyFirst === false
