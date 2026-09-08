@@ -126,7 +126,17 @@ export function negotiateTraceClearance(
   const fixed = spans.filter((span): boolean => !span.mutable).map((span): HighDensityRoute => span.route)
   const nets = getNetRepresentatives(input.srj, input.routes)
   const owner = (route: HighDensityRoute): string => nets.get(route.connectionName) ?? route.connectionName
-  const weights = spans.map((): number => 1)
+  // The normalized penetration kernel integrates to one across a
+  // perpendicular crossing. Weight it by the displaced span's routing cost,
+  // so crossing a long track does not appear cheaper merely because it is thin.
+  const weights = spans.map(({ route }): number => {
+    let length = 0
+    for (let index = 1; index < route.route.length; index++) {
+      const a = route.route[index - 1]!, b = route.route[index]!
+      length += a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1
+    }
+    return length
+  })
   const frozen = new Set<number>()
   const dirty = new Set(input.dirtyRouteIndices)
   const queue: number[] = []
@@ -202,7 +212,7 @@ export function negotiateTraceClearance(
               (via && copper.minZ !== copper.maxZ ? input.viaClearance : input.traceClearance) + copper.radius
             const distance = segmentToSegmentMinDistance(a, b, copper.a, copper.b)
             if (distance < required - REGION_EPSILON)
-              hits.push({ copper, ratio: (required - distance) / required })
+              hits.push({ copper, ratio: (required - distance) / (required * required) })
           }
         }
       }
@@ -232,7 +242,7 @@ export function negotiateTraceClearance(
       traceClearance: input.traceClearance, viaClearance: input.viaClearance,
       gridSize: Math.min(0.1, route.traceThickness / 2),
       allowLayerChanges: input.allowLayerChanges,
-      maxNodes: Math.min(30000, input.maxPathSearchNodes - pathSearchNodes),
+      maxNodes: input.maxPathSearchNodes - pathSearchNodes,
       stats, getAdditionalEdgeCost })
     pathSearchCalls++
     pathSearchNodes += stats.nodesPopped
