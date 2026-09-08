@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import type { HighDensityRoute } from "high-density-repair03/lib"
 import { negotiateTraceClearance } from "../lib/negotiateTraceClearance"
+import type { RepairRoutePoint } from "../lib/repairRegionTypes"
 
 test("copper bounds preserve exact-clearance and near-contact search results", (): void => {
   const bounds = { minX: -1, maxX: 1, minY: -1, maxY: 1 }
@@ -64,20 +65,20 @@ test("copper bounds preserve exact-clearance and near-contact search results", (
       })
       // Captured from the published search before bounds pruning. Keeping the
       // route and work count exact also protects tie-breaking and query order.
-      expect(result.routes[0]!.route).toEqual(
+      const expectedPath: RepairRoutePoint[] =
         separation < 0.2
           ? [
-              routes[0]!.route[0],
+              routes[0]!.route[0]!,
               {
                 x: 0.675,
                 y: -0.02499999999999991,
                 z: 0,
                 traceThickness: 0.1,
               },
-              routes[0]!.route[1],
+              routes[0]!.route[1]!,
             ]
-          : routes[0]!.route,
-      )
+          : routes[0]!.route
+      expect(result.routes[0]!.route).toEqual(expectedPath)
       expect(result.pathSearchNodes).toBe(separation < 0.2 ? 34 : 0)
       expect(result.pathSearchCalls).toBe(1)
       expect(result.unresolvedSpanCount).toBe(0)
