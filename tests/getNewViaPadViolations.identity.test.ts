@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { getNewViaPadViolations } from "../lib/getNewViaPadViolations"
 import { newViaPadFixture } from "./fixtures/newViaPadFixture"
 
-test("exempts only exact unchanged via position span and diameter", (): void => {
+test("requires exact via geometry when transition correspondence is not preserved", (): void => {
   const input = newViaPadFixture()
   input.srj.layerCount = 4
   input.routes[0]!.route[2]!.z = 2
@@ -13,6 +13,7 @@ test("exempts only exact unchanged via position span and diameter", (): void => 
   const moved = structuredClone(input)
   moved.routes[0]!.route[1]!.x = 1e-12
   moved.routes[0]!.route[2]!.x = 1e-12
+  moved.routes[0]!.route.splice(1, 0, { x: -0.5, y: 0, z: 0 })
   expect(getNewViaPadViolations(moved)).toHaveLength(1)
 
   const wider = structuredClone(input)

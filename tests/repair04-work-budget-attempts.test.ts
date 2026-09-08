@@ -26,8 +26,8 @@ test("attempt limits include permission and hard-pad rejections without hiding m
   base.maxCandidateAttempts = 3
   base.srj.obstacles.push({
     type: "rect",
-    center: { x: 0, y: 0 },
-    width: 2,
+    center: { x: 0.26, y: 0 },
+    width: 0.1,
     height: 2,
     layers: ["top", "bottom"],
     connectedTo: ["pcb_smtpad_foreign"],

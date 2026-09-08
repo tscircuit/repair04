@@ -37,15 +37,14 @@ test("hard via-pad rejects retain the exact budget and geometry without repeated
       minTraceWidth: 0.15,
       connections: [],
       obstacles: [
-        {
-          type: "rect",
-          center: { x: 0, y: 0 },
-          width: 2,
-          height: 2,
-          layers: ["top", "bottom"],
-          connectedTo: ["pcb_smtpad_foreign"],
-        },
-      ],
+        { x: 0.2, y: 0, width: 0.2, height: 2 },
+        { x: -0.2, y: 0, width: 0.2, height: 2 },
+        { x: 0, y: 0.2, width: 2, height: 0.2 },
+        { x: 0, y: -0.2, width: 2, height: 0.2 },
+      ].map(({ x, y, width, height }, index) => ({
+        type: "rect", center: { x, y }, width, height,
+        layers: ["top", "bottom"], connectedTo: [`pcb_smtpad_foreign_${index}`],
+      })),
     },
   }
   const solver = new Repair04Solver(input)

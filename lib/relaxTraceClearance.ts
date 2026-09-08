@@ -1,6 +1,5 @@
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import type { HighDensityRoute } from "high-density-repair03/lib"
-import { getNewViaPadViolations } from "./getNewViaPadViolations"
 import { getLocalObstacleGeometry, getLocalObstacleDistance, type ObstacleDistanceGeometry } from "./obstacleDistanceGeometry"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
 import type { Bounds, RepairRegionInput, RepairRoutePoint } from "./repairRegionTypes"
@@ -92,21 +91,6 @@ export function relaxTraceClearance(input: RepairRegionInput & {
       return vertex
     }),
   )
-  // Moving an existing via within a solder pad is not a permitted repair.
-  // Keep these sites fixed; neighboring free wire vertices can still move.
-  const existingPadContacts = getNewViaPadViolations({
-    srj: input.srj,
-    previousRoutes: routes.map((route): HighDensityRoute => ({ ...route, route: [], vias: [] })),
-    routes,
-    viaClearance,
-  })
-  for (const contact of existingPadContacts) {
-    const route = routes[contact.routeIndex]!
-    const key = `${nets.get(route.connectionName)}:${contact.center.x}:${contact.center.y}`
-    const vertex = vertices.get(key)
-    if (!vertex) throw new Error("repair04 clearance contact has no route vertex")
-    vertex.locked = true
-  }
   const segments: Segment[] = []
   for (let ri = 0; ri < routes.length; ri++) {
     const route = routes[ri]!
@@ -168,6 +152,13 @@ export function relaxTraceClearance(input: RepairRegionInput & {
           clearance: segment.radius + Math.max(viaClearance,
             input.srj.defaultObstacleMargin ?? 0, input.srj.minViaEdgeToPadEdgeClearance ?? 0),
         }
+        // Topology is unchanged by projection. Existing pad contact may move
+        // toward clearance, but no step may worsen its original separation.
+        const dx = segment.a.original.x - obstacle.center.x
+        const dy = segment.a.original.y - obstacle.center.y
+        const local = { x: dx * cosine + dy * sine, y: -dx * sine + dy * cosine }
+        constraint.clearance = Math.min(constraint.clearance,
+          getLocalObstacleDistance(local, local, constraint.shape))
         for (const vertex of new Set([segment.a, segment.b])) {
           const constraints = viaPadConstraints.get(vertex)
           if (constraints) constraints.push(constraint)

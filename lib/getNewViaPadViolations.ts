@@ -173,15 +173,48 @@ const createEvaluator = ({
     for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
       const route = routes[routeIndex]!,
         previous = previousRoutes[routeIndex]!
-      const unchanged = new Set(
+      const previousVias = getRepairViaGeometry(previous, srj.layerCount)
+      const sameRoute =
         route.connectionName === previous.connectionName &&
-          route.rootConnectionName === previous.rootConnectionName
-          ? getRepairViaGeometry(previous, srj.layerCount).map(
-              (via): string => via.identity,
-            )
-          : [],
+        route.rootConnectionName === previous.rootConnectionName
+      const unchanged = new Set(
+        sameRoute ? previousVias.map((via): string => via.identity) : [],
       )
       const vias = getRepairViaGeometry(route, srj.layerCount)
+      // Ordered transition points identify the same drilled vias only while
+      // the route topology is retained. A new or reordered transition receives
+      // the ordinary strict clearance check, even if its coordinates are close.
+      const preservesViaCorrespondence =
+        sameRoute &&
+        route.route.length === previous.route.length &&
+        route.route.every((point, index): boolean => {
+          const before = previous.route[index]!
+          const fixed =
+            index === 0 || index === route.route.length - 1 ||
+            point.pcb_port_id || point.insideJumperPad || point.toNextSegmentType
+          return (
+            (!fixed || (point.x === before.x && point.y === before.y)) &&
+            point.z === before.z &&
+            point.pcb_port_id === before.pcb_port_id &&
+            point.toNextSegmentType === before.toNextSegmentType &&
+            point.insideJumperPad === before.insideJumperPad
+          )
+        }) &&
+        vias.length === previousVias.length &&
+        new Set(vias.map((via): string => via.identity)).size === vias.length &&
+        vias.every((via, index): boolean => {
+          const before = previousVias[index]!
+          return (
+            via.diameter === before.diameter &&
+            via.pointIndices.length === before.pointIndices.length &&
+            via.pointIndices.every((pointIndex, i): boolean => pointIndex === before.pointIndices[i]) &&
+            via.layerSequence.length === before.layerSequence.length &&
+            via.layerSequence.every((z, i): boolean => z === before.layerSequence[i]) &&
+            !previousVias.some((other, otherIndex): boolean =>
+              otherIndex !== index && other.identity === via.identity,
+            )
+          )
+        })
       for (let viaIndex = 0; viaIndex < vias.length; viaIndex++) {
         const via = vias[viaIndex]!
         if (
@@ -193,7 +226,23 @@ const createEvaluator = ({
           )
         )
           continue
-        for (const contact of getContacts(via))
+        const previousContacts =
+          preservesViaCorrespondence &&
+          !includeExistingVias.some((selected): boolean =>
+            selected.routeIndex === routeIndex && selected.viaIndex === viaIndex,
+          )
+            ? new Map(
+              getContacts(previousVias[viaIndex]!).map((contact): [number, number] =>
+                [contact.obstacleIndex, contact.severity],
+              ),
+            )
+            : undefined
+        for (const contact of getContacts(via)) {
+          const previousSeverity = previousContacts?.get(contact.obstacleIndex)
+          if (
+            previousSeverity !== undefined &&
+            contact.severity <= previousSeverity + 1e-8
+          ) continue
           violations.push({
             key: `new-via-pad:${routeIndex}:${contact.obstacleIndex}:${viaIndex}`,
             routeIndex,
@@ -202,6 +251,7 @@ const createEvaluator = ({
             kind: "via",
             severity: contact.severity,
           })
+        }
       }
     }
     return violations
@@ -230,10 +280,11 @@ export const createNewViaPadViolationEvaluator = ({
   })
 
 /**
- * New or moved vias must clear every obstacle, including same-net pads.
+ * New vias must clear every obstacle, including same-net pads.
  * Ordinary electrical clearance checks allow same-net copper contact, which
  * does not imply permission to drill a via in a solder pad. Existing physical
- * vias are exempt only when their position, span and diameter are unchanged.
+ * vias may also improve an existing contact when ordered route transitions
+ * prove their correspondence, without adding or worsening any pad contact.
  * Each public call observes its current input; caches never cross calls.
  */
 export const getNewViaPadViolations = (
