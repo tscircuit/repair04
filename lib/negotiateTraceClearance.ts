@@ -20,6 +20,10 @@ type Copper = {
   a: RepairRoutePoint
   b: RepairRoutePoint
   radius: number
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
   minZ: number
   maxZ: number
   spanIndex: number
@@ -267,6 +271,10 @@ export function negotiateTraceClearance(
           a,
           b,
           radius,
+          minX: Math.min(a.x, b.x),
+          maxX: Math.max(a.x, b.x),
+          minY: Math.min(a.y, b.y),
+          maxY: Math.max(a.y, b.y),
           minZ: Math.min(a.z, b.z),
           maxZ: Math.max(a.z, b.z),
           spanIndex: si,
@@ -302,21 +310,25 @@ export function negotiateTraceClearance(
       b: RepairRoutePoint,
     ): Array<{ copper: Copper; ratio: number }> => {
       const via = a.z !== b.z
+      const minX = Math.min(a.x, b.x),
+        maxX = Math.max(a.x, b.x),
+        minY = Math.min(a.y, b.y),
+        maxY = Math.max(a.y, b.y)
       const reach =
         (via ? route.viaDiameter : route.traceThickness) / 2 +
         Math.max(input.traceClearance, input.viaClearance)
       const hits: Array<{ copper: Copper; ratio: number }> = []
       const id = ++queryId
       for (
-        let x = Math.floor(Math.min(a.x, b.x) - reach);
-        x <= Math.floor(Math.max(a.x, b.x) + reach);
+        let x = Math.floor(minX - reach);
+        x <= Math.floor(maxX + reach);
         x++
       ) {
         const column = cells.get(x)
         if (!column) continue
         for (
-          let y = Math.floor(Math.min(a.y, b.y) - reach);
-          y <= Math.floor(Math.max(a.y, b.y) + reach);
+          let y = Math.floor(minY - reach);
+          y <= Math.floor(maxY + reach);
           y++
         ) {
           const bucket = column.get(y)
@@ -350,6 +362,16 @@ export function negotiateTraceClearance(
                 ? Math.max(copperDistance, drillDistance)
                 : drillDistance
               : copperDistance
+            // A cell may contain many distant segments. Their axis-aligned
+            // separation is a lower bound on the exact distance; preserve the
+            // existing narrow-phase calculation at and near the boundary.
+            if (
+              minX - required - REGION_EPSILON > copper.maxX ||
+              maxX + required + REGION_EPSILON < copper.minX ||
+              minY - required - REGION_EPSILON > copper.maxY ||
+              maxY + required + REGION_EPSILON < copper.minY
+            )
+              continue
             const distance = segmentToSegmentMinDistance(
               a,
               b,
