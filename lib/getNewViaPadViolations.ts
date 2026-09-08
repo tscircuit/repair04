@@ -190,8 +190,11 @@ const createEvaluator = ({
         route.route.every((point, index): boolean => {
           const before = previous.route[index]!
           const fixed =
-            index === 0 || index === route.route.length - 1 ||
-            point.pcb_port_id || point.insideJumperPad || point.toNextSegmentType
+            index === 0 ||
+            index === route.route.length - 1 ||
+            point.pcb_port_id ||
+            point.insideJumperPad ||
+            point.toNextSegmentType
           return (
             (!fixed || (point.x === before.x && point.y === before.y)) &&
             point.z === before.z &&
@@ -207,11 +210,16 @@ const createEvaluator = ({
           return (
             via.diameter === before.diameter &&
             via.pointIndices.length === before.pointIndices.length &&
-            via.pointIndices.every((pointIndex, i): boolean => pointIndex === before.pointIndices[i]) &&
+            via.pointIndices.every(
+              (pointIndex, i): boolean => pointIndex === before.pointIndices[i],
+            ) &&
             via.layerSequence.length === before.layerSequence.length &&
-            via.layerSequence.every((z, i): boolean => z === before.layerSequence[i]) &&
-            !previousVias.some((other, otherIndex): boolean =>
-              otherIndex !== index && other.identity === via.identity,
+            via.layerSequence.every(
+              (z, i): boolean => z === before.layerSequence[i],
+            ) &&
+            !previousVias.some(
+              (other, otherIndex): boolean =>
+                otherIndex !== index && other.identity === via.identity,
             )
           )
         })
@@ -228,21 +236,27 @@ const createEvaluator = ({
           continue
         const previousContacts =
           preservesViaCorrespondence &&
-          !includeExistingVias.some((selected): boolean =>
-            selected.routeIndex === routeIndex && selected.viaIndex === viaIndex,
+          !includeExistingVias.some(
+            (selected): boolean =>
+              selected.routeIndex === routeIndex &&
+              selected.viaIndex === viaIndex,
           )
             ? new Map(
-              getContacts(previousVias[viaIndex]!).map((contact): [number, number] =>
-                [contact.obstacleIndex, contact.severity],
-              ),
-            )
+                getContacts(previousVias[viaIndex]!).map(
+                  (contact): [number, number] => [
+                    contact.obstacleIndex,
+                    contact.severity,
+                  ],
+                ),
+              )
             : undefined
         for (const contact of getContacts(via)) {
           const previousSeverity = previousContacts?.get(contact.obstacleIndex)
           if (
             previousSeverity !== undefined &&
             contact.severity <= previousSeverity + 1e-8
-          ) continue
+          )
+            continue
           violations.push({
             key: `new-via-pad:${routeIndex}:${contact.obstacleIndex}:${viaIndex}`,
             routeIndex,
