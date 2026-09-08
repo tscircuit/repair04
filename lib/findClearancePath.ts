@@ -191,20 +191,28 @@ export function findClearancePath(input: {
       (obstacle as typeof obstacle & { __zLayers?: number[] }).__zLayers ??
       obstacle.zLayers ??
       obstacle.layers.map(layer)
+    const circularPlatedHole =
+      obstacle.type === "oval" &&
+      obstacle.width === obstacle.height &&
+      obstacle.ccwRotationDegrees === undefined &&
+      zs.length > 1
     for (const z of zs) {
-      // The route evaluator reserves the enclosing rectangle of an SRJ pad.
-      // Plan against that same envelope instead of producing rounded-corner
-      // paths that cannot pass candidate validation.
+      // Round through-hole copper has a circular outline. SMT pads and other
+      // pad shapes retain the conservative rectangle used for validation.
+      const center = { ...obstacle.center, z }
       add(
-        { ...obstacle.center, z },
-        { ...obstacle.center, z },
-        0,
-        {
-          width: obstacle.width,
-          height: obstacle.height,
-          rotation: ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180,
-        },
+        center,
+        center,
+        circularPlatedHole ? obstacle.width / 2 : 0,
+        circularPlatedHole
+          ? undefined
+          : {
+              width: obstacle.width,
+              height: obstacle.height,
+              rotation: ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180,
+            },
         viaOnly,
+        circularPlatedHole,
       )
     }
   }
