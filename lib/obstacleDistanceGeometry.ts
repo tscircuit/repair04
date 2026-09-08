@@ -52,3 +52,22 @@ export function getLocalObstacleDistance(
     segmentToSegmentMinDistance(a, b, geometry.a, geometry.b) - geometry.radius,
   )
 }
+
+/** Positive inside copper, negative outside; a contained disk fits its radius. */
+export function getLocalObstacleInteriorClearance(
+  point: Point,
+  geometry: ObstacleDistanceGeometry,
+): number {
+  if (geometry.type === "rect") {
+    return Math.min(
+      point.x - geometry.bounds.minX,
+      geometry.bounds.maxX - point.x,
+      point.y - geometry.bounds.minY,
+      geometry.bounds.maxY - point.y,
+    )
+  }
+  return (
+    geometry.radius -
+    segmentToSegmentMinDistance(point, point, geometry.a, geometry.b)
+  )
+}

@@ -7,6 +7,8 @@ import {
   getLocalObstacleDistance,
   type ObstacleDistanceGeometry,
 } from "./obstacleDistanceGeometry"
+import { getNetRepresentatives } from "./getFixedObstacleViolations"
+import { isViaContainedInSmtPad } from "./isViaContainedInSmtPad"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
@@ -38,6 +40,8 @@ type StaticContext = Pick<
   | "obstacles"
   | "defaultObstacleMargin"
   | "minViaEdgeToPadEdgeClearance"
+  | "connections"
+  | "allowViaInPad"
 >
 type RouteInput = Omit<NewViaPadViolationInput, "srj" | "viaClearance">
 type Contact = { obstacleIndex: number; severity: number }
@@ -170,9 +174,23 @@ const createEvaluator = ({
         "repair04 new-via guard requires nonnegative finite margins",
       )
     const violations: NewViaPadViolation[] = []
+    const nets =
+      srj.allowViaInPad === true ? getNetRepresentatives(srj, routes) : undefined
     for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
       const route = routes[routeIndex]!,
         previous = previousRoutes[routeIndex]!
+      const prohibitedContacts = (via: RepairViaGeometry): Contact[] => {
+        const contacts = getContacts(via)
+        if (!nets) return contacts
+        return contacts.filter((contact): boolean => {
+          const obstacle = srj.obstacles[contact.obstacleIndex]!
+          return !(
+            obstacle.connectedTo.some(
+              (name) => nets.get(name) === nets.get(route.connectionName),
+            ) && isViaContainedInSmtPad(via, via.diameter / 2, obstacle)
+          )
+        })
+      }
       const previousVias = getRepairViaGeometry(previous, srj.layerCount)
       const sameRoute =
         route.connectionName === previous.connectionName &&
@@ -242,7 +260,7 @@ const createEvaluator = ({
               selected.viaIndex === viaIndex,
           )
             ? new Map(
-                getContacts(previousVias[viaIndex]!).map(
+                prohibitedContacts(previousVias[viaIndex]!).map(
                   (contact): [number, number] => [
                     contact.obstacleIndex,
                     contact.severity,
@@ -250,7 +268,7 @@ const createEvaluator = ({
                 ),
               )
             : undefined
-        for (const contact of getContacts(via)) {
+        for (const contact of prohibitedContacts(via)) {
           const previousSeverity = previousContacts?.get(contact.obstacleIndex)
           if (
             previousSeverity !== undefined &&
@@ -289,12 +307,16 @@ export const createNewViaPadViolationEvaluator = ({
       obstacles: structuredClone(srj.obstacles),
       defaultObstacleMargin: srj.defaultObstacleMargin,
       minViaEdgeToPadEdgeClearance: srj.minViaEdgeToPadEdgeClearance,
+      allowViaInPad: srj.allowViaInPad,
+      connections:
+        srj.allowViaInPad === true ? structuredClone(srj.connections) : [],
     },
     viaClearance,
   })
 
 /**
- * New vias must clear every obstacle, including same-net pads.
+ * New vias must clear every obstacle unless explicit via-in-pad permission
+ * allows their copper to fit entirely inside an electrically connected SMT pad.
  * Ordinary electrical clearance checks allow same-net copper contact, which
  * does not imply permission to drill a via in a solder pad. Existing physical
  * vias may also improve an existing contact when ordered route transitions

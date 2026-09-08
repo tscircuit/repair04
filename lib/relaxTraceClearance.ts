@@ -3,9 +3,12 @@ import type { HighDensityRoute } from "high-density-repair03/lib"
 import {
   getLocalObstacleGeometry,
   getLocalObstacleDistance,
+  getLocalObstacleInteriorClearance,
   type ObstacleDistanceGeometry,
 } from "./obstacleDistanceGeometry"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
+import { isViaContainedInSmtPad } from "./isViaContainedInSmtPad"
+import { areExpandedBoundsSeparated } from "./areExpandedBoundsSeparated"
 import type {
   Bounds,
   RepairRegionInput,
@@ -21,6 +24,7 @@ type Vertex = Point & {
 type Segment = {
   a: Vertex
   b: Vertex
+  initialBounds: Bounds
   minZ: number
   maxZ: number
   radius: number
@@ -35,6 +39,7 @@ type ViaPadConstraint = {
   sine: number
   shape: ObstacleDistanceGeometry
   clearance: number
+  containedRadius?: number
 }
 type PadContact = {
   segment: Segment
@@ -171,6 +176,12 @@ export function relaxTraceClearance(
       segments.push({
         a: va,
         b: vb,
+        initialBounds: {
+          minX: Math.min(va.x, vb.x),
+          maxX: Math.max(va.x, vb.x),
+          minY: Math.min(va.y, vb.y),
+          maxY: Math.max(va.y, vb.y),
+        },
         minZ: Math.min(a.z, b.z),
         maxZ: Math.max(a.z, b.z),
         radius: via
@@ -196,6 +207,10 @@ export function relaxTraceClearance(
         b.radius +
         Math.max(traceClearance, viaClearance) +
         2 * Math.SQRT2 * MAX_DISPLACEMENT
+      // These bounds describe the initial geometry only. Reach already
+      // includes the maximum motion of both segments during all sweeps.
+      if (areExpandedBoundsSeparated(a.initialBounds, b.initialBounds, reach))
+        continue
       if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach)
         pairs.push([a, b])
     }
@@ -236,6 +251,12 @@ export function relaxTraceClearance(
           (cosine * y! * obstacle.height) / 2,
       }),
     )
+    const padBounds = {
+      minX: Math.min(...corners.map((corner): number => corner.x)),
+      maxX: Math.max(...corners.map((corner): number => corner.x)),
+      minY: Math.min(...corners.map((corner): number => corner.y)),
+      maxY: Math.max(...corners.map((corner): number => corner.y)),
+    }
     for (const segment of segments) {
       if (
         (!segment.via && obstacleNets.has(segment.net)) ||
@@ -252,6 +273,10 @@ export function relaxTraceClearance(
           input.srj.minViaEdgeToPadEdgeClearance ?? 0,
         ) +
         Math.SQRT2 * MAX_DISPLACEMENT
+      // Enclose all four transformed corners, including rotated pads. Keep
+      // the original edge-distance predicate whenever the expanded bounds meet.
+      if (areExpandedBoundsSeparated(segment.initialBounds, padBounds, reach))
+        continue
       if (
         Math.min(
           ...corners.map((a, i) =>
@@ -267,13 +292,19 @@ export function relaxTraceClearance(
         continue
       // Use the enclosing rectangle as a conservative routing constraint for
       // every pad shape. Physical via guards retain the exact obstacle shape.
-      padContacts.push({ segment, corners })
+      const containedVia =
+        segment.via &&
+        input.srj.allowViaInPad === true &&
+        obstacleNets.has(segment.net) &&
+        isViaContainedInSmtPad(segment.a.original, segment.radius, obstacle)
+      if (!containedVia) padContacts.push({ segment, corners })
       if (segment.via) {
         const constraint: ViaPadConstraint = {
           center: obstacle.center,
           cosine,
           sine,
           shape: getLocalObstacleGeometry(obstacle),
+          containedRadius: containedVia ? segment.radius : undefined,
           clearance:
             segment.radius +
             Math.max(
@@ -347,6 +378,11 @@ export function relaxTraceClearance(
           const localX = dx * pad.cosine + dy * pad.sine
           const localY = -dx * pad.sine + dy * pad.cosine
           const local = { x: localX, y: localY }
+          if (pad.containedRadius !== undefined)
+            return (
+              getLocalObstacleInteriorClearance(local, pad.shape) + 1e-8 <
+              pad.containedRadius
+            )
           return (
             getLocalObstacleDistance(local, local, pad.shape) < pad.clearance
           )
