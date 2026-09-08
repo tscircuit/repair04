@@ -133,6 +133,24 @@ export function negotiateTraceClearance(
   const fixed = spans.filter((span): boolean => !span.mutable).map((span): HighDensityRoute => span.route)
   const nets = getNetRepresentatives(input.srj, input.routes)
   const owner = (route: HighDensityRoute): string => nets.get(route.connectionName) ?? route.connectionName
+  // Span interiors can be displaced, but their fixed anchor sites cannot.
+  // Reserve each physical site once even when several same-net branches meet.
+  const fixedSites = new Set<string>()
+  for (const span of spans) {
+    for (const point of [span.route.route[0]!, span.route.route.at(-1)!] as RepairRoutePoint[]) {
+      const width = point.traceThickness ?? span.route.traceThickness
+      const key = `${owner(span.route)}|${point.x}|${point.y}|${point.z}|${width}`
+      if (fixedSites.has(key)) continue
+      fixedSites.add(key)
+      const site = { x: point.x, y: point.y, z: point.z }
+      fixed.push({
+        ...span.route,
+        traceThickness: width,
+        route: [site, site],
+        vias: [],
+      })
+    }
+  }
   // The normalized penetration kernel integrates to one across a
   // perpendicular crossing. Weight it by the displaced span's routing cost,
   // so crossing a long track does not appear cheaper merely because it is thin.
