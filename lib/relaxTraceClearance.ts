@@ -3,9 +3,11 @@ import type { HighDensityRoute } from "high-density-repair03/lib"
 import {
   getLocalObstacleGeometry,
   getLocalObstacleDistance,
+  getLocalObstacleInteriorClearance,
   type ObstacleDistanceGeometry,
 } from "./obstacleDistanceGeometry"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
+import { isViaContainedInSmtPad } from "./isViaContainedInSmtPad"
 import type {
   Bounds,
   RepairRegionInput,
@@ -35,6 +37,7 @@ type ViaPadConstraint = {
   sine: number
   shape: ObstacleDistanceGeometry
   clearance: number
+  containedRadius?: number
 }
 type PadContact = {
   segment: Segment
@@ -267,13 +270,19 @@ export function relaxTraceClearance(
         continue
       // Use the enclosing rectangle as a conservative routing constraint for
       // every pad shape. Physical via guards retain the exact obstacle shape.
-      padContacts.push({ segment, corners })
+      const containedVia =
+        segment.via &&
+        input.srj.allowViaInPad === true &&
+        obstacleNets.has(segment.net) &&
+        isViaContainedInSmtPad(segment.a.original, segment.radius, obstacle)
+      if (!containedVia) padContacts.push({ segment, corners })
       if (segment.via) {
         const constraint: ViaPadConstraint = {
           center: obstacle.center,
           cosine,
           sine,
           shape: getLocalObstacleGeometry(obstacle),
+          containedRadius: containedVia ? segment.radius : undefined,
           clearance:
             segment.radius +
             Math.max(
@@ -347,6 +356,11 @@ export function relaxTraceClearance(
           const localX = dx * pad.cosine + dy * pad.sine
           const localY = -dx * pad.sine + dy * pad.cosine
           const local = { x: localX, y: localY }
+          if (pad.containedRadius !== undefined)
+            return (
+              getLocalObstacleInteriorClearance(local, pad.shape) + 1e-8 <
+              pad.containedRadius
+            )
           return (
             getLocalObstacleDistance(local, local, pad.shape) < pad.clearance
           )

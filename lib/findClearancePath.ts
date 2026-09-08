@@ -10,6 +10,7 @@ import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 import { REGION_EPSILON } from "./repairRegionGeometry"
+import { isViaContainedInSmtPad } from "./isViaContainedInSmtPad"
 
 type Point = RepairRoutePoint
 type Barrier = {
@@ -29,6 +30,7 @@ type Barrier = {
   rectSin: number
   rectBounds?: Bounds
   visitedQuery: number
+  viaInPad?: SimpleRouteJson["obstacles"][number]
 }
 type ViaPath = { x: number; y: number; previous?: ViaPath }
 
@@ -182,6 +184,7 @@ export function findClearancePath(input: {
     rect?: Barrier["rect"],
     viaOnly = false,
     pad = false,
+    viaInPad?: SimpleRouteJson["obstacles"][number],
   ): void => {
     const extent = rect ? Math.hypot(rect.width, rect.height) / 2 : radius
     const rectCos = rect ? Math.cos(rect.rotation) : 1
@@ -210,6 +213,7 @@ export function findClearancePath(input: {
       rect,
       viaOnly,
       pad,
+      viaInPad,
       rectCos,
       rectSin,
       rectBounds: rect
@@ -255,6 +259,7 @@ export function findClearancePath(input: {
             },
         viaOnly,
         circularPlatedHole,
+        srj.allowViaInPad === true && viaOnly ? obstacle : undefined,
       )
     }
   }
@@ -390,6 +395,12 @@ export function findClearancePath(input: {
           )
             continue
           let distance: number
+          if (
+            isVia &&
+            barrier.viaInPad &&
+            isViaContainedInSmtPad(a, radius, barrier.viaInPad)
+          )
+            continue
           if (barrier.rect) {
             localA.x =
               (a.x - barrier.a.x) * barrier.rectCos +

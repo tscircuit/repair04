@@ -32,8 +32,8 @@ type Obstacle = SimpleRouteJson["obstacles"][number]
 type Point = { x: number; y: number }
 
 export const getNetRepresentatives = (
-  srj: SimpleRouteJson,
-  routes: HighDensityRoute[],
+  srj: Pick<SimpleRouteJson, "connections" | "obstacles">,
+  routes: readonly HighDensityRoute[],
 ): Map<string, string> => {
   const parents = new Map<string, string>()
   const find = (name: string): string => {
