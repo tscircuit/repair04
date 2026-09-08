@@ -1109,62 +1109,117 @@ export class Repair04Solver extends BaseSolver {
     )
     if (oldIds.size !== movedIds.size) return
     for (const error of movedScore.errors) {
-      const referenced = [error.pcb_via_id,
+      const referenced = [
+        error.pcb_via_id,
         ...(Array.isArray(error.pcb_via_ids) ? error.pcb_via_ids : []),
         ...(Array.isArray(error.pcb_pad_ids) ? error.pcb_pad_ids : []),
       ]
-      if (referenced.some((id): boolean => typeof id === "string" && movedIds.has(id)) &&
-        contactForeign(error, movedIds) === undefined) return
+      if (
+        referenced.some(
+          (id): boolean => typeof id === "string" && movedIds.has(id),
+        ) &&
+        contactForeign(error, movedIds) === undefined
+      )
+        return
     }
     const newContacts = contacts(movedScore.errors, movedIds)
-    if (newContacts.size !== 1 ||
-      [...newContacts].some((id): boolean => oldContacts.has(id))) return
+    if (
+      newContacts.size !== 1 ||
+      [...newContacts].some((id): boolean => oldContacts.has(id))
+    )
+      return
     const id = [...newContacts][0]!
     if (!/^repair04_(0|[1-9][0-9]*)$/.test(id)) return
     const routeIndex = Number(id.slice("repair04_".length))
     const route = this.routes[routeIndex]
-    if (!route || routeIndex === selected.routeIndex || route.jumpers?.length ||
+    if (
+      !route ||
+      routeIndex === selected.routeIndex ||
+      route.jumpers?.length ||
       route.connectionName === original.connectionName ||
-      (route.rootConnectionName && route.rootConnectionName === original.rootConnectionName) ||
-      route.route.some((p): boolean => Boolean(p.toNextSegmentType || p.insideJumperPad))) return
-    let pi = -1, nearest = Infinity
+      (route.rootConnectionName &&
+        route.rootConnectionName === original.rootConnectionName) ||
+      route.route.some((p): boolean =>
+        Boolean(p.toNextSegmentType || p.insideJumperPad),
+      )
+    )
+      return
+    let pi = -1,
+      nearest = Infinity
     for (let i = 1; i < route.route.length; i++) {
-      const a = route.route[i - 1]!, b = route.route[i]!
+      const a = route.route[i - 1]!,
+        b = route.route[i]!
       if (a.z !== b.z || a.z < movedVia.minZ || a.z > movedVia.maxZ) continue
-      const dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy
-      const t = length2 ? Math.max(0, Math.min(1,
-        ((movedVia.x - a.x) * dx + (movedVia.y - a.y) * dy) / length2,
-      )) : 0
-      const distance = Math.hypot(movedVia.x - a.x - t * dx, movedVia.y - a.y - t * dy)
-      if (distance < nearest) { nearest = distance; pi = i }
+      const dx = b.x - a.x,
+        dy = b.y - a.y,
+        length2 = dx * dx + dy * dy
+      const t = length2
+        ? Math.max(
+            0,
+            Math.min(
+              1,
+              ((movedVia.x - a.x) * dx + (movedVia.y - a.y) * dy) / length2,
+            ),
+          )
+        : 0
+      const distance = Math.hypot(
+        movedVia.x - a.x - t * dx,
+        movedVia.y - a.y - t * dy,
+      )
+      if (distance < nearest) {
+        nearest = distance
+        pi = i
+      }
     }
     if (pi < 1) return
     const isAnchor = (index: number): boolean => {
       const point = route.route[index]!
-      return this.isLocked(routeIndex, point) ||
+      return (
+        this.isLocked(routeIndex, point) ||
         (index > 0 && route.route[index - 1]!.z !== point.z) ||
-        (index + 1 < route.route.length && route.route[index + 1]!.z !== point.z)
+        (index + 1 < route.route.length &&
+          route.route[index + 1]!.z !== point.z)
+      )
     }
-    let lo = pi - 1, hi = pi
+    let lo = pi - 1,
+      hi = pi
     while (lo > 0 && !isAnchor(lo)) lo--
     while (hi < route.route.length - 1 && !isAnchor(hi)) hi++
-    const start = route.route[lo]!, end = route.route[hi]!
+    const start = route.route[lo]!,
+      end = route.route[hi]!
     const inMutableClosure = (point: Point): boolean =>
       point.x >= this.mutableBounds.minX - REGION_EPSILON &&
       point.x <= this.mutableBounds.maxX + REGION_EPSILON &&
       point.y >= this.mutableBounds.minY - REGION_EPSILON &&
       point.y <= this.mutableBounds.maxY + REGION_EPSILON
-    if (start.z !== end.z || !inMutableClosure(start) || !inMutableClosure(end)) return
-    const width = (start as Point & { traceThickness?: number }).traceThickness ?? route.traceThickness
-    if (route.route.slice(lo, hi + 1).some((p): boolean =>
-      ((p as Point & { traceThickness?: number }).traceThickness ?? route.traceThickness) !== width,
-    )) return
-    const maxNodes = Math.min(30000, this.input.maxPathSearchNodes === undefined
-      ? 30000 : this.input.maxPathSearchNodes - this.pathSearchNodes)
+    if (start.z !== end.z || !inMutableClosure(start) || !inMutableClosure(end))
+      return
+    const width =
+      (start as Point & { traceThickness?: number }).traceThickness ??
+      route.traceThickness
+    if (
+      route.route
+        .slice(lo, hi + 1)
+        .some(
+          (p): boolean =>
+            ((p as Point & { traceThickness?: number }).traceThickness ??
+              route.traceThickness) !== width,
+        )
+    )
+      return
+    const maxNodes = Math.min(
+      30000,
+      this.input.maxPathSearchNodes === undefined
+        ? 30000
+        : this.input.maxPathSearchNodes - this.pathSearchNodes,
+    )
     if (maxNodes < 1) return
     const context = this.routes.slice()
     context[selected.routeIndex] = candidate.route
-    const stats: ClearancePathSearchStats = { nodesPopped: 0, completionReason: "no-path" }
+    const stats: ClearancePathSearchStats = {
+      nodesPopped: 0,
+      completionReason: "no-path",
+    }
     const path = findClearancePath({
       srj: this.input.srj, routes: context, routeIndex,
       start: end, end: start, bounds: this.mutableBounds,

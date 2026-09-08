@@ -302,28 +302,57 @@ export function relaxTraceClearance(
       }
     }
   }
-  const project = (weights: [Vertex, number][], nx: number, ny: number, deficit: number): void => {
+  const project = (
+    weights: [Vertex, number][],
+    nx: number,
+    ny: number,
+    deficit: number,
+  ): void => {
     const combined = new Map<Vertex, number>()
     for (const [vertex, weight] of weights) {
-      if (!vertex.locked) combined.set(vertex, (combined.get(vertex) ?? 0) + weight)
+      if (!vertex.locked)
+        combined.set(vertex, (combined.get(vertex) ?? 0) + weight)
     }
-    const mass = [...combined.values()].reduce((sum, weight) => sum + weight * weight, 0)
+    const mass = [...combined.values()].reduce(
+      (sum, weight) => sum + weight * weight,
+      0,
+    )
     if (mass < 1e-15) return
     const scale = Math.min(0.05, deficit * 0.7) / mass
     for (const [vertex, weight] of combined) {
-      const x = Math.max(mutable.minX, vertex.original.x - MAX_DISPLACEMENT,
-        Math.min(mutable.maxX, vertex.original.x + MAX_DISPLACEMENT, vertex.x + nx * scale * weight))
-      const y = Math.max(mutable.minY, vertex.original.y - MAX_DISPLACEMENT,
-        Math.min(mutable.maxY, vertex.original.y + MAX_DISPLACEMENT, vertex.y + ny * scale * weight))
+      const x = Math.max(
+        mutable.minX,
+        vertex.original.x - MAX_DISPLACEMENT,
+        Math.min(
+          mutable.maxX,
+          vertex.original.x + MAX_DISPLACEMENT,
+          vertex.x + nx * scale * weight,
+        ),
+      )
+      const y = Math.max(
+        mutable.minY,
+        vertex.original.y - MAX_DISPLACEMENT,
+        Math.min(
+          mutable.maxY,
+          vertex.original.y + MAX_DISPLACEMENT,
+          vertex.y + ny * scale * weight,
+        ),
+      )
       // Wire constraints must never move a via through a fixed solder pad.
       // Test its proposed position against every nearby pad before moving it.
-      if (viaPadConstraints.get(vertex)?.some((pad): boolean => {
-        const dx = x - pad.center.x, dy = y - pad.center.y
-        const localX = dx * pad.cosine + dy * pad.sine
-        const localY = -dx * pad.sine + dy * pad.cosine
-        const local = { x: localX, y: localY }
-        return getLocalObstacleDistance(local, local, pad.shape) < pad.clearance
-      })) continue
+      if (
+        viaPadConstraints.get(vertex)?.some((pad): boolean => {
+          const dx = x - pad.center.x,
+            dy = y - pad.center.y
+          const localX = dx * pad.cosine + dy * pad.sine
+          const localY = -dx * pad.sine + dy * pad.cosine
+          const local = { x: localX, y: localY }
+          return (
+            getLocalObstacleDistance(local, local, pad.shape) < pad.clearance
+          )
+        })
+      )
+        continue
       vertex.x = x
       vertex.y = y
     }
@@ -331,35 +360,68 @@ export function relaxTraceClearance(
   for (let sweep = 0; sweep < MAX_SWEEPS; sweep++) {
     for (const [a, b] of pairs) {
       const contact = getContact(a.a, a.b, b.a, b.b)
-      const required = a.radius + b.radius + (a.via && b.via ? viaClearance : traceClearance)
+      const required =
+        a.radius + b.radius + (a.via && b.via ? viaClearance : traceClearance)
       if (contact.distance >= required) continue
       // Crossings require rerouting; this operation only opens existing gaps.
       if (contact.distance < 1e-10) continue
-      project([[a.a, 1 - contact.s], [a.b, contact.s], [b.a, contact.t - 1], [b.b, -contact.t]],
-        contact.x / contact.distance, contact.y / contact.distance, required - contact.distance)
+      project(
+        [
+          [a.a, 1 - contact.s],
+          [a.b, contact.s],
+          [b.a, contact.t - 1],
+          [b.b, -contact.t],
+        ],
+        contact.x / contact.distance,
+        contact.y / contact.distance,
+        required - contact.distance,
+      )
     }
     for (const pad of padContacts) {
       const { segment, corners } = pad
-      const required = segment.radius + Math.max(
-        segment.via ? viaClearance : traceClearance, input.srj.defaultObstacleMargin ?? 0,
-        segment.via ? (input.srj.minViaEdgeToPadEdgeClearance ?? 0) : (input.srj.minTraceToPadEdgeClearance ?? 0),
-      )
+      const required =
+        segment.radius +
+        Math.max(
+          segment.via ? viaClearance : traceClearance,
+          input.srj.defaultObstacleMargin ?? 0,
+          segment.via
+            ? (input.srj.minViaEdgeToPadEdgeClearance ?? 0)
+            : (input.srj.minTraceToPadEdgeClearance ?? 0),
+        )
       for (const vertex of new Set([segment.a, segment.b])) {
         const interior = getInteriorPadContact(vertex, corners)
         if (interior) {
-          project([[vertex, 1]], interior.x, interior.y, required + interior.depth)
+          project(
+            [[vertex, 1]],
+            interior.x,
+            interior.y,
+            required + interior.depth,
+          )
         }
       }
-      const contact = corners.map((a, i) => getContact(segment.a, segment.b, a, corners[(i + 1) % 4]!))
-        .reduce((a, b) => a.distance < b.distance ? a : b)
+      const contact = corners
+        .map((a, i) =>
+          getContact(segment.a, segment.b, a, corners[(i + 1) % 4]!),
+        )
+        .reduce((a, b) => (a.distance < b.distance ? a : b))
       if (contact.distance < 1e-10) continue
       if (contact.distance >= required) continue
-      project([[segment.a, 1 - contact.s], [segment.b, contact.s]],
-        contact.x / contact.distance, contact.y / contact.distance, required - contact.distance)
+      project(
+        [
+          [segment.a, 1 - contact.s],
+          [segment.b, contact.s],
+        ],
+        contact.x / contact.distance,
+        contact.y / contact.distance,
+        required - contact.distance,
+      )
     }
   }
   for (const vertex of vertices.values()) {
-    for (const point of vertex.points) { point.x = vertex.x; point.y = vertex.y }
+    for (const point of vertex.points) {
+      point.x = vertex.x
+      point.y = vertex.y
+    }
   }
   for (const route of routes) {
     route.vias = []

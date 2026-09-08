@@ -330,52 +330,90 @@ export function negotiateTraceClearance(
               copper.maxZ >= Math.min(a.z, b.z)
             if (!sharedLayers && !bothVias) continue
             if (copper.immutable && !bothVias) continue
-            if (copper.owner === selectedOwner && (!bothVias ||
-              (a.x === copper.a.x && a.y === copper.a.y))) continue
-            const copperDistance = (via ? route.viaDiameter : route.traceThickness) / 2 +
-              (bothVias ? input.viaClearance : input.traceClearance) + copper.radius
-            const drillDistance = (input.viaHoleDiameter ?? route.viaDiameter) / 2 +
-              (input.viaHoleDiameter ?? copper.radius * 2) / 2 + input.viaClearance
+            if (
+              copper.owner === selectedOwner &&
+              (!bothVias || (a.x === copper.a.x && a.y === copper.a.y))
+            )
+              continue
+            const copperDistance =
+              (via ? route.viaDiameter : route.traceThickness) / 2 +
+              (bothVias ? input.viaClearance : input.traceClearance) +
+              copper.radius
+            const drillDistance =
+              (input.viaHoleDiameter ?? route.viaDiameter) / 2 +
+              (input.viaHoleDiameter ?? copper.radius * 2) / 2 +
+              input.viaClearance
             // Drill spacing applies even when the connected copper spans do
             // not share layers. Same-net copper may overlap, distinct holes may not.
             const required = bothVias
               ? sharedLayers && copper.owner !== selectedOwner
-                ? Math.max(copperDistance, drillDistance) : drillDistance
+                ? Math.max(copperDistance, drillDistance)
+                : drillDistance
               : copperDistance
-            const distance = segmentToSegmentMinDistance(a, b, copper.a, copper.b)
+            const distance = segmentToSegmentMinDistance(
+              a,
+              b,
+              copper.a,
+              copper.b,
+            )
             if (distance < required - REGION_EPSILON)
-              hits.push({ copper, ratio: (required - distance) / (required * required) })
+              hits.push({
+                copper,
+                ratio: (required - distance) / (required * required),
+              })
           }
         }
       }
       return hits
     }
-    const getAdditionalEdgeCost = (a: RepairRoutePoint, b: RepairRoutePoint): number => {
+    const getAdditionalEdgeCost = (
+      a: RepairRoutePoint,
+      b: RepairRoutePoint,
+    ): number => {
       const x = (a.x + b.x) / 2
       const y = (a.y + b.y) / 2
-      if (x <= input.bounds.minX + REGION_EPSILON * 4 ||
+      if (
+        x <= input.bounds.minX + REGION_EPSILON * 4 ||
         x >= input.bounds.maxX - REGION_EPSILON * 4 ||
         y <= input.bounds.minY + REGION_EPSILON * 4 ||
-        y >= input.bounds.maxY - REGION_EPSILON * 4) return Infinity
+        y >= input.bounds.maxY - REGION_EPSILON * 4
+      )
+        return Infinity
       const costs = new Map<string, number>()
       for (const { copper, ratio } of query(a, b)) {
         if (copper.owner === selectedOwner || copper.immutable) return Infinity
-        costs.set(copper.owner, Math.max(costs.get(copper.owner) ?? 0,
-          ratio * weights[copper.spanIndex]!))
+        costs.set(
+          copper.owner,
+          Math.max(
+            costs.get(copper.owner) ?? 0,
+            ratio * weights[copper.spanIndex]!,
+          ),
+        )
       }
       let total = 0
       for (const cost of costs.values()) total += cost
       return (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) * total
     }
-    const stats: ClearancePathSearchStats = { nodesPopped: 0, completionReason: "no-path" }
-    const path = findClearancePath({ srj: input.srj, routes: [...fixed, route],
-      routeIndex: fixed.length, start: route.route[0]!, end: route.route.at(-1)!,
-      bounds: input.bounds, traceThickness: route.traceThickness,
-      traceClearance: input.traceClearance, viaClearance: input.viaClearance,
+    const stats: ClearancePathSearchStats = {
+      nodesPopped: 0,
+      completionReason: "no-path",
+    }
+    const path = findClearancePath({
+      srj: input.srj,
+      routes: [...fixed, route],
+      routeIndex: fixed.length,
+      start: route.route[0]!,
+      end: route.route.at(-1)!,
+      bounds: input.bounds,
+      traceThickness: route.traceThickness,
+      traceClearance: input.traceClearance,
+      viaClearance: input.viaClearance,
       gridSize: Math.min(0.1, route.traceThickness / 2),
       allowLayerChanges: input.allowLayerChanges,
       maxNodes: input.maxPathSearchNodes - pathSearchNodes,
-      stats, getAdditionalEdgeCost })
+      stats,
+      getAdditionalEdgeCost,
+    })
     pathSearchCalls++
     pathSearchNodes += stats.nodesPopped
     input.onSearch?.(stats)
@@ -393,15 +431,21 @@ export function negotiateTraceClearance(
       weights[other]!++
       enqueue(other)
     }
-    if (conflicts.size) { weights[index]!++; enqueue(index) }
+    if (conflicts.size) {
+      weights[index]!++
+      enqueue(index)
+    }
   }
   return {
     routes: input.routes.map((route, ri): HighDensityRoute => {
       if (!byRoute[ri]!.length) return route
       const points = byRoute[ri]!.flatMap((si, index): RepairRoutePoint[] =>
-        index === 0 ? current[si]!.route : current[si]!.route.slice(1))
+        index === 0 ? current[si]!.route : current[si]!.route.slice(1),
+      )
       return withPoints(route, points)
     }),
-    pathSearchNodes, pathSearchCalls, unresolvedSpanCount: queued.size + frozen.size,
+    pathSearchNodes,
+    pathSearchCalls,
+    unresolvedSpanCount: queued.size + frozen.size,
   }
 }
