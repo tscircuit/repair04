@@ -629,11 +629,15 @@ export function findClearancePath(input: {
     }
     for (const id of neighbors) {
       const b = point(id),
-        cost =
+        baseCost =
           current.cost +
-          (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) +
-          extraCost(a, b)
-      if (cost >= (costs.get(id) ?? Infinity)) continue
+          (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
+        previousCost = costs.get(id) ?? Infinity
+      // Congestion costs are nonnegative, so an edge that cannot improve the
+      // geometric cost cannot improve the complete cost either.
+      if (baseCost >= previousCost) continue
+      const cost = baseCost + extraCost(a, b)
+      if (cost >= previousCost) continue
       const low = Math.min(current.id, id),
         high = Math.max(current.id, id)
       const key = useNumericEdgeKeys
