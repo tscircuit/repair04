@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test"
 import { segmentToBoundsMinDistance } from "@tscircuit/math-utils"
-import type { HighDensityRoute, SimpleRouteJson } from "high-density-repair03/lib"
+import type {
+  HighDensityRoute,
+  SimpleRouteJson,
+} from "high-density-repair03/lib"
 import { findClearancePath } from "../lib/findClearancePath"
 
 test("pathfinding retains an exactly feasible pad corridor at translated coordinates", (): void => {

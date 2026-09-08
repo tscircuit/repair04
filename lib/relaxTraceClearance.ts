@@ -1,11 +1,23 @@
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import type { HighDensityRoute } from "high-density-repair03/lib"
-import { getLocalObstacleGeometry, getLocalObstacleDistance, type ObstacleDistanceGeometry } from "./obstacleDistanceGeometry"
+import {
+  getLocalObstacleGeometry,
+  getLocalObstacleDistance,
+  type ObstacleDistanceGeometry,
+} from "./obstacleDistanceGeometry"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
-import type { Bounds, RepairRegionInput, RepairRoutePoint } from "./repairRegionTypes"
+import type {
+  Bounds,
+  RepairRegionInput,
+  RepairRoutePoint,
+} from "./repairRegionTypes"
 
 type Point = { x: number; y: number }
-type Vertex = Point & { original: Point; locked: boolean; points: RepairRoutePoint[] }
+type Vertex = Point & {
+  original: Point
+  locked: boolean
+  points: RepairRoutePoint[]
+}
 type Segment = {
   a: Vertex
   b: Vertex
@@ -17,7 +29,13 @@ type Segment = {
   via: boolean
 }
 type Contact = { s: number; t: number; x: number; y: number; distance: number }
-type ViaPadConstraint = { center: Point; cosine: number; sine: number; shape: ObstacleDistanceGeometry; clearance: number }
+type ViaPadConstraint = {
+  center: Point
+  cosine: number
+  sine: number
+  shape: ObstacleDistanceGeometry
+  clearance: number
+}
 type PadContact = {
   segment: Segment
   corners: Point[]
@@ -28,14 +46,22 @@ const MAX_DISPLACEMENT = 0.25
 
 /** Closest points and their interpolation weights, including zero-length vias. */
 function getContact(a: Point, b: Point, c: Point, d: Point): Contact {
-  const ux = b.x - a.x, uy = b.y - a.y
-  const vx = d.x - c.x, vy = d.y - c.y
-  const wx = a.x - c.x, wy = a.y - c.y
-  const aa = ux * ux + uy * uy, bb = ux * vx + uy * vy
-  const cc = vx * vx + vy * vy, dd = ux * wx + uy * wy
-  const ee = vx * wx + vy * wy, determinant = aa * cc - bb * bb
-  let s = determinant > 1e-15
-    ? Math.max(0, Math.min(1, (bb * ee - cc * dd) / determinant)) : 0
+  const ux = b.x - a.x,
+    uy = b.y - a.y
+  const vx = d.x - c.x,
+    vy = d.y - c.y
+  const wx = a.x - c.x,
+    wy = a.y - c.y
+  const aa = ux * ux + uy * uy,
+    bb = ux * vx + uy * vy
+  const cc = vx * vx + vy * vy,
+    dd = ux * wx + uy * wy
+  const ee = vx * wx + vy * wy,
+    determinant = aa * cc - bb * bb
+  let s =
+    determinant > 1e-15
+      ? Math.max(0, Math.min(1, (bb * ee - cc * dd) / determinant))
+      : 0
   if (cc < 1e-15) s = aa > 1e-15 ? Math.max(0, Math.min(1, -dd / aa)) : 0
   let t = cc > 1e-15 ? (bb * s + ee) / cc : 0
   if (t < 0) {
@@ -51,17 +77,23 @@ function getContact(a: Point, b: Point, c: Point, d: Point): Contact {
 }
 
 /** Signed distance to the nearest face of a containing convex pad. */
-function getInteriorPadContact(point: Point, corners: Point[]): {
+function getInteriorPadContact(
+  point: Point,
+  corners: Point[],
+): {
   x: number
   y: number
   depth: number
 } | null {
   let contact = { x: 0, y: 0, depth: Infinity }
   for (let i = 0; i < corners.length; i++) {
-    const a = corners[i]!, b = corners[(i + 1) % corners.length]!
-    const dx = b.x - a.x, dy = b.y - a.y
+    const a = corners[i]!,
+      b = corners[(i + 1) % corners.length]!
+    const dx = b.x - a.x,
+      dy = b.y - a.y
     const length = Math.hypot(dx, dy)
-    const x = dy / length, y = -dx / length
+    const x = dy / length,
+      y = -dx / length
     const depth = -((point.x - a.x) * x + (point.y - a.y) * y)
     if (depth < 0) return null
     if (depth < contact.depth) contact = { x, y, depth }
@@ -76,11 +108,13 @@ function getInteriorPadContact(point: Point, corners: Point[]): {
  * Target the requested clearances exactly: adding fixed slack can make a
  * narrow corridor that fits the copper and its clearances infeasible.
  */
-export function relaxTraceClearance(input: RepairRegionInput & {
-  traceClearance?: number
-  viaClearance?: number
-  allowViaMovement?: boolean
-}): HighDensityRoute[] {
+export function relaxTraceClearance(
+  input: RepairRegionInput & {
+    traceClearance?: number
+    viaClearance?: number
+    allowViaMovement?: boolean
+  },
+): HighDensityRoute[] {
   const routes = structuredClone(input.routes)
   const nets = getNetRepresentatives(input.srj, routes)
   const traceClearance = input.traceClearance ?? 0.1
@@ -97,15 +131,27 @@ export function relaxTraceClearance(input: RepairRegionInput & {
       const key = `${nets.get(route.connectionName)}:${point.x}:${point.y}`
       let vertex = vertices.get(key)
       if (!vertex) {
-        vertex = { x: point.x, y: point.y, original: { x: point.x, y: point.y }, locked: false, points: [] }
+        vertex = {
+          x: point.x,
+          y: point.y,
+          original: { x: point.x, y: point.y },
+          locked: false,
+          points: [],
+        }
         vertices.set(key, vertex)
       }
       vertex.points.push(point)
       vertex.locked ||= Boolean(
-        input.lockedPointIndices[ri]![pi] || pi === 0 || pi === route.route.length - 1 ||
-        point.pcb_port_id || point.insideJumperPad || point.toNextSegmentType ||
-        point.x <= mutable.minX || point.x >= mutable.maxX ||
-        point.y <= mutable.minY || point.y >= mutable.maxY,
+        input.lockedPointIndices[ri]![pi] ||
+          pi === 0 ||
+          pi === route.route.length - 1 ||
+          point.pcb_port_id ||
+          point.insideJumperPad ||
+          point.toNextSegmentType ||
+          point.x <= mutable.minX ||
+          point.x >= mutable.maxX ||
+          point.y <= mutable.minY ||
+          point.y >= mutable.maxY,
       )
       return vertex
     }),
@@ -114,9 +160,12 @@ export function relaxTraceClearance(input: RepairRegionInput & {
   for (let ri = 0; ri < routes.length; ri++) {
     const route = routes[ri]!
     for (let pi = 1; pi < route.route.length; pi++) {
-      const a = route.route[pi - 1]! as RepairRoutePoint, b = route.route[pi]! as RepairRoutePoint
-      if (a.toNextSegmentType || a.insideJumperPad || b.insideJumperPad) continue
-      const va = routeVertices[ri]![pi - 1]!, vb = routeVertices[ri]![pi]!
+      const a = route.route[pi - 1]! as RepairRoutePoint,
+        b = route.route[pi]! as RepairRoutePoint
+      if (a.toNextSegmentType || a.insideJumperPad || b.insideJumperPad)
+        continue
+      const va = routeVertices[ri]![pi - 1]!,
+        vb = routeVertices[ri]![pi]!
       const via = a.z !== b.z
       if (via && input.allowViaMovement !== true) va.locked = vb.locked = true
       segments.push({

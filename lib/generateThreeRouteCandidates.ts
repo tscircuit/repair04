@@ -144,24 +144,49 @@ export function* generateThreeRouteCandidates(
       span.distance = Infinity
       const route = routes[span.ri]!
       for (let i = span.a + 1; i <= span.b; i++)
-        span.distance = Math.min(span.distance, distance(violation.center, route.route[i - 1]!, route.route[i]!))
+        span.distance = Math.min(
+          span.distance,
+          distance(violation.center, route.route[i - 1]!, route.route[i]!),
+        )
     }
-    const target = spans.filter((span): boolean => span.ri === violation.routeIndex)
+    const target = spans
+      .filter((span): boolean => span.ri === violation.routeIndex)
       .sort((a, b): number => a.distance - b.distance || a.a - b.a)[0]
     if (!target || target.distance > 0.5) continue
     const targetRoute = routes[target.ri]!
-    const companions = spans.filter((span): boolean => span.ri !== target.ri && span.z === target.z && span.distance < 1.5 &&
-      routes[span.ri]!.connectionName !== targetRoute.connectionName &&
-      (!targetRoute.rootConnectionName || routes[span.ri]!.rootConnectionName !== targetRoute.rootConnectionName))
-      .sort((a, b): number => a.distance - b.distance || a.ri - b.ri || a.a - b.a)
-    const first = companions[0], second = companions.find((span): boolean => span.ri !== first?.ri)
+    const companions = spans
+      .filter(
+        (span): boolean =>
+          span.ri !== target.ri &&
+          span.z === target.z &&
+          span.distance < 1.5 &&
+          routes[span.ri]!.connectionName !== targetRoute.connectionName &&
+          (!targetRoute.rootConnectionName ||
+            routes[span.ri]!.rootConnectionName !==
+              targetRoute.rootConnectionName),
+      )
+      .sort(
+        (a, b): number => a.distance - b.distance || a.ri - b.ri || a.a - b.a,
+      )
+    const first = companions[0],
+      second = companions.find((span): boolean => span.ri !== first?.ri)
     if (!first || !second) continue
     const selected = [target, first, second]
-    const key = selected.map((span): string => `${span.ri}:${span.a}:${span.b}`).join("|")
+    const key = selected
+      .map((span): string => `${span.ri}:${span.a}:${span.b}`)
+      .join("|")
     if (attempted.has(key)) continue
     attempted.add(key)
-    const constrained = first.viaEnds >= second.viaEnds ? 1 : 2, other = 3 - constrained
-    const orders = [[constrained, 0, other], [0, 1, 2], [0, 2, 1], [1, 2, 0], [2, 1, 0], [other, 0, constrained]]
+    const constrained = first.viaEnds >= second.viaEnds ? 1 : 2,
+      other = 3 - constrained
+    const orders = [
+      [constrained, 0, other],
+      [0, 1, 2],
+      [0, 2, 1],
+      [1, 2, 0],
+      [2, 1, 0],
+      [other, 0, constrained],
+    ]
     const tried = new Set<string>()
     for (const order of orders) {
       if (tried.has(order.join())) continue
@@ -175,23 +200,51 @@ export function* generateThreeRouteCandidates(
       let complete = true
       for (const index of order) {
         if (calls >= input.maxSearchCalls || input.remainingNodes() <= 0) return
-        const span = selected[index]!, route = routes[span.ri]!
-        const stats: ClearancePathSearchStats = { nodesPopped: 0, completionReason: "no-path" }
+        const span = selected[index]!,
+          route = routes[span.ri]!
+        const stats: ClearancePathSearchStats = {
+          nodesPopped: 0,
+          completionReason: "no-path",
+        }
         const path = findClearancePath({
-          srj: input.srj, routes: working, routeIndex: span.ri,
-          start: route.route[span.b]!, end: route.route[span.a]!, bounds: input.bounds,
-          traceThickness: span.width, traceClearance: input.traceClearance, viaClearance: input.viaClearance,
-          gridSize: Math.max(0.025, span.width / 4), allowLayerChanges: false,
-          maxNodes: Math.min(30000, input.remainingNodes()), stats,
+          srj: input.srj,
+          routes: working,
+          routeIndex: span.ri,
+          start: route.route[span.b]!,
+          end: route.route[span.a]!,
+          bounds: input.bounds,
+          traceThickness: span.width,
+          traceClearance: input.traceClearance,
+          viaClearance: input.viaClearance,
+          gridSize: Math.max(0.025, span.width / 4),
+          allowLayerChanges: false,
+          maxNodes: Math.min(30000, input.remainingNodes()),
+          stats,
         })
         calls++
         input.onSearch(stats)
-        if (!path) { complete = false; break }
+        if (!path) {
+          complete = false
+          break
+        }
         path.reverse()
-        working[span.ri] = { ...route, route: [...route.route.slice(0, span.a), ...path, ...route.route.slice(span.b + 1)] }
+        working[span.ri] = {
+          ...route,
+          route: [
+            ...route.route.slice(0, span.a),
+            ...path,
+            ...route.route.slice(span.b + 1),
+          ],
+        }
         working[routes.length + index]!.route = []
       }
-      if (complete) yield selected.map((span): Replacement => ({ routeIndex: span.ri, route: working[span.ri]! }))
+      if (complete)
+        yield selected.map(
+          (span): Replacement => ({
+            routeIndex: span.ri,
+            route: working[span.ri]!,
+          }),
+        )
     }
   }
 }

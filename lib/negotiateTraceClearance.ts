@@ -1,6 +1,12 @@
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
-import type { HighDensityRoute, SimpleRouteJson } from "high-density-repair03/lib"
-import { findClearancePath, type ClearancePathSearchStats } from "./findClearancePath"
+import type {
+  HighDensityRoute,
+  SimpleRouteJson,
+} from "high-density-repair03/lib"
+import {
+  findClearancePath,
+  type ClearancePathSearchStats,
+} from "./findClearancePath"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
 import { REGION_EPSILON } from "./repairRegionGeometry"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
@@ -49,7 +55,8 @@ function withPoints(
 ): HighDensityRoute {
   const vias: HighDensityRoute["vias"] = []
   for (let index = 1; index < points.length; index++) {
-    const a = points[index - 1]!, b = points[index]!
+    const a = points[index - 1]!,
+      b = points[index]!
     if (a.z === b.z || a.toNextSegmentType === "through_obstacle") continue
     if (a.x !== b.x || a.y !== b.y)
       throw new Error("repair04: negotiated via endpoints must coincide")
@@ -69,12 +76,21 @@ export function negotiateTraceClearance(
 ): NegotiatedClearanceResult {
   for (const value of [input.maxPathSearchNodes, input.maxPathSearchCalls]) {
     if (!Number.isSafeInteger(value) || value < 0)
-      throw new Error("repair04: negotiated work budgets must be nonnegative integers")
+      throw new Error(
+        "repair04: negotiated work budgets must be nonnegative integers",
+      )
   }
-  if (input.viaHoleDiameter !== undefined &&
-    (!Number.isFinite(input.viaHoleDiameter) || input.viaHoleDiameter <= 0 ||
-      input.routes.some((route): boolean => input.viaHoleDiameter! > route.viaDiameter)))
-    throw new Error("repair04: via hole diameter must be positive and fit the copper")
+  if (
+    input.viaHoleDiameter !== undefined &&
+    (!Number.isFinite(input.viaHoleDiameter) ||
+      input.viaHoleDiameter <= 0 ||
+      input.routes.some(
+        (route): boolean => input.viaHoleDiameter! > route.viaDiameter,
+      ))
+  )
+    throw new Error(
+      "repair04: via hole diameter must be positive and fit the copper",
+    )
   const inside = (point: RepairRoutePoint): boolean =>
     point.x >= input.bounds.minX - REGION_EPSILON &&
     point.x <= input.bounds.maxX + REGION_EPSILON &&
@@ -86,44 +102,75 @@ export function negotiateTraceClearance(
     const route = input.routes[ri]!
     const points: RepairRoutePoint[] = route.route
     const anchors = points.flatMap((point, pi): number[] => {
-      const previous = points[pi - 1], next = points[pi + 1]
+      const previous = points[pi - 1],
+        next = points[pi + 1]
       const width = point.traceThickness ?? route.traceThickness
       const widthChanges =
-        (previous && (previous.traceThickness ?? route.traceThickness) !== width) ||
+        (previous &&
+          (previous.traceThickness ?? route.traceThickness) !== width) ||
         (next && (next.traceThickness ?? route.traceThickness) !== width)
       const fixedVia =
-        (previous && previous.z !== point.z && (!input.allowLayerChanges ||
-          input.isLocked(ri, pi) || input.isLocked(ri, pi - 1))) ||
-        (next && next.z !== point.z && (!input.allowLayerChanges ||
-          input.isLocked(ri, pi) || input.isLocked(ri, pi + 1)))
-      return pi === 0 || pi === points.length - 1 || input.isLocked(ri, pi) ||
-        point.pcb_port_id || point.toNextSegmentType || point.insideJumperPad ||
-        widthChanges || fixedVia ? [pi] : []
+        (previous &&
+          previous.z !== point.z &&
+          (!input.allowLayerChanges ||
+            input.isLocked(ri, pi) ||
+            input.isLocked(ri, pi - 1))) ||
+        (next &&
+          next.z !== point.z &&
+          (!input.allowLayerChanges ||
+            input.isLocked(ri, pi) ||
+            input.isLocked(ri, pi + 1)))
+      return pi === 0 ||
+        pi === points.length - 1 ||
+        input.isLocked(ri, pi) ||
+        point.pcb_port_id ||
+        point.toNextSegmentType ||
+        point.insideJumperPad ||
+        widthChanges ||
+        fixedVia
+        ? [pi]
+        : []
     })
     for (let ai = 1; ai < anchors.length; ai++) {
       const fragment = points.slice(anchors[ai - 1], anchors[ai]! + 1)
       const width = fragment[0]!.traceThickness ?? route.traceThickness
-      const hasMutableInterior = fragment.slice(1).every((point, pi): boolean => {
-        const previous = fragment[pi]!
-        const x = (previous.x + point.x) / 2
-        const y = (previous.y + point.y) / 2
-        return x > input.bounds.minX + REGION_EPSILON * 4 &&
-          x < input.bounds.maxX - REGION_EPSILON * 4 &&
-          y > input.bounds.minY + REGION_EPSILON * 4 &&
-          y < input.bounds.maxY - REGION_EPSILON * 4
-      })
-      const preservesLockedVias = fragment.slice(1).every((point, pi): boolean => {
-        const previous = fragment[pi]!
-        const sourceIndex = anchors[ai - 1]! + pi
-        return previous.z === point.z ||
-          (!input.isLocked(ri, sourceIndex) && !input.isLocked(ri, sourceIndex + 1))
-      })
-      const mutable = fragment.every(inside) && hasMutableInterior &&
-        preservesLockedVias && !route.jumpers?.length &&
-        fragment.every((point): boolean =>
-          !point.toNextSegmentType && !point.insideJumperPad &&
-          (point.traceThickness ?? route.traceThickness) === width,
-        ) && (input.allowLayerChanges || fragment.every((point): boolean => point.z === fragment[0]!.z))
+      const hasMutableInterior = fragment
+        .slice(1)
+        .every((point, pi): boolean => {
+          const previous = fragment[pi]!
+          const x = (previous.x + point.x) / 2
+          const y = (previous.y + point.y) / 2
+          return (
+            x > input.bounds.minX + REGION_EPSILON * 4 &&
+            x < input.bounds.maxX - REGION_EPSILON * 4 &&
+            y > input.bounds.minY + REGION_EPSILON * 4 &&
+            y < input.bounds.maxY - REGION_EPSILON * 4
+          )
+        })
+      const preservesLockedVias = fragment
+        .slice(1)
+        .every((point, pi): boolean => {
+          const previous = fragment[pi]!
+          const sourceIndex = anchors[ai - 1]! + pi
+          return (
+            previous.z === point.z ||
+            (!input.isLocked(ri, sourceIndex) &&
+              !input.isLocked(ri, sourceIndex + 1))
+          )
+        })
+      const mutable =
+        fragment.every(inside) &&
+        hasMutableInterior &&
+        preservesLockedVias &&
+        !route.jumpers?.length &&
+        fragment.every(
+          (point): boolean =>
+            !point.toNextSegmentType &&
+            !point.insideJumperPad &&
+            (point.traceThickness ?? route.traceThickness) === width,
+        ) &&
+        (input.allowLayerChanges ||
+          fragment.every((point): boolean => point.z === fragment[0]!.z))
       byRoute[ri]!.push(spans.length)
       spans.push({ routeIndex: ri, mutable: Boolean(mutable),
         route: withPoints({ ...route, traceThickness: width }, fragment) })

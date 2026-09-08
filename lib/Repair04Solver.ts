@@ -721,56 +721,121 @@ export class Repair04Solver extends BaseSolver {
           let lo = path.pi - 1
           while (lo > 0 && !this.isLocked(path.ri, pathRoute.route[lo]!)) lo--
           if (lo >= Math.min(...nearest.via.pointIndices)) continue
-          const dx = block.b.x - block.a.x, dy = block.b.y - block.a.y
-          const axis = Math.abs(dy) >= Math.abs(dx) ? { x: 1, y: 0 } : { x: 0, y: 1 }
+          const dx = block.b.x - block.a.x,
+            dy = block.b.y - block.a.y
+          const axis =
+            Math.abs(dy) >= Math.abs(dx) ? { x: 1, y: 0 } : { x: 0, y: 1 }
           const offset = 2 * (this.input.traceClearance ?? 0.1) + blockWidth
           for (const sign of [-1, 1]) {
             for (const after of [2, 1]) {
-              if (this.coupledPathSearchCalls >= 4 || this.getWorkLimitReason()) return
+              if (this.coupledPathSearchCalls >= 4 || this.getWorkLimitReason())
+                return
               const hi = lastViaIndex + after
               if (hi >= pathRoute.route.length) continue
-              if (pathRoute.route.slice(lo + 1, hi).some((point) => this.isLocked(path.ri, point))) continue
-              if (!inside(pathRoute.route[lo]!, this.mutableBounds) || !inside(pathRoute.route[hi]!, this.mutableBounds)) continue
-              const width = (pathRoute.route[lo] as Point & { traceThickness?: number }).traceThickness ?? pathRoute.traceThickness
-              if (pathRoute.route.slice(lo, hi + 1).some((point) =>
-                point.toNextSegmentType || point.insideJumperPad ||
-                ((point as Point & { traceThickness?: number }).traceThickness ?? pathRoute.traceThickness) !== width
-              )) continue
+              if (
+                pathRoute.route
+                  .slice(lo + 1, hi)
+                  .some((point) => this.isLocked(path.ri, point))
+              )
+                continue
+              if (
+                !inside(pathRoute.route[lo]!, this.mutableBounds) ||
+                !inside(pathRoute.route[hi]!, this.mutableBounds)
+              )
+                continue
+              const width =
+                (pathRoute.route[lo] as Point & { traceThickness?: number })
+                  .traceThickness ?? pathRoute.traceThickness
+              if (
+                pathRoute.route
+                  .slice(lo, hi + 1)
+                  .some(
+                    (point) =>
+                      point.toNextSegmentType ||
+                      point.insideJumperPad ||
+                      ((point as Point & { traceThickness?: number })
+                        .traceThickness ?? pathRoute.traceThickness) !== width,
+                  )
+              )
+                continue
               const moved: HighDensityRoute = {
                 ...blockRoute,
-                route: blockRoute.route.map((point, index) => index > blockLo && index < blockHi
-                  ? { ...point, x: point.x + sign * axis.x * offset, y: point.y + sign * axis.y * offset }
-                  : point),
+                route: blockRoute.route.map((point, index) =>
+                  index > blockLo && index < blockHi
+                    ? {
+                        ...point,
+                        x: point.x + sign * axis.x * offset,
+                        y: point.y + sign * axis.y * offset,
+                      }
+                    : point,
+                ),
               }
-              if (moved.route.some((point, index) => index > blockLo && index < blockHi && !inside(point, this.mutableBounds))) continue
+              if (
+                moved.route.some(
+                  (point, index) =>
+                    index > blockLo &&
+                    index < blockHi &&
+                    !inside(point, this.mutableBounds),
+                )
+              )
+                continue
               const context = this.routes.slice()
               context[block.ri] = moved
-              const stats: ClearancePathSearchStats = { nodesPopped: 0, completionReason: "no-path" }
-              const maxNodes = Math.min(30000, this.input.maxPathSearchNodes === undefined
-                ? 30000 : this.input.maxPathSearchNodes - this.pathSearchNodes)
+              const stats: ClearancePathSearchStats = {
+                nodesPopped: 0,
+                completionReason: "no-path",
+              }
+              const maxNodes = Math.min(
+                30000,
+                this.input.maxPathSearchNodes === undefined
+                  ? 30000
+                  : this.input.maxPathSearchNodes - this.pathSearchNodes,
+              )
               if (maxNodes < 1) return
               const found = findClearancePath({
-                srj: this.input.srj, routes: context, routeIndex: path.ri,
-                start: pathRoute.route[lo]!, end: pathRoute.route[hi]!, bounds: this.mutableBounds,
-                traceThickness: width, traceClearance: this.input.traceClearance ?? 0.1,
+                srj: this.input.srj,
+                routes: context,
+                routeIndex: path.ri,
+                start: pathRoute.route[lo]!,
+                end: pathRoute.route[hi]!,
+                bounds: this.mutableBounds,
+                traceThickness: width,
+                traceClearance: this.input.traceClearance ?? 0.1,
                 viaClearance: this.input.viaClearance ?? 0.1,
                 gridSize: width <= 0.1 ? width / 2 : 0.1,
-                allowLayerChanges: true, maxNodes, stats,
+                allowLayerChanges: true,
+                maxNodes,
+                stats,
               })
               this.coupledPathSearchCalls++
               this.pathSearchCalls++
               this.pathSearchNodes += stats.nodesPopped
               this.updateWorkStats()
               if (!found) continue
-              const updated = rebuildVias({ ...pathRoute, route: [
-                ...pathRoute.route.slice(0, lo), ...found, ...pathRoute.route.slice(hi + 1),
-              ] })
+              const updated = rebuildVias({
+                ...pathRoute,
+                route: [
+                  ...pathRoute.route.slice(0, lo),
+                  ...found,
+                  ...pathRoute.route.slice(hi + 1),
+                ],
+              })
               const afterVias = this.getViaGeometry(updated)
-              if (afterVias.length !== vias.length || afterVias.some((via, index) =>
-                via.diameter !== vias[index]!.diameter ||
-                JSON.stringify(via.layerSequence) !== JSON.stringify(vias[index]!.layerSequence)
-              )) continue
-              yield { routeIndex: path.ri, route: updated, additionalRoutes: [{ routeIndex: block.ri, route: moved }] }
+              if (
+                afterVias.length !== vias.length ||
+                afterVias.some(
+                  (via, index) =>
+                    via.diameter !== vias[index]!.diameter ||
+                    JSON.stringify(via.layerSequence) !==
+                      JSON.stringify(vias[index]!.layerSequence),
+                )
+              )
+                continue
+              yield {
+                routeIndex: path.ri,
+                route: updated,
+                additionalRoutes: [{ routeIndex: block.ri, route: moved }],
+              }
             }
           }
         }

@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test"
 import { segmentToBoundsMinDistance } from "@tscircuit/math-utils"
-import type { HighDensityRoute, SimpleRouteJson } from "high-density-repair03/lib"
+import type {
+  HighDensityRoute,
+  SimpleRouteJson,
+} from "high-density-repair03/lib"
 import { findClearancePath } from "../lib/findClearancePath"
 
 test("paths respect the rectangular pad envelope used by candidate scoring", (): void => {
