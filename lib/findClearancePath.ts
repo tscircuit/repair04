@@ -496,7 +496,8 @@ export function findClearancePath(input: {
                 Math.hypot(
                   path[j]!.x - path[anchor]!.x,
                   path[j]!.y - path[anchor]!.y,
-                ) + extraCost(path[anchor]!, path[j]!) <=
+                ) +
+                  extraCost(path[anchor]!, path[j]!) <=
                   pathCosts[j]! - pathCosts[anchor]! + REGION_EPSILON)
             )
               furthest = j
@@ -531,8 +532,8 @@ export function findClearancePath(input: {
       const b = point(id),
         cost =
           current.cost +
-            (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) +
-            extraCost(a, b)
+          (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) +
+          extraCost(a, b)
       if (cost >= (costs.get(id) ?? Infinity)) continue
       const low = Math.min(current.id, id),
         high = Math.max(current.id, id)
