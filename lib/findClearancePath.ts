@@ -56,6 +56,8 @@ export function findClearancePath(input: {
   stats?: ClearancePathSearchStats
   /** Nonnegative congestion cost; Infinity prohibits the edge. */
   getAdditionalEdgeCost?: (start: Point, end: Point) => number
+  /** Preserve this route when it already clears hard and movable copper. */
+  existingPath?: Point[]
 }): Point[] | null {
   const { srj, routes, routeIndex, start, end, bounds, traceThickness } = input
   const extraCost = (a: Point, b: Point): number => {
@@ -378,6 +380,27 @@ export function findClearancePath(input: {
     return true
   }
   if (!clear(start, start) || !clear(end, end)) return null
+  if (input.existingPath) {
+    const path = input.existingPath
+    const first = path[0], last = path.at(-1)
+    if (!first || !last || first.x !== start.x || first.y !== start.y ||
+      first.z !== start.z || last.x !== end.x || last.y !== end.y ||
+      last.z !== end.z)
+      throw new Error("repair04: existing clearance path must match its anchors")
+    if (path.some((point, index): boolean => {
+      const previous = path[index - 1]
+      return Boolean(previous && previous.z !== point.z &&
+        (previous.x !== point.x || previous.y !== point.y))
+    }))
+      throw new Error("repair04: existing clearance path has a non-colocated layer transition")
+    if ((input.allowLayerChanges !== false || path.every((point): boolean => point.z === start.z)) &&
+      path.slice(1).every((point, index): boolean =>
+        clear(path[index]!, point) && extraCost(path[index]!, point) === 0,
+      )) {
+      if (input.stats) input.stats.completionReason = "found"
+      return path.map((point): Point => ({ ...point }))
+    }
+  }
   const grid = input.gridSize ?? 0.1
   if (!Number.isFinite(grid) || grid <= 0)
     throw new Error("repair04: clearance grid size must be positive and finite")

@@ -413,6 +413,7 @@ export function negotiateTraceClearance(
       maxNodes: input.maxPathSearchNodes - pathSearchNodes,
       stats,
       getAdditionalEdgeCost,
+      existingPath: route.route,
     })
     pathSearchCalls++
     pathSearchNodes += stats.nodesPopped
