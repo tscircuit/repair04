@@ -31,6 +31,6 @@ test("clearance projection keeps an existing pad via and its shared junction fix
   expect(output[0]!.route[1]).toEqual(routes[0]!.route[1])
   expect(output[0]!.route[2]).toEqual(routes[0]!.route[2])
   expect(output[1]!.route[0]).toEqual(routes[1]!.route[0])
-  expect(pointToSegmentDistance({ x: 0, y: 0 }, output[2]!.route[1]!, output[2]!.route[2]!) - 0.2).toBeGreaterThanOrEqual(0.1099)
+  expect(pointToSegmentDistance({ x: 0, y: 0 }, output[2]!.route[1]!, output[2]!.route[2]!) - 0.2).toBeGreaterThanOrEqual(0.1 - 1e-7)
   expect(getNewViaPadViolations({ srj: input.srj, previousRoutes: routes, routes: output })).toEqual([])
 })

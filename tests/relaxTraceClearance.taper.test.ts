@@ -18,6 +18,6 @@ test("clearance projection retains taper widths and the fixed pad contacts", ():
   for (let i = 1; i < output.route.length; i++) {
     const a = output.route[i - 1]! as RepairRoutePoint, b = output.route[i]! as RepairRoutePoint
     const clearance = segmentToBoundsMinDistance(a, b, bounds) - Math.max(a.traceThickness!, b.traceThickness!) / 2
-    expect(clearance).toBeGreaterThanOrEqual(0.1099)
+    expect(clearance).toBeGreaterThanOrEqual(0.1 - 1e-7)
   }
 })

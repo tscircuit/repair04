@@ -43,7 +43,7 @@ test("coupled gap projection retains anchors and opens real trace and via cleara
           const r = output[j]!.route[b - 1]!, s = output[j]!.route[b]!
           if (Math.max(p.z, q.z) < Math.min(r.z, s.z) || Math.max(r.z, s.z) < Math.min(p.z, q.z)) continue
           const radius = (p.z === q.z ? 0.05 : 0.15) + (r.z === s.z ? 0.05 : 0.15)
-          expect(segmentToSegmentMinDistance(p, q, r, s) - radius).toBeGreaterThanOrEqual(0.1099)
+          expect(segmentToSegmentMinDistance(p, q, r, s) - radius).toBeGreaterThanOrEqual(0.1 - 1e-7)
         }
       }
     }

@@ -22,12 +22,10 @@ type ViaPadConstraint = { center: Point; cosine: number; sine: number; shape: Ob
 type PadContact = {
   segment: Segment
   corners: Point[]
-  capsule?: { a: Point; b: Point; radius: number }
 }
 
 const MAX_SWEEPS = 256
 const MAX_DISPLACEMENT = 0.25
-const CLEARANCE_SLACK = 0.01
 
 /** Closest points and their interpolation weights, including zero-length vias. */
 function getContact(a: Point, b: Point, c: Point, d: Point): Contact {
@@ -57,6 +55,8 @@ function getContact(a: Point, b: Point, c: Point, d: Point): Contact {
  * Project coupled clearance constraints without changing routing topology.
  * The caller must validate the resulting candidate before publishing it.
  * Fixed contacts, shared copper junctions, layer spans and widths are retained.
+ * Target the requested clearances exactly: adding fixed slack can make a
+ * narrow corridor that fits the copper and its clearances infeasible.
  */
 export function relaxTraceClearance(input: RepairRegionInput & {
   traceClearance?: number
@@ -133,7 +133,7 @@ export function relaxTraceClearance(input: RepairRegionInput & {
       const b = segments[j]!
       if (a.net === b.net || a.maxZ < b.minZ || b.maxZ < a.minZ) continue
       const reach = a.radius + b.radius + Math.max(traceClearance, viaClearance) +
-        CLEARANCE_SLACK + 2 * Math.SQRT2 * MAX_DISPLACEMENT
+        2 * Math.SQRT2 * MAX_DISPLACEMENT
       if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach) pairs.push([a, b])
     }
   }
@@ -155,23 +155,13 @@ export function relaxTraceClearance(input: RepairRegionInput & {
       if ((!segment.via && obstacleNets.has(segment.net)) || !zs.some((z) => z >= segment.minZ && z <= segment.maxZ)) continue
       const reach = segment.radius + Math.max(traceClearance, viaClearance,
         input.srj.defaultObstacleMargin ?? 0, input.srj.minTraceToPadEdgeClearance ?? 0,
-        input.srj.minViaEdgeToPadEdgeClearance ?? 0) + CLEARANCE_SLACK + Math.SQRT2 * MAX_DISPLACEMENT
+        input.srj.minViaEdgeToPadEdgeClearance ?? 0) + Math.SQRT2 * MAX_DISPLACEMENT
       if (Math.min(...corners.map((a, i) => segmentToSegmentMinDistance(
         segment.a, segment.b, a, corners[(i + 1) % 4]!,
       ))) > reach) continue
-      let capsule: PadContact["capsule"]
-      if (obstacle.type === "oval") {
-        const halfSpine = Math.abs(obstacle.width - obstacle.height) / 2
-        const horizontal = obstacle.width >= obstacle.height
-        const dx = halfSpine * (horizontal ? cosine : -sine)
-        const dy = halfSpine * (horizontal ? sine : cosine)
-        capsule = {
-          a: { x: obstacle.center.x - dx, y: obstacle.center.y - dy },
-          b: { x: obstacle.center.x + dx, y: obstacle.center.y + dy },
-          radius: Math.min(obstacle.width, obstacle.height) / 2,
-        }
-      }
-      padContacts.push({ segment, corners, capsule })
+      // Use the enclosing rectangle as a conservative routing constraint for
+      // every pad shape. Physical via guards retain the exact obstacle shape.
+      padContacts.push({ segment, corners })
       if (segment.via) {
         const constraint: ViaPadConstraint = {
           center: obstacle.center, cosine, sine, shape: getLocalObstacleGeometry(obstacle),
@@ -215,7 +205,7 @@ export function relaxTraceClearance(input: RepairRegionInput & {
   for (let sweep = 0; sweep < MAX_SWEEPS; sweep++) {
     for (const [a, b] of pairs) {
       const contact = getContact(a.a, a.b, b.a, b.b)
-      const required = a.radius + b.radius + (a.via && b.via ? viaClearance : traceClearance) + CLEARANCE_SLACK
+      const required = a.radius + b.radius + (a.via && b.via ? viaClearance : traceClearance)
       if (contact.distance >= required) continue
       // Crossings require rerouting; this operation only opens existing gaps.
       if (contact.distance < 1e-10) continue
@@ -224,15 +214,13 @@ export function relaxTraceClearance(input: RepairRegionInput & {
     }
     for (const pad of padContacts) {
       const { segment, corners } = pad
-      const contact = pad.capsule
-        ? getContact(segment.a, segment.b, pad.capsule.a, pad.capsule.b)
-        : corners.map((a, i) => getContact(segment.a, segment.b, a, corners[(i + 1) % 4]!))
-          .reduce((a, b) => a.distance < b.distance ? a : b)
+      const contact = corners.map((a, i) => getContact(segment.a, segment.b, a, corners[(i + 1) % 4]!))
+        .reduce((a, b) => a.distance < b.distance ? a : b)
       if (contact.distance < 1e-10) continue
-      const required = segment.radius + (pad.capsule?.radius ?? 0) + Math.max(
+      const required = segment.radius + Math.max(
         segment.via ? viaClearance : traceClearance, input.srj.defaultObstacleMargin ?? 0,
         segment.via ? (input.srj.minViaEdgeToPadEdgeClearance ?? 0) : (input.srj.minTraceToPadEdgeClearance ?? 0),
-      ) + CLEARANCE_SLACK
+      )
       if (contact.distance >= required) continue
       project([[segment.a, 1 - contact.s], [segment.b, contact.s]],
         contact.x / contact.distance, contact.y / contact.distance, required - contact.distance)
