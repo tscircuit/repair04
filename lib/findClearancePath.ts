@@ -193,7 +193,9 @@ export function findClearancePath(input: {
           { x: obstacle.center.x - dx, y: obstacle.center.y - dy, z },
           { x: obstacle.center.x + dx, y: obstacle.center.y + dy, z },
           Math.min(obstacle.width, obstacle.height) / 2,
-          undefined, viaOnly, true,
+          undefined,
+          viaOnly,
+          true,
         )
         continue
       }
@@ -324,11 +326,12 @@ export function findClearancePath(input: {
           if (barrier.visitedQuery === currentQuery) continue
           barrier.visitedQuery = currentQuery
           if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
-          const requiredGap = barrier.rect || barrier.pad
-            ? margin
-            : isVia && barrier.minZ !== barrier.maxZ
-              ? input.viaClearance
-              : input.traceClearance
+          const requiredGap =
+            barrier.rect || barrier.pad
+              ? margin
+              : isVia && barrier.minZ !== barrier.maxZ
+                ? input.viaClearance
+                : input.traceClearance
           const clearance = radius + requiredGap + 1e-5
           // These bounds enclose the entire copper/rotated obstacle. Strict
           // separation can only rule out a collision; exact boundary cases

@@ -2,7 +2,11 @@ import {
   getRepairViaGeometry,
   type RepairViaGeometry,
 } from "./getRepairViaGeometry"
-import { getLocalObstacleGeometry, getLocalObstacleDistance, type ObstacleDistanceGeometry } from "./obstacleDistanceGeometry"
+import {
+  getLocalObstacleGeometry,
+  getLocalObstacleDistance,
+  type ObstacleDistanceGeometry,
+} from "./obstacleDistanceGeometry"
 import type {
   HighDensityRoute,
   SimpleRouteJson,

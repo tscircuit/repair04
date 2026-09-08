@@ -1,11 +1,13 @@
-import {
-  pointToSegmentClosestPoint,
-} from "@tscircuit/math-utils"
+import { pointToSegmentClosestPoint } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
 } from "high-density-repair03/lib"
-import { getLocalObstacleGeometry, getLocalObstacleDistance, type ObstacleDistanceGeometry } from "./obstacleDistanceGeometry"
+import {
+  getLocalObstacleGeometry,
+  getLocalObstacleDistance,
+  type ObstacleDistanceGeometry,
+} from "./obstacleDistanceGeometry"
 import type { RepairRoutePoint } from "./repairRegionTypes"
 
 export type FixedObstacleViolation = {
