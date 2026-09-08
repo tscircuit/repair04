@@ -30,6 +30,8 @@ type Barrier = {
   rectBounds?: Bounds
   visitedQuery: number
 }
+type ViaPath = { x: number; y: number; previous?: ViaPath }
+
 type SearchNode = { id: number; cost: number; priority: number }
 export type ClearancePathSearchStats = {
   nodesPopped: number
@@ -58,6 +60,8 @@ export function findClearancePath(input: {
   getAdditionalEdgeCost?: (start: Point, end: Point) => number
   /** Preserve this route when it already clears hard and movable copper. */
   existingPath?: Point[]
+  /** Physical drill diameter; unknown drills reserve the copper diameter. */
+  viaHoleDiameter?: number
 }): Point[] | null {
   const { srj, routes, routeIndex, start, end, bounds, traceThickness } = input
   const extraCost = (a: Point, b: Point): number => {
@@ -77,6 +81,30 @@ export function findClearancePath(input: {
   }
   if (input.allowLayerChanges === false && start.z !== end.z) return null
   const route = routes[routeIndex]!
+  const drillDiameter = input.viaHoleDiameter ?? route.viaDiameter
+  if (!Number.isFinite(drillDiameter) || drillDiameter <= 0 ||
+    drillDiameter > route.viaDiameter)
+    throw new Error("repair04: via hole diameter must be positive and fit the copper")
+  const drillSpacing = drillDiameter + input.viaClearance
+  const clearsDrills = (point: Point, viaPath: ViaPath | undefined): boolean => {
+    for (let via = viaPath; via; via = via.previous) {
+      if (point.x === via.x && point.y === via.y) continue
+      if (Math.hypot(point.x - via.x, point.y - via.y) + REGION_EPSILON < drillSpacing)
+        return false
+    }
+    return true
+  }
+  const pathClearsDrills = (path: Point[]): boolean => {
+    let vias: ViaPath | undefined
+    for (let index = 1; index < path.length; index++) {
+      const a = path[index - 1]!, b = path[index]!
+      if (a.z === b.z || a.toNextSegmentType === "through_obstacle") continue
+      if (!clearsDrills(a, vias)) return false
+      if (a.x !== vias?.x || a.y !== vias?.y)
+        vias = { x: a.x, y: a.y, previous: vias }
+    }
+    return true
+  }
   const parents = new Map<string, string>()
   const net = (name: string): string => {
     const parent = parents.get(name)
@@ -393,7 +421,8 @@ export function findClearancePath(input: {
         (previous.x !== point.x || previous.y !== point.y))
     }))
       throw new Error("repair04: existing clearance path has a non-colocated layer transition")
-    if ((input.allowLayerChanges !== false || path.every((point): boolean => point.z === start.z)) &&
+    if (pathClearsDrills(path) &&
+      (input.allowLayerChanges !== false || path.every((point): boolean => point.z === start.z)) &&
       path.slice(1).every((point, index): boolean =>
         clear(path[index]!, point) && extraCost(path[index]!, point) === 0,
       )) {
@@ -456,6 +485,7 @@ export function findClearancePath(input: {
   }
   const costs = new Map<number, number>()
   const previous = new Map<number, number>()
+  const viaPaths = new Map<number, ViaPath | undefined>()
   const startId = idOf(start),
     sx = startId % nx,
     sy = Math.floor(startId / nx) % ny
@@ -494,6 +524,7 @@ export function findClearancePath(input: {
     if (input.stats) input.stats.nodesPopped = expanded
     if (current.cost !== costs.get(current.id)) continue
     const a = point(current.id)
+    const viaPath = viaPaths.get(current.id)
     if (
       a.z === end.z &&
       Math.hypot(a.x - end.x, a.y - end.y) < grid * 3 &&
@@ -537,6 +568,8 @@ export function findClearancePath(input: {
         anchor = furthest
         i = furthest + 1
       }
+      if (!pathClearsDrills(simplified))
+        throw new Error("repair04: search generated conflicting drill sites")
       if (input.stats) input.stats.completionReason = "found"
       return simplified
     }
@@ -555,7 +588,7 @@ export function findClearancePath(input: {
           continue
         neighbors.push(idAt(x + dx, y + dy, a.z))
       }
-    if (input.allowLayerChanges !== false) {
+    if (input.allowLayerChanges !== false && clearsDrills(a, viaPath)) {
       for (let z = 0; z < srj.layerCount; z++)
         if (z !== a.z) neighbors.push(idAt(x, y, z))
     }
@@ -577,6 +610,10 @@ export function findClearancePath(input: {
         edgeCache.set(key, permitted)
       }
       if (!permitted) continue
+      if (a.z !== b.z && (a.x !== viaPath?.x || a.y !== viaPath?.y))
+        viaPaths.set(id, { x: a.x, y: a.y, previous: viaPath })
+      else if (viaPath) viaPaths.set(id, viaPath)
+      else viaPaths.delete(id)
       costs.set(id, cost)
       previous.set(id, current.id)
       push({ id, cost, priority: cost + heuristic(b) })

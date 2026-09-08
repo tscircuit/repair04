@@ -414,6 +414,7 @@ export function negotiateTraceClearance(
       stats,
       getAdditionalEdgeCost,
       existingPath: route.route,
+      viaHoleDiameter: input.viaHoleDiameter,
     })
     pathSearchCalls++
     pathSearchNodes += stats.nodesPopped
