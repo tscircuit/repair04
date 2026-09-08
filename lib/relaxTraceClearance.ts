@@ -19,6 +19,7 @@ type Vertex = Point & {
   original: Point
   locked: boolean
   radius: number
+  revision: number
   bounds: Bounds
   points: RepairRoutePoint[]
 }
@@ -41,10 +42,18 @@ type ViaPadConstraint = {
   shape: ObstacleDistanceGeometry
   clearance: number
 }
+type SegmentPair = {
+  a: Segment
+  b: Segment
+  revisions: [number, number, number, number]
+  contact: Contact | null
+}
 type PadContact = {
   segment: Segment
   corners: Point[]
   required: number
+  revisions: [number, number]
+  contact: Contact | null
 }
 
 const MAX_SWEEPS = 256
@@ -145,6 +154,7 @@ export function relaxTraceClearance(
           original: { x: point.x, y: point.y },
           locked: false,
           radius: 0,
+          revision: 0,
           bounds: mutable,
           points: [],
         }
@@ -229,7 +239,7 @@ export function relaxTraceClearance(
       }
     }
   }
-  const pairs: [Segment, Segment][] = []
+  const pairs: SegmentPair[] = []
   for (let i = 0; i < segments.length; i++) {
     const a = segments[i]!
     for (let j = i + 1; j < segments.length; j++) {
@@ -245,7 +255,7 @@ export function relaxTraceClearance(
       if (areExpandedBoundsSeparated(a.initialBounds, b.initialBounds, reach))
         continue
       if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach)
-        pairs.push([a, b])
+        pairs.push({ a, b, revisions: [-1, -1, -1, -1], contact: null })
     }
   }
   const padContacts: PadContact[] = []
@@ -338,7 +348,13 @@ export function relaxTraceClearance(
               input.srj.defaultObstacleMargin ?? 0,
               input.srj.minTraceToPadEdgeClearance ?? 0,
             ))
-      padContacts.push({ segment, corners, required })
+      padContacts.push({
+        segment,
+        corners,
+        required,
+        revisions: [-1, -1],
+        contact: null,
+      })
       if (segment.via) {
         const constraint: ViaPadConstraint = {
           center: obstacle.center,
@@ -418,13 +434,29 @@ export function relaxTraceClearance(
         })
       )
         continue
+      if (vertex.x !== x || vertex.y !== y) vertex.revision++
       vertex.x = x
       vertex.y = y
     }
   }
   for (let sweep = 0; sweep < MAX_SWEEPS; sweep++) {
-    for (const [a, b] of pairs) {
-      const contact = getContact(a.a, a.b, b.a, b.b)
+    // Distances depend only on endpoint coordinates. Reuse them until an
+    // actual displacement changes a revision; force order and sweeps stay fixed.
+    for (const pair of pairs) {
+      const { a, b, revisions } = pair
+      if (
+        a.a.revision !== revisions[0] ||
+        a.b.revision !== revisions[1] ||
+        b.a.revision !== revisions[2] ||
+        b.b.revision !== revisions[3]
+      ) {
+        pair.contact = getContact(a.a, a.b, b.a, b.b)
+        revisions[0] = a.a.revision
+        revisions[1] = a.b.revision
+        revisions[2] = b.a.revision
+        revisions[3] = b.b.revision
+      }
+      const contact = pair.contact!
       const required =
         a.radius + b.radius + (a.via && b.via ? viaClearance : traceClearance)
       if (contact.distance >= required) continue
@@ -444,7 +476,9 @@ export function relaxTraceClearance(
     }
     for (const pad of padContacts) {
       const { segment, corners, required } = pad
-      for (const vertex of new Set([segment.a, segment.b])) {
+      const endpointCount = segment.a === segment.b ? 1 : 2
+      for (let endpoint = 0; endpoint < endpointCount; endpoint++) {
+        const vertex = endpoint === 0 ? segment.a : segment.b
         const interior = getInteriorPadContact(vertex, corners)
         if (interior) {
           project(
@@ -455,11 +489,31 @@ export function relaxTraceClearance(
           )
         }
       }
-      const contact = corners
-        .map((a, i) =>
-          getContact(segment.a, segment.b, a, corners[(i + 1) % 4]!),
+      if (
+        segment.a.revision !== pad.revisions[0] ||
+        segment.b.revision !== pad.revisions[1]
+      ) {
+        let nearest = getContact(
+          segment.a,
+          segment.b,
+          corners[0]!,
+          corners[1]!,
         )
-        .reduce((a, b) => (a.distance < b.distance ? a : b))
+        for (let i = 1; i < corners.length; i++) {
+          const candidate = getContact(
+            segment.a,
+            segment.b,
+            corners[i]!,
+            corners[(i + 1) % corners.length]!,
+          )
+          // The original reduction selected the last edge at equal distance.
+          nearest = nearest.distance < candidate.distance ? nearest : candidate
+        }
+        pad.contact = nearest
+        pad.revisions[0] = segment.a.revision
+        pad.revisions[1] = segment.b.revision
+      }
+      const contact = pad.contact!
       if (contact.distance < 1e-10) continue
       if (contact.distance >= required) continue
       project(
