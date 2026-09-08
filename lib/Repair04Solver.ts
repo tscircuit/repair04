@@ -1785,11 +1785,17 @@ export class Repair04Solver extends BaseSolver {
     // including atomic moves that can otherwise collapse neighboring stacks.
     const replacements = [next.value, ...(next.value.additionalRoutes ?? [])]
     if (
-      (this.input.allowLayerChanges !== true || this.input.movableVias?.length) &&
-      replacements.some(({ routeIndex, route }) => !this.preservesViaPermissions(routeIndex, route))
-    ) return
+      (this.input.allowLayerChanges !== true ||
+        this.input.movableVias?.length) &&
+      replacements.some(
+        ({ routeIndex, route }) =>
+          !this.preservesViaPermissions(routeIndex, route),
+      )
+    )
+      return
     const candidate = this.routes.slice()
-    for (const { routeIndex, route } of replacements) candidate[routeIndex] = route
+    for (const { routeIndex, route } of replacements)
+      candidate[routeIndex] = route
     // Validate candidate copper even when the mandatory via-pad guard rejects
     // it. Rejected proposals cannot be accepted, so avoid rebuilding indexed DRC.
     const fixedViolations = new Map<string, number>()
