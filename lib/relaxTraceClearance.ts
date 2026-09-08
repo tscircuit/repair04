@@ -50,6 +50,25 @@ function getContact(a: Point, b: Point, c: Point, d: Point): Contact {
   return { s, t, x, y, distance: Math.hypot(x, y) }
 }
 
+/** Signed distance to the nearest face of a containing convex pad. */
+function getInteriorPadContact(point: Point, corners: Point[]): {
+  x: number
+  y: number
+  depth: number
+} | null {
+  let contact = { x: 0, y: 0, depth: Infinity }
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i]!, b = corners[(i + 1) % corners.length]!
+    const dx = b.x - a.x, dy = b.y - a.y
+    const length = Math.hypot(dx, dy)
+    const x = dy / length, y = -dx / length
+    const depth = -((point.x - a.x) * x + (point.y - a.y) * y)
+    if (depth < 0) return null
+    if (depth < contact.depth) contact = { x, y, depth }
+  }
+  return contact
+}
+
 /**
  * Project coupled clearance constraints without changing routing topology.
  * The caller must validate the resulting candidate before publishing it.
@@ -205,13 +224,19 @@ export function relaxTraceClearance(input: RepairRegionInput & {
     }
     for (const pad of padContacts) {
       const { segment, corners } = pad
-      const contact = corners.map((a, i) => getContact(segment.a, segment.b, a, corners[(i + 1) % 4]!))
-        .reduce((a, b) => a.distance < b.distance ? a : b)
-      if (contact.distance < 1e-10) continue
       const required = segment.radius + Math.max(
         segment.via ? viaClearance : traceClearance, input.srj.defaultObstacleMargin ?? 0,
         segment.via ? (input.srj.minViaEdgeToPadEdgeClearance ?? 0) : (input.srj.minTraceToPadEdgeClearance ?? 0),
       )
+      for (const vertex of new Set([segment.a, segment.b])) {
+        const interior = getInteriorPadContact(vertex, corners)
+        if (interior) {
+          project([[vertex, 1]], interior.x, interior.y, required + interior.depth)
+        }
+      }
+      const contact = corners.map((a, i) => getContact(segment.a, segment.b, a, corners[(i + 1) % 4]!))
+        .reduce((a, b) => a.distance < b.distance ? a : b)
+      if (contact.distance < 1e-10) continue
       if (contact.distance >= required) continue
       project([[segment.a, 1 - contact.s], [segment.b, contact.s]],
         contact.x / contact.distance, contact.y / contact.distance, required - contact.distance)
