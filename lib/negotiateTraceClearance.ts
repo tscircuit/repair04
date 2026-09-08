@@ -19,6 +19,7 @@ type Copper = {
   spanIndex: number
   owner: string
   visited: number
+  immutable: boolean
 }
 export type NegotiatedClearanceInput = {
   srj: SimpleRouteJson
@@ -29,6 +30,8 @@ export type NegotiatedClearanceInput = {
   allowLayerChanges: boolean
   traceClearance: number
   viaClearance: number
+  /** Physical drill diameter; absent information reserves the copper diameter. */
+  viaHoleDiameter?: number
   maxPathSearchNodes: number
   maxPathSearchCalls: number
   onSearch?: (stats: ClearancePathSearchStats) => void
@@ -68,6 +71,10 @@ export function negotiateTraceClearance(
     if (!Number.isSafeInteger(value) || value < 0)
       throw new Error("repair04: negotiated work budgets must be nonnegative integers")
   }
+  if (input.viaHoleDiameter !== undefined &&
+    (!Number.isFinite(input.viaHoleDiameter) || input.viaHoleDiameter <= 0 ||
+      input.routes.some((route): boolean => input.viaHoleDiameter! > route.viaDiameter)))
+    throw new Error("repair04: via hole diameter must be positive and fit the copper")
   const inside = (point: RepairRoutePoint): boolean =>
     point.x >= input.bounds.minX - REGION_EPSILON &&
     point.x <= input.bounds.maxX + REGION_EPSILON &&
@@ -166,14 +173,14 @@ export function negotiateTraceClearance(
         if (a.toNextSegmentType === "through_obstacle") continue
         // Same-net wires can share copper. Distinct drill holes still require
         // clearance, including holes in otherwise immutable spans.
-        if (otherOwner === selectedOwner ? a.z === b.z :
-          !spans[si]!.mutable || frozen.has(si)) continue
+        const immutable = !spans[si]!.mutable || frozen.has(si)
+        if (a.z === b.z && (otherOwner === selectedOwner || immutable)) continue
         const radius = (a.z !== b.z ? other.viaDiameter : Math.max(
           a.traceThickness ?? other.traceThickness,
           b.traceThickness ?? other.traceThickness,
         )) / 2
         const copper: Copper = { a, b, radius, minZ: Math.min(a.z, b.z),
-          maxZ: Math.max(a.z, b.z), spanIndex: si, owner: otherOwner, visited: 0 }
+          maxZ: Math.max(a.z, b.z), spanIndex: si, owner: otherOwner, visited: 0, immutable }
         for (let x = Math.floor(Math.min(a.x, b.x) - radius);
           x <= Math.floor(Math.max(a.x, b.x) + radius); x++) {
           let column = cells.get(x)
@@ -205,11 +212,23 @@ export function negotiateTraceClearance(
           for (const copper of bucket) {
             if (copper.visited === id) continue
             copper.visited = id
-            if (copper.minZ > Math.max(a.z, b.z) || copper.maxZ < Math.min(a.z, b.z)) continue
-            if (copper.owner === selectedOwner && (!via ||
+            const bothVias = via && copper.minZ !== copper.maxZ
+            const sharedLayers = copper.minZ <= Math.max(a.z, b.z) &&
+              copper.maxZ >= Math.min(a.z, b.z)
+            if (!sharedLayers && !bothVias) continue
+            if (copper.immutable && !bothVias) continue
+            if (copper.owner === selectedOwner && (!bothVias ||
               (a.x === copper.a.x && a.y === copper.a.y))) continue
-            const required = (via ? route.viaDiameter : route.traceThickness) / 2 +
-              (via && copper.minZ !== copper.maxZ ? input.viaClearance : input.traceClearance) + copper.radius
+            const copperDistance = (via ? route.viaDiameter : route.traceThickness) / 2 +
+              (bothVias ? input.viaClearance : input.traceClearance) + copper.radius
+            const drillDistance = (input.viaHoleDiameter ?? route.viaDiameter) / 2 +
+              (input.viaHoleDiameter ?? copper.radius * 2) / 2 + input.viaClearance
+            // Drill spacing applies even when the connected copper spans do
+            // not share layers. Same-net copper may overlap, distinct holes may not.
+            const required = bothVias
+              ? sharedLayers && copper.owner !== selectedOwner
+                ? Math.max(copperDistance, drillDistance) : drillDistance
+              : copperDistance
             const distance = segmentToSegmentMinDistance(a, b, copper.a, copper.b)
             if (distance < required - REGION_EPSILON)
               hits.push({ copper, ratio: (required - distance) / (required * required) })
@@ -227,7 +246,7 @@ export function negotiateTraceClearance(
         y >= input.bounds.maxY - REGION_EPSILON * 4) return Infinity
       const costs = new Map<string, number>()
       for (const { copper, ratio } of query(a, b)) {
-        if (copper.owner === selectedOwner) return Infinity
+        if (copper.owner === selectedOwner || copper.immutable) return Infinity
         costs.set(copper.owner, Math.max(costs.get(copper.owner) ?? 0,
           ratio * weights[copper.spanIndex]!))
       }
