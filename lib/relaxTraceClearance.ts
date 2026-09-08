@@ -6,6 +6,7 @@ import {
   type ObstacleDistanceGeometry,
 } from "./obstacleDistanceGeometry"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
+import { areExpandedBoundsSeparated } from "./areExpandedBoundsSeparated"
 import type {
   Bounds,
   RepairRegionInput,
@@ -21,6 +22,7 @@ type Vertex = Point & {
 type Segment = {
   a: Vertex
   b: Vertex
+  initialBounds: Bounds
   minZ: number
   maxZ: number
   radius: number
@@ -171,6 +173,12 @@ export function relaxTraceClearance(
       segments.push({
         a: va,
         b: vb,
+        initialBounds: {
+          minX: Math.min(va.x, vb.x),
+          maxX: Math.max(va.x, vb.x),
+          minY: Math.min(va.y, vb.y),
+          maxY: Math.max(va.y, vb.y),
+        },
         minZ: Math.min(a.z, b.z),
         maxZ: Math.max(a.z, b.z),
         radius: via
@@ -196,6 +204,10 @@ export function relaxTraceClearance(
         b.radius +
         Math.max(traceClearance, viaClearance) +
         2 * Math.SQRT2 * MAX_DISPLACEMENT
+      // These bounds describe the initial geometry only. Reach already
+      // includes the maximum motion of both segments during all sweeps.
+      if (areExpandedBoundsSeparated(a.initialBounds, b.initialBounds, reach))
+        continue
       if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach)
         pairs.push([a, b])
     }
@@ -236,6 +248,12 @@ export function relaxTraceClearance(
           (cosine * y! * obstacle.height) / 2,
       }),
     )
+    const padBounds = {
+      minX: Math.min(...corners.map((corner): number => corner.x)),
+      maxX: Math.max(...corners.map((corner): number => corner.x)),
+      minY: Math.min(...corners.map((corner): number => corner.y)),
+      maxY: Math.max(...corners.map((corner): number => corner.y)),
+    }
     for (const segment of segments) {
       if (
         (!segment.via && obstacleNets.has(segment.net)) ||
@@ -252,6 +270,10 @@ export function relaxTraceClearance(
           input.srj.minViaEdgeToPadEdgeClearance ?? 0,
         ) +
         Math.SQRT2 * MAX_DISPLACEMENT
+      // Enclose all four transformed corners, including rotated pads. Keep
+      // the original edge-distance predicate whenever the expanded bounds meet.
+      if (areExpandedBoundsSeparated(segment.initialBounds, padBounds, reach))
+        continue
       if (
         Math.min(
           ...corners.map((a, i) =>
