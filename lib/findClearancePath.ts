@@ -54,8 +54,16 @@ export function findClearancePath(input: {
   maxNodes?: number
   /** Optional output accounting, overwritten for this synchronous call. */
   stats?: ClearancePathSearchStats
+  /** Nonnegative congestion cost; Infinity prohibits the edge. */
+  getAdditionalEdgeCost?: (start: Point, end: Point) => number
 }): Point[] | null {
   const { srj, routes, routeIndex, start, end, bounds, traceThickness } = input
+  const extraCost = (a: Point, b: Point): number => {
+    const value = input.getAdditionalEdgeCost?.(a, b) ?? 0
+    if (Number.isNaN(value) || value < 0)
+      throw new Error("repair04: additional edge costs must be nonnegative")
+    return value
+  }
   if (
     input.maxNodes !== undefined &&
     (!Number.isSafeInteger(input.maxNodes) || input.maxNodes < 1)
@@ -428,7 +436,9 @@ export function findClearancePath(input: {
       const id = idAt(x, y, start.z),
         p = point(id)
       if (!clear(start, p)) continue
-      const cost = Math.hypot(p.x - start.x, p.y - start.y)
+      const cost =
+        Math.hypot(p.x - start.x, p.y - start.y) + extraCost(start, p)
+      if (!Number.isFinite(cost)) continue
       costs.set(id, cost)
       previous.set(id, -1)
       push({ id, cost, priority: cost + heuristic(p) })
@@ -456,7 +466,8 @@ export function findClearancePath(input: {
     if (
       a.z === end.z &&
       Math.hypot(a.x - end.x, a.y - end.y) < grid * 3 &&
-      clear(a, end)
+      clear(a, end) &&
+      Number.isFinite(extraCost(a, end))
     ) {
       const reversed: Point[] = [end]
       for (let id = current.id; id !== -1; id = previous.get(id)!)
@@ -464,13 +475,34 @@ export function findClearancePath(input: {
       reversed.push(start)
       const path = reversed.reverse(),
         simplified: Point[] = [start]
+      const pathCosts = [0]
+      for (let i = 1; input.getAdditionalEdgeCost && i < path.length; i++) {
+        const a = path[i - 1]!,
+          b = path[i]!
+        pathCosts.push(
+          pathCosts[i - 1]! +
+            (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) +
+            extraCost(a, b),
+        )
+      }
+      let anchor = 0
       for (let i = 1; i < path.length; ) {
         let furthest = i
         if (path[i]!.z === simplified.at(-1)!.z) {
           for (let j = i + 1; j < path.length && path[j]!.z === path[i]!.z; j++)
-            if (clear(simplified.at(-1)!, path[j]!)) furthest = j
+            if (
+              clear(simplified.at(-1)!, path[j]!) &&
+              (!input.getAdditionalEdgeCost ||
+                Math.hypot(
+                  path[j]!.x - path[anchor]!.x,
+                  path[j]!.y - path[anchor]!.y,
+                ) + extraCost(path[anchor]!, path[j]!) <=
+                  pathCosts[j]! - pathCosts[anchor]! + REGION_EPSILON)
+            )
+              furthest = j
         }
         simplified.push(path[furthest]!)
+        anchor = furthest
         i = furthest + 1
       }
       if (input.stats) input.stats.completionReason = "found"
@@ -498,7 +530,9 @@ export function findClearancePath(input: {
     for (const id of neighbors) {
       const b = point(id),
         cost =
-          current.cost + (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1)
+          current.cost +
+            (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) +
+            extraCost(a, b)
       if (cost >= (costs.get(id) ?? Infinity)) continue
       const low = Math.min(current.id, id),
         high = Math.max(current.id, id)

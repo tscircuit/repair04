@@ -23,3 +23,8 @@ export { getRepairViaGeometry } from "./getRepairViaGeometry"
 export type { RepairViaGeometry } from "./getRepairViaGeometry"
 
 export { relaxTraceClearance } from "./relaxTraceClearance"
+export {
+  negotiateTraceClearance,
+  type NegotiatedClearanceInput,
+  type NegotiatedClearanceResult,
+} from "./negotiateTraceClearance"
