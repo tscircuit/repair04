@@ -307,23 +307,16 @@ export const getRepairJunctionAnchors = (
   for (let routeIndex = 0; routeIndex < routes.length; routeIndex += 1) {
     const route = routes[routeIndex]!
     for (const point of [route.route[0], route.route.at(-1)]) {
-      if (!point?.pcb_port_id) continue
+      if (!point) continue
       const net = canonicalNet(route.connectionName)
-      const keys = [
-        JSON.stringify([
-          net,
-          "point",
-          point.pcb_port_id,
-          point.x,
-          point.y,
-          point.z,
-        ]),
-      ]
+      const keys = [JSON.stringify([net, "point", point.x, point.y, point.z])]
       // Different immutable terminal coordinates can already be connected
       // through one physical pad. Prove copper attachment before treating
       // additional intersections of their routes as redundant junctions.
-      for (const obstacleIndex of padIndicesByPort.get(point.pcb_port_id) ??
-        []) {
+      const padIndices = point.pcb_port_id
+        ? padIndicesByPort.get(point.pcb_port_id) ?? []
+        : []
+      for (const obstacleIndex of padIndices) {
         const obstacle = srj.obstacles[obstacleIndex]!
         const zs =
           obstacle.zLayers ??
@@ -361,7 +354,7 @@ export const getRepairJunctionAnchors = (
     right: string,
   ): boolean => {
     if (!left.startsWith("route:") || !right.startsWith("route:")) return false
-    // Both original port endpoints are immutable, even outside this crop. Their
+    // Both original route endpoints are immutable, even outside this crop. Their
     // route paths stay contiguous, so incidental overlaps within this already
     // connected component need not be frozen as additional junctions.
     return (

@@ -7,6 +7,8 @@ import {
 } from "./obstacleDistanceGeometry"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
 import { getViaPadClearance } from "./getViaPadClearance"
+import { getRepairJunctionAnchors } from "./getRepairJunctionAnchors"
+import { REGION_EPSILON } from "./repairRegionGeometry"
 import { areExpandedBoundsSeparated } from "./areExpandedBoundsSeparated"
 import type {
   Bounds,
@@ -142,6 +144,9 @@ export function relaxTraceClearance(
     minY: input.bounds.minY + input.boundaryMargin,
     maxY: input.bounds.maxY - input.boundaryMargin,
   }
+  // Keep existing endpoint, wire and via attachments without inserting points.
+  // Retaining both ends of the contacted segment also retains interior contacts.
+  const junctions = getRepairJunctionAnchors(input.srj, routes, input.bounds)
   const vertices = new Map<string, Vertex>()
   const routeVertices = routes.map((route, ri): Vertex[] =>
     route.route.map((point, pi): Vertex => {
@@ -163,6 +168,12 @@ export function relaxTraceClearance(
       vertex.points.push(point)
       vertex.locked ||= Boolean(
         input.lockedPointIndices[ri]![pi] ||
+          junctions[ri]!.segmentTimes.has(pi) ||
+          junctions[ri]!.segmentTimes.has(pi - 1) ||
+          junctions[ri]!.viaPositions.some(
+            (via): boolean =>
+              Math.hypot(via.x - point.x, via.y - point.y) <= REGION_EPSILON,
+          ) ||
           pi === 0 ||
           pi === route.route.length - 1 ||
           point.pcb_port_id ||
