@@ -39,7 +39,7 @@ test("spatial columns preserve rotated detours, layer transitions and exact work
       layers: false,
       limit: 4000,
       path: planarPath,
-      nodes: 42,
+      nodes: 35,
       reason: "found",
     },
     {
@@ -57,7 +57,7 @@ test("spatial columns preserve rotated detours, layer transitions and exact work
       layers: false,
       limit: 4000,
       path: null,
-      nodes: 80,
+      nodes: 50,
       reason: "no-path",
     },
     {
@@ -66,12 +66,12 @@ test("spatial columns preserve rotated detours, layer transitions and exact work
       layers: true,
       limit: 4000,
       path: layerPath,
-      nodes: 37,
+      nodes: 33,
       reason: "found",
     },
   ] as const
-  // Expectations were captured from the published solver before tightening its
-  // barrier bounds or replacing string cell keys; no alternate solver is used.
+  // Paths remain the published routes. Counts include actual pops from the
+  // indexed queue, which replaces queued states rather than inserting duplicates.
   for (const scenario of cases) {
     const input: Parameters<typeof findClearancePath>[0] = {
       srj: {

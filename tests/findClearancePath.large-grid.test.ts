@@ -63,6 +63,6 @@ test("large grids preserve clearance paths when edge pairs exceed exact numeric 
       { x: 2.5, y: -2.5, z: 0, traceThickness: 0.1 },
       route.route[1]!,
     ])
-    expect(stats).toEqual({ nodesPopped: 42, completionReason: "found" })
+    expect(stats).toEqual({ nodesPopped: 35, completionReason: "found" })
   }
 })
