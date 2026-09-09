@@ -6,6 +6,7 @@ import type {
   HighDensityRoute,
   SimpleRouteJson,
 } from "high-density-repair03/lib"
+import { ClearancePathHeap } from "./ClearancePathHeap"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { getViaPadClearance } from "./getViaPadClearance"
 import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
@@ -33,7 +34,6 @@ type Barrier = {
 }
 type ViaPath = { x: number; y: number; previous?: ViaPath }
 
-type SearchNode = { id: number; cost: number; priority: number }
 export type ClearancePathSearchStats = {
   nodesPopped: number
   completionReason: "found" | "no-path" | "node-limit"
@@ -489,38 +489,7 @@ export function findClearancePath(input: {
     )
   const heuristic = (p: Point): number =>
     Math.hypot(p.x - end.x, p.y - end.y) + (p.z === end.z ? 0 : 1)
-  const heap: SearchNode[] = []
-  const push = (value: SearchNode): void => {
-    heap.push(value)
-    let i = heap.length - 1
-    while (i > 0) {
-      const parent = Math.floor((i - 1) / 2)
-      if (heap[parent]!.priority <= value.priority) break
-      heap[i] = heap[parent]!
-      i = parent
-    }
-    heap[i] = value
-  }
-  const pop = (): SearchNode => {
-    const first = heap[0]!,
-      last = heap.pop()!
-    if (heap.length) {
-      let i = 0
-      while (i * 2 + 1 < heap.length) {
-        let child = i * 2 + 1
-        if (
-          child + 1 < heap.length &&
-          heap[child + 1]!.priority < heap[child]!.priority
-        )
-          child++
-        if (heap[child]!.priority >= last.priority) break
-        heap[i] = heap[child]!
-        i = child
-      }
-      heap[i] = last
-    }
-    return first
-  }
+  const heap = new ClearancePathHeap()
   const costs = new Map<number, number>()
   const previous = new Map<number, number>()
   const viaPaths = new Map<number, ViaPath | undefined>()
@@ -540,7 +509,7 @@ export function findClearancePath(input: {
       if (!Number.isFinite(cost)) continue
       costs.set(id, cost)
       previous.set(id, -1)
-      push({ id, cost, priority: cost + heuristic(p) })
+      heap.push({ id, cost, priority: cost + heuristic(p) })
     }
   const gridNodeCount = nx * ny * srj.layerCount
   // Only pack edges when every grid-node pair has an exact integer key.
@@ -557,7 +526,7 @@ export function findClearancePath(input: {
   const edgeCache = new Map<number | string, boolean>()
   let expanded = 0
   while (heap.length && expanded < (input.maxNodes ?? 30000)) {
-    const current = pop()
+    const current = heap.pop()
     expanded++
     if (input.stats) input.stats.nodesPopped = expanded
     if (current.cost !== costs.get(current.id)) continue
@@ -658,7 +627,7 @@ export function findClearancePath(input: {
       else viaPaths.delete(id)
       costs.set(id, cost)
       previous.set(id, current.id)
-      push({ id, cost, priority: cost + heuristic(b) })
+      heap.push({ id, cost, priority: cost + heuristic(b) })
     }
   }
   if (input.stats)
