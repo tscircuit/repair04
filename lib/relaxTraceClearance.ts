@@ -451,6 +451,27 @@ export function relaxTraceClearance(
     }
   }
   for (let sweep = 0; sweep < MAX_SWEEPS; sweep++) {
+    // A board-edge violation must move even when no copper pair is in conflict.
+    // Reuse the projection guard so this cannot push a via through a fixed pad.
+    if (input.boardEdgeClearance !== undefined) {
+      for (const vertex of vertices.values()) {
+        const margin = vertex.radius + input.boardEdgeClearance + 1e-8
+        const board = input.srj.bounds
+        const x = Math.max(
+          board.minX + margin,
+          Math.min(board.maxX - margin, vertex.x),
+        )
+        const y = Math.max(
+          board.minY + margin,
+          Math.min(board.maxY - margin, vertex.y),
+        )
+        const dx = x - vertex.x
+        const dy = y - vertex.y
+        const distance = Math.hypot(dx, dy)
+        if (distance > 1e-10)
+          project([[vertex, 1]], dx / distance, dy / distance, distance)
+      }
+    }
     // Distances depend only on endpoint coordinates. Reuse them until an
     // actual displacement changes a revision; force order and sweeps stay fixed.
     for (const pair of pairs) {
@@ -504,12 +525,7 @@ export function relaxTraceClearance(
         segment.a.revision !== pad.revisions[0] ||
         segment.b.revision !== pad.revisions[1]
       ) {
-        let nearest = getContact(
-          segment.a,
-          segment.b,
-          corners[0]!,
-          corners[1]!,
-        )
+        let nearest = getContact(segment.a, segment.b, corners[0]!, corners[1]!)
         for (let i = 1; i < corners.length; i++) {
           const candidate = getContact(
             segment.a,
