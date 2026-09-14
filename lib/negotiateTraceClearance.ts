@@ -10,6 +10,7 @@ import {
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
 import { REGION_EPSILON } from "./repairRegionGeometry"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
+import { getViaCopperZSpan, type ViaLayerPolicy } from "./getViaCopperZSpan"
 
 type Span = {
   routeIndex: number
@@ -32,7 +33,7 @@ type Copper = {
   immutable: boolean
 }
 export type NegotiatedClearanceInput = {
-  srj: SimpleRouteJson
+  srj: SimpleRouteJson & ViaLayerPolicy
   routes: HighDensityRoute[]
   bounds: Bounds
   dirtyRouteIndices: readonly number[]
@@ -275,8 +276,9 @@ export function negotiateTraceClearance(
           maxX: Math.max(a.x, b.x),
           minY: Math.min(a.y, b.y),
           maxY: Math.max(a.y, b.y),
-          minZ: Math.min(a.z, b.z),
-          maxZ: Math.max(a.z, b.z),
+          ...(a.z === b.z
+            ? { minZ: a.z, maxZ: b.z }
+            : getViaCopperZSpan({ fromZ: a.z, toZ: b.z, ...input.srj })),
           spanIndex: si,
           owner: otherOwner,
           visited: 0,
@@ -310,6 +312,9 @@ export function negotiateTraceClearance(
       b: RepairRoutePoint,
     ): Array<{ copper: Copper; ratio: number }> => {
       const via = a.z !== b.z
+      const { minZ, maxZ } = via
+        ? getViaCopperZSpan({ fromZ: a.z, toZ: b.z, ...input.srj })
+        : { minZ: a.z, maxZ: b.z }
       const minX = Math.min(a.x, b.x),
         maxX = Math.max(a.x, b.x),
         minY = Math.min(a.y, b.y),
@@ -337,9 +342,7 @@ export function negotiateTraceClearance(
             if (copper.visited === id) continue
             copper.visited = id
             const bothVias = via && copper.minZ !== copper.maxZ
-            const sharedLayers =
-              copper.minZ <= Math.max(a.z, b.z) &&
-              copper.maxZ >= Math.min(a.z, b.z)
+            const sharedLayers = copper.minZ <= maxZ && copper.maxZ >= minZ
             if (!sharedLayers && !bothVias) continue
             if (copper.immutable && !bothVias) continue
             if (

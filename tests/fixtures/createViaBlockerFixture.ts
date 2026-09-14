@@ -1,3 +1,4 @@
+import type { ViaLayerPolicy } from "../../lib/getViaCopperZSpan"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
@@ -6,7 +7,7 @@ import type {
 import { Repair04Solver } from "../../lib/Repair04Solver"
 import { getRepairViaGeometry } from "../../lib/getRepairViaGeometry"
 
-type FixtureOptions = {
+type FixtureOptions = ViaLayerPolicy & {
   owner?: HighDensityRoute
   fixedTraces?: SimplifiedPcbTrace[]
   layerCount?: number
@@ -51,7 +52,8 @@ export const createViaBlockerFixture = (
     ),
   ]
   const bounds = { minX: -5, maxX: 5, minY: -5, maxY: 5 }
-  const srj: SimpleRouteJson = {
+  const srj: SimpleRouteJson & ViaLayerPolicy = {
+    allowBlindAndBuriedVias: options.allowBlindAndBuriedVias,
     layerCount: options.layerCount ?? 2,
     minTraceWidth: 0.1,
     bounds,
@@ -79,14 +81,22 @@ export const createViaBlockerFixture = (
   solver.score = solver.evaluate(solver.routes)
   solver.candidates = solver.generateCandidates()
   const route = solver.routes[0] as HighDensityRoute
-  const via = getRepairViaGeometry(route, srj.layerCount)[0]!
+  const via = getRepairViaGeometry(
+    route,
+    srj.layerCount,
+    srj.allowBlindAndBuriedVias,
+  )[0]!
   const moved = {
     ...route,
     route: route.route.map((point, index): typeof point =>
       via.pointIndices.includes(index) ? { ...point, x: point.x + 0.1 } : point,
     ),
   }
-  const geometry = getRepairViaGeometry(moved, srj.layerCount)
+  const geometry = getRepairViaGeometry(
+    moved,
+    srj.layerCount,
+    srj.allowBlindAndBuriedVias,
+  )
   const candidate = {
     routeIndex: 0,
     route: {

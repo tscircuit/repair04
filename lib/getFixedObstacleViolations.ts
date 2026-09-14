@@ -9,6 +9,7 @@ import {
   type ObstacleDistanceGeometry,
 } from "./obstacleDistanceGeometry"
 import type { RepairRoutePoint } from "./repairRegionTypes"
+import { getViaCopperZSpan, type ViaLayerPolicy } from "./getViaCopperZSpan"
 
 export type FixedObstacleViolation = {
   /** Geometry-independent identity, stable when points are inserted or moved. */
@@ -22,7 +23,7 @@ export type FixedObstacleViolation = {
 }
 
 export type FixedObstacleViolationInput = {
-  srj: SimpleRouteJson
+  srj: SimpleRouteJson & ViaLayerPolicy
   routes: HighDensityRoute[]
   traceClearance?: number
   viaClearance?: number
@@ -264,13 +265,12 @@ const createEvaluator = ({
           const end = route.route[pointIndex]! as RepairRoutePoint
           if (start.toNextSegmentType === "through_obstacle") continue
           if (start.z !== end.z) {
-            if (
-              !Array.from(zLayers).some(
-                (z) =>
-                  z >= Math.min(start.z, end.z) &&
-                  z <= Math.max(start.z, end.z),
-              )
-            )
+            const { minZ, maxZ } = getViaCopperZSpan({
+              fromZ: start.z,
+              toZ: end.z,
+              ...srj,
+            })
+            if (!Array.from(zLayers).some((z) => z >= minZ && z <= maxZ))
               continue
             if (
               Math.abs(start.x - end.x) > 1e-8 ||

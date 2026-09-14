@@ -1,4 +1,5 @@
 import type { HighDensityRoute } from "high-density-repair03/lib"
+import { getViaCopperZSpan } from "./getViaCopperZSpan"
 
 export type RepairViaGeometry = {
   x: number
@@ -14,6 +15,7 @@ export type RepairViaGeometry = {
 export const getRepairViaGeometry = (
   route: HighDensityRoute,
   layerCount: number,
+  allowBlindAndBuriedVias = false,
 ): RepairViaGeometry[] => {
   const vias: RepairViaGeometry[] = []
   for (let i = 1; i < route.route.length; i++) {
@@ -52,6 +54,12 @@ export const getRepairViaGeometry = (
       maxZ = Math.max(maxZ, next.z)
       i++
     }
+    const span = getViaCopperZSpan({
+      fromZ: minZ,
+      toZ: maxZ,
+      layerCount,
+      allowBlindAndBuriedVias,
+    })
     vias.push({
       pointIndices: Array.from(
         { length: i - firstPointIndex + 1 },
@@ -60,8 +68,7 @@ export const getRepairViaGeometry = (
       layerSequence,
       x: b.x,
       y: b.y,
-      minZ,
-      maxZ,
+      ...span,
       diameter: route.viaDiameter,
       identity: JSON.stringify([b.x, b.y, minZ, maxZ, route.viaDiameter]),
     })

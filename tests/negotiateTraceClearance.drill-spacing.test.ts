@@ -4,10 +4,12 @@ import type {
   SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { negotiateTraceClearance } from "../lib/negotiateTraceClearance"
+import type { ViaLayerPolicy } from "../lib/getViaCopperZSpan"
 
 test("drill spacing applies to vias whose copper connects disjoint layers", (): void => {
   const bounds = { minX: -5, maxX: 5, minY: -5, maxY: 5 }
-  const srj: SimpleRouteJson = {
+  const srj: SimpleRouteJson & ViaLayerPolicy = {
+    allowBlindAndBuriedVias: true,
     bounds,
     layerCount: 4,
     minTraceWidth: 0.1,

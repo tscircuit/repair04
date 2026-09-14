@@ -61,18 +61,21 @@ test("fixed first-wins and duplicate physical vias cannot claim owned coupling",
     expect(solver.viaBlockerPathSearchCalls).toBe(0)
     expect(solver.pathSearchNodes).toBe(0)
   }
-  // Same XY on a different layer span is a distinct engine event, not a
-  // first-wins collision with the selected top→inner1 via.
-  const differentSpan = createViaBlockerFixture({
-    layerCount: 4,
-    fixedTraces: [fixedVia("inner2", "bottom")],
-  })
-  const route = differentSpan.solver.routes[0]
-  expect([
-    ...differentSpan.solver.getIndexedViaIds(
-      0,
-      route,
-      differentSpan.solver.getViaGeometry(route)[0],
-    ),
-  ]).toEqual(["via_1"])
+  for (const allowBlindAndBuriedVias of [false, true]) {
+    // Coincident through vias share copper across the entire stack. The fixed
+    // first-wins event remains unowned; disjoint blind spans remain distinct.
+    const differentSpan = createViaBlockerFixture({
+      layerCount: 4,
+      allowBlindAndBuriedVias,
+      fixedTraces: [fixedVia("inner2", "bottom")],
+    })
+    const route = differentSpan.solver.routes[0]
+    expect([
+      ...differentSpan.solver.getIndexedViaIds(
+        0,
+        route,
+        differentSpan.solver.getViaGeometry(route)[0],
+      ),
+    ]).toEqual(allowBlindAndBuriedVias ? ["via_1"] : [])
+  }
 })

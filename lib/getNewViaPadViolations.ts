@@ -13,6 +13,7 @@ import type {
 } from "high-density-repair03/lib"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
 import { getViaPadClearance } from "./getViaPadClearance"
+import type { ViaLayerPolicy } from "./getViaCopperZSpan"
 
 export type NewViaPadViolation = {
   key: string
@@ -25,7 +26,7 @@ export type NewViaPadViolation = {
 }
 
 export type NewViaPadViolationInput = {
-  srj: SimpleRouteJson
+  srj: SimpleRouteJson & ViaLayerPolicy
   /** Same route ordering as routes, before this repair stage changed geometry. */
   previousRoutes: readonly HighDensityRoute[]
   routes: readonly HighDensityRoute[]
@@ -41,7 +42,8 @@ type StaticContext = Pick<
   | "connections"
   | "defaultObstacleMargin"
   | "minViaEdgeToPadEdgeClearance"
->
+> &
+  ViaLayerPolicy
 type RouteInput = Omit<NewViaPadViolationInput, "srj" | "viaClearance">
 type Contact = { obstacleIndex: number; severity: number }
 type PreparedObstacle = {
@@ -202,7 +204,9 @@ const createEvaluator = ({
       const owner = nets.get(route.connectionName) ?? route.connectionName
       const getRouteContacts = (via: RepairViaGeometry): Contact[] =>
         getContacts(via).flatMap((contact): Contact[] => {
-          const sameNet = srj.obstacles[contact.obstacleIndex]!.connectedTo.some(
+          const sameNet = srj.obstacles[
+            contact.obstacleIndex
+          ]!.connectedTo.some(
             (name): boolean => (nets!.get(name) ?? name) === owner,
           )
           const severity =
@@ -211,14 +215,22 @@ const createEvaluator = ({
             ? [{ obstacleIndex: contact.obstacleIndex, severity }]
             : []
         })
-      const previousVias = getRepairViaGeometry(previous, srj.layerCount)
+      const previousVias = getRepairViaGeometry(
+        previous,
+        srj.layerCount,
+        srj.allowBlindAndBuriedVias,
+      )
       const sameRoute =
         route.connectionName === previous.connectionName &&
         route.rootConnectionName === previous.rootConnectionName
       const unchanged = new Set(
         sameRoute ? previousVias.map((via): string => via.identity) : [],
       )
-      const vias = getRepairViaGeometry(route, srj.layerCount)
+      const vias = getRepairViaGeometry(
+        route,
+        srj.layerCount,
+        srj.allowBlindAndBuriedVias,
+      )
       // Ordered transition points identify the same drilled vias only while
       // the route topology is retained. A new or reordered transition receives
       // the ordinary strict clearance check, even if its coordinates are close.
@@ -324,6 +336,7 @@ export const createNewViaPadViolationEvaluator = ({
   createEvaluator({
     srj: {
       layerCount: srj.layerCount,
+      allowBlindAndBuriedVias: srj.allowBlindAndBuriedVias,
       obstacles: structuredClone(srj.obstacles),
       connections: structuredClone(srj.connections),
       defaultObstacleMargin: srj.defaultObstacleMargin,

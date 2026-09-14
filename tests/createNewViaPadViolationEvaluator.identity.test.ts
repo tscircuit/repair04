@@ -7,9 +7,11 @@ import {
   createNewViaPadViolationEvaluator,
   getNewViaPadViolations,
 } from "../lib/getNewViaPadViolations"
+import type { ViaLayerPolicy } from "../lib/getViaCopperZSpan"
 
 test("reused physical contacts retain current ownership, via ordinal, span, diameter and independent output objects", (): void => {
-  const srj: SimpleRouteJson = {
+  const srj: SimpleRouteJson & ViaLayerPolicy = {
+    allowBlindAndBuriedVias: true,
     layerCount: 4,
     minTraceWidth: 0.1,
     bounds: { minX: -5, minY: -5, maxX: 5, maxY: 5 },

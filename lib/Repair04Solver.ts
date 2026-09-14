@@ -189,7 +189,9 @@ export class Repair04Solver extends BaseSolver {
       viaClearance: this.input.viaClearance,
     })
     this.fixedTraces = (input.srj.traces ?? []).map((trace) =>
-      normalizeRepairTrace(trace, input.srj.minTraceWidth),
+      this.getPhysicalDrcTrace(
+        normalizeRepairTrace(trace, input.srj.minTraceWidth),
+      ),
     )
     this.mutableBounds = {
       minX: b.minX + input.boundaryMargin,
@@ -246,7 +248,11 @@ export class Repair04Solver extends BaseSolver {
       const route = this.routes[selected.routeIndex]
       const via =
         route &&
-        getRepairViaGeometry(route, input.srj.layerCount)[selected.viaIndex]
+        getRepairViaGeometry(
+          route,
+          input.srj.layerCount,
+          input.srj.allowBlindAndBuriedVias,
+        )[selected.viaIndex]
       if (
         !via ||
         via.pointIndices.some((index): boolean =>
@@ -351,7 +357,11 @@ export class Repair04Solver extends BaseSolver {
   private getViaGeometry(route: HighDensityRoute): RepairViaGeometry[] {
     let geometry = this.viaGeometryCache.get(route)
     if (!geometry) {
-      geometry = getRepairViaGeometry(route, this.input.srj.layerCount)
+      geometry = getRepairViaGeometry(
+        route,
+        this.input.srj.layerCount,
+        this.input.srj.allowBlindAndBuriedVias,
+      )
       this.viaGeometryCache.set(route, geometry)
     }
     return geometry
@@ -450,16 +460,33 @@ export class Repair04Solver extends BaseSolver {
       )
   }
 
+  // Preserve logical route transitions; the pinned DRC engine reads physical
+  // via layers from trace geometry rather than the board policy.
+  private getPhysicalDrcTrace(trace: SimplifiedPcbTrace): SimplifiedPcbTrace {
+    if (this.input.srj.allowBlindAndBuriedVias) return trace
+    return {
+      ...trace,
+      route: trace.route.map((point) =>
+        point.route_type === "via"
+          ? {
+              ...point,
+              from_layer: "top",
+              to_layer: this.input.srj.layerCount === 1 ? "top" : "bottom",
+            }
+          : point,
+      ),
+    }
+  }
+
   private evaluate(routes: HighDensityRoute[]): Score {
     const { errors } = this.engine.evaluate([
       ...this.fixedTraces,
       ...routes.map((route, routeIndex): SimplifiedPcbTrace => {
         const cache = this.getRouteCache(routeIndex, route)
         if (!cache.trace) {
-          cache.trace = convertRepairRoutesToTraces(
-            [route],
-            this.input.srj.layerCount,
-          )[0]!
+          cache.trace = this.getPhysicalDrcTrace(
+            convertRepairRoutesToTraces([route], this.input.srj.layerCount)[0]!,
+          )
           cache.trace.pcb_trace_id = `repair04_${routeIndex}`
         }
         return cache.trace

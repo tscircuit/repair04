@@ -3,7 +3,11 @@ import { getNewViaPadViolations } from "../lib/getNewViaPadViolations"
 import { newViaPadFixture } from "./fixtures/newViaPadFixture"
 
 test("checks the full new-via span and SRJ margin without touching other layers", (): void => {
-  const input = newViaPadFixture()
+  const fixture = newViaPadFixture()
+  const input = {
+    ...fixture,
+    srj: { ...fixture.srj, allowBlindAndBuriedVias: true },
+  }
   input.srj.layerCount = 4
   input.routes[0]!.viaDiameter = 0.6
   for (const point of input.routes[0]!.route) point.z += 1

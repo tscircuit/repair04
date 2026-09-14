@@ -22,7 +22,10 @@ test("checks actual via copper radius across its inclusive inner-layer span", ()
     layers: [layer],
     connectedTo: [],
   }))
-  const violations = getFixedObstacleViolations({ srj, routes })
+  const violations = getFixedObstacleViolations({
+    srj: { ...srj, allowBlindAndBuriedVias: true },
+    routes,
+  })
   expect(violations).toHaveLength(1)
   expect(violations[0]!.kind).toBe("via")
   expect(violations[0]!.obstacleIndex).toBe(0)
