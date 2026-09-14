@@ -4,9 +4,11 @@ import type {
   SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { createNewViaPadViolationEvaluator } from "../lib/getNewViaPadViolations"
+import type { ViaLayerPolicy } from "../lib/getViaCopperZSpan"
 
 test("static preparation preserves lazy obstacle validation and route validation on every call", (): void => {
-  const srj: SimpleRouteJson = {
+  const srj: SimpleRouteJson & ViaLayerPolicy = {
+    allowBlindAndBuriedVias: true,
     layerCount: 4,
     minTraceWidth: 0.1,
     bounds: { minX: -5, minY: -5, maxX: 5, maxY: 5 },

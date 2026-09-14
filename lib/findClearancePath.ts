@@ -12,6 +12,7 @@ import { getViaPadClearance } from "./getViaPadClearance"
 import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 import { REGION_EPSILON } from "./repairRegionGeometry"
+import { getViaCopperZSpan, type ViaLayerPolicy } from "./getViaCopperZSpan"
 
 type Point = RepairRoutePoint
 type Barrier = {
@@ -41,7 +42,7 @@ export type ClearancePathSearchStats = {
 
 /** Clearance-aware routing between fixed anchors, using only cropped context. */
 export function findClearancePath(input: {
-  srj: SimpleRouteJson
+  srj: SimpleRouteJson & ViaLayerPolicy
   routes: HighDensityRoute[]
   routeIndex: number
   start: Point
@@ -223,8 +224,9 @@ export function findClearancePath(input: {
         : undefined,
       visitedQuery: 0,
       ...barrierBounds,
-      minZ: Math.min(a.z, b.z),
-      maxZ: Math.max(a.z, b.z),
+      ...(a.z === b.z
+        ? { minZ: a.z, maxZ: b.z }
+        : getViaCopperZSpan({ fromZ: a.z, toZ: b.z, ...srj })),
     })
   }
   for (const obstacle of srj.obstacles) {
@@ -356,8 +358,9 @@ export function findClearancePath(input: {
       maxX = Math.max(a.x, b.x)
     const minY = Math.min(a.y, b.y),
       maxY = Math.max(a.y, b.y)
-    const minZ = Math.min(a.z, b.z),
-      maxZ = Math.max(a.z, b.z)
+    const { minZ, maxZ } = isVia
+      ? getViaCopperZSpan({ fromZ: a.z, toZ: b.z, ...srj })
+      : { minZ: a.z, maxZ: b.z }
     for (let x = Math.floor(minX - reach); x <= Math.floor(maxX + reach); x++) {
       const column = cells.get(x)
       if (!column) continue
@@ -373,14 +376,13 @@ export function findClearancePath(input: {
           if (barrier.visitedQuery === currentQuery) continue
           barrier.visitedQuery = currentQuery
           if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
-          const requiredGap =
-            barrier.viaOnly
-              ? getViaPadClearance(srj, input.viaClearance, true)
-              : barrier.rect || barrier.pad
-                ? margin
-                : isVia && barrier.minZ !== barrier.maxZ
-                  ? input.viaClearance
-                  : input.traceClearance
+          const requiredGap = barrier.viaOnly
+            ? getViaPadClearance(srj, input.viaClearance, true)
+            : barrier.rect || barrier.pad
+              ? margin
+              : isVia && barrier.minZ !== barrier.maxZ
+                ? input.viaClearance
+                : input.traceClearance
           const clearance = radius + requiredGap
           // These bounds enclose the entire copper/rotated obstacle. Strict
           // separation can only rule out a collision; exact boundary cases
@@ -602,8 +604,7 @@ export function findClearancePath(input: {
     for (const id of neighbors) {
       const b = point(id),
         baseCost =
-          current.cost +
-          (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
+          current.cost + (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
         previousCost = costs.get(id) ?? Infinity
       // Congestion costs are nonnegative, so an edge that cannot improve the
       // geometric cost cannot improve the complete cost either.

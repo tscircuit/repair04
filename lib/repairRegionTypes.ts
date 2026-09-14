@@ -2,6 +2,7 @@ import type {
   HighDensityRoute,
   SimpleRouteJson,
 } from "high-density-repair03/lib"
+import type { ViaLayerPolicy } from "./getViaCopperZSpan"
 
 export type Bounds = SimpleRouteJson["bounds"]
 export type RepairRoutePoint = HighDensityRoute["route"][number] & {
@@ -11,7 +12,7 @@ export type RepairRoutePoint = HighDensityRoute["route"][number] & {
 
 /** Everything the repair algorithm needs; this object contains no full board. */
 export type RepairRegionInput = {
-  srj: SimpleRouteJson
+  srj: SimpleRouteJson & ViaLayerPolicy
   routes: HighDensityRoute[]
   bounds: Bounds
   boundaryMargin: number
@@ -37,7 +38,7 @@ export type ExtractedRepairRegion = RepairRegionInput & {
 }
 
 export type ExtractRepairRegionOptions = {
-  srj: SimpleRouteJson
+  srj: SimpleRouteJson & ViaLayerPolicy
   routes: HighDensityRoute[]
   bounds: Bounds
   /** The immutable collar. Increased when copper widths require more space. */

@@ -15,6 +15,7 @@ import type {
   RepairRegionInput,
   RepairRoutePoint,
 } from "./repairRegionTypes"
+import { getViaCopperZSpan } from "./getViaCopperZSpan"
 
 type Point = { x: number; y: number }
 type Vertex = Point & {
@@ -208,8 +209,9 @@ export function relaxTraceClearance(
           minY: Math.min(va.y, vb.y),
           maxY: Math.max(va.y, vb.y),
         },
-        minZ: Math.min(a.z, b.z),
-        maxZ: Math.max(a.z, b.z),
+        ...(via
+          ? getViaCopperZSpan({ fromZ: a.z, toZ: b.z, ...input.srj })
+          : { minZ: a.z, maxZ: b.z }),
         radius: via
           ? route.viaDiameter / 2
           : Math.max(
@@ -504,12 +506,7 @@ export function relaxTraceClearance(
         segment.a.revision !== pad.revisions[0] ||
         segment.b.revision !== pad.revisions[1]
       ) {
-        let nearest = getContact(
-          segment.a,
-          segment.b,
-          corners[0]!,
-          corners[1]!,
-        )
+        let nearest = getContact(segment.a, segment.b, corners[0]!, corners[1]!)
         for (let i = 1; i < corners.length; i++) {
           const candidate = getContact(
             segment.a,
