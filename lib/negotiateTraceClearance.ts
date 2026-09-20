@@ -43,6 +43,10 @@ export type NegotiatedClearanceInput = {
   /** Physical drill diameter; absent information reserves the copper diameter. */
   viaHoleDiameter?: number
   maxPathSearchNodes: number
+  /** Cap one path so blocked spans leave work for the remaining queue. */
+  maxPathSearchNodesPerCall?: number
+  /** Optional weighted A* estimate; physical clearance checks stay unchanged. */
+  pathHeuristicWeight?: number
   maxPathSearchCalls: number
   onSearch?: (stats: ClearancePathSearchStats) => void
 }
@@ -84,6 +88,17 @@ export function negotiateTraceClearance(
         "repair04: negotiated work budgets must be nonnegative integers",
       )
   }
+  if (
+    input.maxPathSearchNodesPerCall !== undefined &&
+    (!Number.isSafeInteger(input.maxPathSearchNodesPerCall) ||
+      input.maxPathSearchNodesPerCall < 1)
+  )
+    throw new Error("repair04: per-path work budget must be a positive integer")
+  if (
+    input.pathHeuristicWeight !== undefined &&
+    (!Number.isFinite(input.pathHeuristicWeight) || input.pathHeuristicWeight < 1)
+  )
+    throw new Error("repair04: heuristic weight must be finite and at least one")
   if (
     input.viaHoleDiameter !== undefined &&
     (!Number.isFinite(input.viaHoleDiameter) ||
@@ -432,7 +447,11 @@ export function negotiateTraceClearance(
       viaClearance: input.viaClearance,
       gridSize: Math.min(0.1, route.traceThickness / 2),
       allowLayerChanges: input.allowLayerChanges,
-      maxNodes: input.maxPathSearchNodes - pathSearchNodes,
+      maxNodes: Math.min(
+        input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
+        input.maxPathSearchNodes - pathSearchNodes,
+      ),
+      heuristicWeight: input.pathHeuristicWeight,
       stats,
       getAdditionalEdgeCost,
       existingPath: route.route,

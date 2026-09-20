@@ -55,6 +55,8 @@ export function findClearancePath(input: {
   allowLayerChanges?: boolean
   /** Maximum actual heap pops in this search; defaults to 30000. */
   maxNodes?: number
+  /** Weight the distance estimate when a bounded search prioritizes finding a route. */
+  heuristicWeight?: number
   /** Optional output accounting, overwritten for this synchronous call. */
   stats?: ClearancePathSearchStats
   /** Nonnegative congestion cost; Infinity prohibits the edge. */
@@ -65,6 +67,9 @@ export function findClearancePath(input: {
   viaHoleDiameter?: number
 }): Point[] | null {
   const { srj, routes, routeIndex, start, end, bounds, traceThickness } = input
+  const heuristicWeight = input.heuristicWeight ?? 1
+  if (!Number.isFinite(heuristicWeight) || heuristicWeight < 1)
+    throw new Error("repair04: heuristic weight must be finite and at least one")
   const extraCost = (a: Point, b: Point): number => {
     const value = input.getAdditionalEdgeCost?.(a, b) ?? 0
     if (Number.isNaN(value) || value < 0)
@@ -509,7 +514,7 @@ export function findClearancePath(input: {
       if (!Number.isFinite(cost)) continue
       costs.set(id, cost)
       previous.set(id, -1)
-      heap.push({ id, cost, priority: cost + heuristic(p) })
+      heap.push({ id, cost, priority: cost + heuristicWeight * heuristic(p) })
     }
   const gridNodeCount = nx * ny * srj.layerCount
   // Only pack edges when every grid-node pair has an exact integer key.
@@ -627,7 +632,7 @@ export function findClearancePath(input: {
       else viaPaths.delete(id)
       costs.set(id, cost)
       previous.set(id, current.id)
-      heap.push({ id, cost, priority: cost + heuristic(b) })
+      heap.push({ id, cost, priority: cost + heuristicWeight * heuristic(b) })
     }
   }
   if (input.stats)
