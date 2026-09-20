@@ -36,7 +36,7 @@ type Copper = {
   immutable: boolean
 }
 export type NegotiatedClearanceInput = {
-  srj: SimpleRouteJson
+  srj: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean }
   routes: HighDensityRoute[]
   bounds: Bounds
   dirtyRouteIndices: readonly number[]
@@ -418,7 +418,7 @@ export function negotiateTraceClearance(
       })
       return hits
     }
-    const getAdditionalEdgeCost = (
+    const calculateAdditionalEdgeCost = (
       a: RepairRoutePoint,
       b: RepairRoutePoint,
     ): number => {
@@ -445,6 +445,33 @@ export function negotiateTraceClearance(
       let total = 0
       for (const cost of costs.values()) total += cost
       return (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) * total
+    }
+    // Ordinary drill sites occupy the full stack regardless of which two
+    // electrical layers the search connects. Copper and weights are fixed
+    // during this search, so reuse their congestion cost across transitions.
+    const viaCosts = new Map<number, Map<number, number>>()
+    const getAdditionalEdgeCost = (
+      a: RepairRoutePoint,
+      b: RepairRoutePoint,
+    ): number => {
+      if (
+        a.z === b.z ||
+        input.srj.allowBlindAndBuriedVias === true ||
+        a.x !== b.x ||
+        a.y !== b.y
+      ) {
+        return calculateAdditionalEdgeCost(a, b)
+      }
+      let column = viaCosts.get(a.x)
+      const cached = column?.get(a.y)
+      if (cached !== undefined) return cached
+      const cost = calculateAdditionalEdgeCost(a, b)
+      if (!column) {
+        column = new Map<number, number>()
+        viaCosts.set(a.x, column)
+      }
+      column.set(a.y, cost)
+      return cost
     }
     const stats: ClearancePathSearchStats = {
       nodesPopped: 0,

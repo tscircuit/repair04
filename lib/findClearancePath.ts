@@ -493,7 +493,21 @@ export function findClearancePath(input: {
     )
   const heuristic = (p: Point): number =>
     Math.hypot(p.x - end.x, p.y - end.y) + (p.z === end.z ? 0 : 1)
-  const heap = new ClearancePathHeap()
+  const denseNodeCount = nx * ny * srj.layerCount
+  // Bound dense queue storage to 4 MB; unusually large grids remain sparse.
+  const useDenseStorage =
+    nx > 0 &&
+    ny > 0 &&
+    Number.isSafeInteger(srj.layerCount) &&
+    Number.isSafeInteger(denseNodeCount) &&
+    denseNodeCount > 0 &&
+    denseNodeCount <= 1_000_000 &&
+    Number.isInteger(start.z) &&
+    start.z >= 0 &&
+    start.z < srj.layerCount
+  const heap = new ClearancePathHeap(
+    useDenseStorage ? denseNodeCount : undefined,
+  )
   const costs = new Map<number, number>()
   const previous = new Map<number, number>()
   const viaPaths = new Map<number, ViaPath | undefined>()
