@@ -51,6 +51,8 @@ export type NegotiatedClearanceInput = {
   maxPathSearchNodesPerCall?: number
   /** Optional weighted A* estimate; physical clearance checks stay unchanged. */
   pathHeuristicWeight?: number
+  /** Scale the trace-width grid, capped at 0.1 mm; defaults to one. */
+  pathGridSizeScale?: number
   maxPathSearchCalls: number
   onSearch?: (stats: ClearancePathSearchStats) => void
 }
@@ -103,6 +105,11 @@ export function negotiateTraceClearance(
     (!Number.isFinite(input.pathHeuristicWeight) || input.pathHeuristicWeight < 1)
   )
     throw new Error("repair04: heuristic weight must be finite and at least one")
+  if (
+    input.pathGridSizeScale !== undefined &&
+    (!Number.isFinite(input.pathGridSizeScale) || input.pathGridSizeScale <= 0)
+  )
+    throw new Error("repair04: path grid scale must be positive and finite")
   if (
     input.viaHoleDiameter !== undefined &&
     (!Number.isFinite(input.viaHoleDiameter) ||
@@ -487,7 +494,10 @@ export function negotiateTraceClearance(
       traceThickness: route.traceThickness,
       traceClearance: input.traceClearance,
       viaClearance: input.viaClearance,
-      gridSize: Math.min(0.1, route.traceThickness / 2),
+      gridSize: Math.min(
+        0.1,
+        (route.traceThickness * (input.pathGridSizeScale ?? 1)) / 2,
+      ),
       allowLayerChanges: input.allowLayerChanges,
       maxNodes: Math.min(
         input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
