@@ -14,6 +14,7 @@ test("drill spacing applies to vias whose copper connects disjoint layers", (): 
     connections: [],
     obstacles: [],
   }
+  Object.assign(srj, { allowBlindAndBuriedVias: true })
   const routes: HighDensityRoute[] = [
     {
       connectionName: "signal",

@@ -1,3 +1,4 @@
+import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import {
   segmentToBoundsMinDistance,
   segmentToSegmentMinDistance,
@@ -228,8 +229,7 @@ export function findClearancePath(input: {
         : undefined,
       visitedQuery: 0,
       ...barrierBounds,
-      minZ: Math.min(a.z, b.z),
-      maxZ: Math.max(a.z, b.z),
+      ...getRepairCopperLayerSpan(srj, a, b),
     })
   }
   for (const obstacle of srj.obstacles) {
@@ -361,8 +361,7 @@ export function findClearancePath(input: {
       maxX = Math.max(a.x, b.x)
     const minY = Math.min(a.y, b.y),
       maxY = Math.max(a.y, b.y)
-    const minZ = Math.min(a.z, b.z),
-      maxZ = Math.max(a.z, b.z)
+    const { minZ, maxZ } = getRepairCopperLayerSpan(srj, a, b)
     for (let x = Math.floor(minX - reach); x <= Math.floor(maxX + reach); x++) {
       const column = cells.get(x)
       if (!column) continue
@@ -528,6 +527,10 @@ export function findClearancePath(input: {
     Number.isInteger(start.z) &&
     start.z >= 0 &&
     start.z < srj.layerCount
+  // Weighted search prioritizes a feasible path over the shortest path. Settle
+  // each grid state once so inconsistent weighted estimates cannot repeatedly
+  // reopen it and exhaust the bounded repair allowance.
+  const settled = heuristicWeight > 1 ? new Set<number>() : undefined
   const edgeCache = new Map<number | string, boolean>()
   let expanded = 0
   while (heap.length && expanded < (input.maxNodes ?? 30000)) {
@@ -535,6 +538,7 @@ export function findClearancePath(input: {
     expanded++
     if (input.stats) input.stats.nodesPopped = expanded
     if (current.cost !== costs.get(current.id)) continue
+    settled?.add(current.id)
     const a = point(current.id)
     const viaPath = viaPaths.get(current.id)
     if (
@@ -605,6 +609,7 @@ export function findClearancePath(input: {
         if (z !== a.z) neighbors.push(idAt(x, y, z))
     }
     for (const id of neighbors) {
+      if (settled?.has(id)) continue
       const b = point(id),
         baseCost =
           current.cost +

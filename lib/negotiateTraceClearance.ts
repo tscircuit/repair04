@@ -1,3 +1,4 @@
+import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
@@ -290,8 +291,7 @@ export function negotiateTraceClearance(
           maxX: Math.max(a.x, b.x),
           minY: Math.min(a.y, b.y),
           maxY: Math.max(a.y, b.y),
-          minZ: Math.min(a.z, b.z),
-          maxZ: Math.max(a.z, b.z),
+          ...getRepairCopperLayerSpan(input.srj, a, b),
           spanIndex: si,
           owner: otherOwner,
           visited: 0,
@@ -352,9 +352,9 @@ export function negotiateTraceClearance(
             if (copper.visited === id) continue
             copper.visited = id
             const bothVias = via && copper.minZ !== copper.maxZ
+            const span = getRepairCopperLayerSpan(input.srj, a, b)
             const sharedLayers =
-              copper.minZ <= Math.max(a.z, b.z) &&
-              copper.maxZ >= Math.min(a.z, b.z)
+              copper.minZ <= span.maxZ && copper.maxZ >= span.minZ
             if (!sharedLayers && !bothVias) continue
             if (copper.immutable && !bothVias) continue
             if (
