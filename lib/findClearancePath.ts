@@ -618,8 +618,8 @@ export function findClearancePath(input: {
       // Congestion costs are nonnegative, so an edge that cannot improve the
       // geometric cost cannot improve the complete cost either.
       if (baseCost >= previousCost) continue
-      const cost = baseCost + extraCost(a, b)
-      if (cost >= previousCost) continue
+      // Hard-blocked edges cannot enter the queue. Avoid the more expensive
+      // movable-copper congestion query for those edges.
       const low = Math.min(current.id, id),
         high = Math.max(current.id, id)
       const key = useNumericEdgeKeys
@@ -631,6 +631,8 @@ export function findClearancePath(input: {
         edgeCache.set(key, permitted)
       }
       if (!permitted) continue
+      const cost = baseCost + extraCost(a, b)
+      if (cost >= previousCost) continue
       if (a.z !== b.z && (a.x !== viaPath?.x || a.y !== viaPath?.y))
         viaPaths.set(id, { x: a.x, y: a.y, previous: viaPath })
       else if (viaPath) viaPaths.set(id, viaPath)

@@ -1,5 +1,5 @@
-import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
+import Flatbush from "flatbush"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
@@ -9,6 +9,7 @@ import {
   type ClearancePathSearchStats,
 } from "./findClearancePath"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
+import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { REGION_EPSILON } from "./repairRegionGeometry"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 
@@ -29,7 +30,9 @@ type Copper = {
   maxZ: number
   spanIndex: number
   owner: string
-  visited: number
+  index: number
+  cellX: number
+  cellY: number
   immutable: boolean
 }
 export type NegotiatedClearanceInput = {
@@ -263,7 +266,7 @@ export function negotiateTraceClearance(
     queued.delete(index)
     const route = current[index]!
     const selectedOwner = owner(route)
-    const cells = new Map<number, Map<number, Copper[]>>()
+    const coppers: Copper[] = []
     for (let si = 0; si < spans.length; si++) {
       if (si === index) continue
       const other = current[si]!,
@@ -294,32 +297,45 @@ export function negotiateTraceClearance(
           ...getRepairCopperLayerSpan(input.srj, a, b),
           spanIndex: si,
           owner: otherOwner,
-          visited: 0,
+          index: coppers.length,
+          cellX: Math.floor(Math.min(a.x, b.x) - radius),
+          cellY: Math.floor(Math.min(a.y, b.y) - radius),
           immutable,
         }
-        for (
-          let x = Math.floor(Math.min(a.x, b.x) - radius);
-          x <= Math.floor(Math.max(a.x, b.x) + radius);
-          x++
-        ) {
-          let column = cells.get(x)
-          if (!column) {
-            column = new Map()
-            cells.set(x, column)
-          }
-          for (
-            let y = Math.floor(Math.min(a.y, b.y) - radius);
-            y <= Math.floor(Math.max(a.y, b.y) + radius);
-            y++
-          ) {
-            const bucket = column.get(y)
-            if (bucket) bucket.push(copper)
-            else column.set(y, [copper])
-          }
-        }
+        coppers.push(copper)
       }
     }
-    let queryId = 0
+    const createCopperIndex = (
+      indexedCopper: Copper[],
+    ): { index: Flatbush; copper: Copper[] } | undefined => {
+      if (!indexedCopper.length) return undefined
+      const index = new Flatbush(indexedCopper.length)
+      for (const copper of indexedCopper) {
+        index.add(
+          copper.minX - copper.radius - REGION_EPSILON,
+          copper.minY - copper.radius - REGION_EPSILON,
+          copper.maxX + copper.radius + REGION_EPSILON,
+          copper.maxY + copper.radius + REGION_EPSILON,
+        )
+      }
+      index.finish()
+      return { index, copper: indexedCopper }
+    }
+    const copperIndex = createCopperIndex(coppers)
+    const copperByLayer = new Map<
+      number,
+      { index: Flatbush; copper: Copper[] } | undefined
+    >()
+    for (let z = 0; z < input.srj.layerCount; z++) {
+      copperByLayer.set(
+        z,
+        createCopperIndex(
+          coppers.filter(
+            (copper): boolean => copper.minZ <= z && copper.maxZ >= z,
+          ),
+        ),
+      )
+    }
     const query = (
       a: RepairRoutePoint,
       b: RepairRoutePoint,
@@ -333,74 +349,73 @@ export function negotiateTraceClearance(
         (via ? route.viaDiameter : route.traceThickness) / 2 +
         Math.max(input.traceClearance, input.viaClearance)
       const hits: Array<{ copper: Copper; ratio: number }> = []
-      const id = ++queryId
-      for (
-        let x = Math.floor(minX - reach);
-        x <= Math.floor(maxX + reach);
-        x++
-      ) {
-        const column = cells.get(x)
-        if (!column) continue
-        for (
-          let y = Math.floor(minY - reach);
-          y <= Math.floor(maxY + reach);
-          y++
-        ) {
-          const bucket = column.get(y)
-          if (!bucket) continue
-          for (const copper of bucket) {
-            if (copper.visited === id) continue
-            copper.visited = id
-            const bothVias = via && copper.minZ !== copper.maxZ
-            const span = getRepairCopperLayerSpan(input.srj, a, b)
-            const sharedLayers =
-              copper.minZ <= span.maxZ && copper.maxZ >= span.minZ
-            if (!sharedLayers && !bothVias) continue
-            if (copper.immutable && !bothVias) continue
-            if (
-              copper.owner === selectedOwner &&
-              (!bothVias || (a.x === copper.a.x && a.y === copper.a.y))
-            )
-              continue
-            const copperDistance =
-              (via ? route.viaDiameter : route.traceThickness) / 2 +
-              (bothVias ? input.viaClearance : input.traceClearance) +
-              copper.radius
-            const drillDistance =
-              (input.viaHoleDiameter ?? route.viaDiameter) / 2 +
-              (input.viaHoleDiameter ?? copper.radius * 2) / 2 +
-              input.viaClearance
-            // Drill spacing applies even when the connected copper spans do
-            // not share layers. Same-net copper may overlap, distinct holes may not.
-            const required = bothVias
-              ? sharedLayers && copper.owner !== selectedOwner
-                ? Math.max(copperDistance, drillDistance)
-                : drillDistance
-              : copperDistance
-            // A cell may contain many distant segments. Their axis-aligned
-            // separation is a lower bound on the exact distance; preserve the
-            // existing narrow-phase calculation at and near the boundary.
-            if (
-              minX - required - REGION_EPSILON > copper.maxX ||
-              maxX + required + REGION_EPSILON < copper.minX ||
-              minY - required - REGION_EPSILON > copper.maxY ||
-              maxY + required + REGION_EPSILON < copper.minY
-            )
-              continue
-            const distance = segmentToSegmentMinDistance(
-              a,
-              b,
-              copper.a,
-              copper.b,
-            )
-            if (distance < required - REGION_EPSILON)
-              hits.push({
-                copper,
-                ratio: (required - distance) / (required * required),
-              })
-          }
-        }
+      const span = getRepairCopperLayerSpan(input.srj, a, b)
+      const activeIndex = via ? copperIndex : copperByLayer.get(a.z)
+      const candidates =
+        activeIndex?.index.search(
+          minX - reach - REGION_EPSILON,
+          minY - reach - REGION_EPSILON,
+          maxX + reach + REGION_EPSILON,
+          maxY + reach + REGION_EPSILON,
+        ) ?? []
+      for (const candidate of candidates) {
+        const copper = activeIndex!.copper[candidate]!
+        const bothVias = via && copper.minZ !== copper.maxZ
+        const sharedLayers =
+          copper.minZ <= span.maxZ && copper.maxZ >= span.minZ
+        if (!sharedLayers && !bothVias) continue
+        if (copper.immutable && !bothVias) continue
+        if (
+          copper.owner === selectedOwner &&
+          (!bothVias || (a.x === copper.a.x && a.y === copper.a.y))
+        )
+          continue
+        const copperDistance =
+          (via ? route.viaDiameter : route.traceThickness) / 2 +
+          (bothVias ? input.viaClearance : input.traceClearance) +
+          copper.radius
+        const drillDistance =
+          (input.viaHoleDiameter ?? route.viaDiameter) / 2 +
+          (input.viaHoleDiameter ?? copper.radius * 2) / 2 +
+          input.viaClearance
+        // Drill spacing applies even when the connected copper spans do
+        // not share layers. Same-net copper may overlap, distinct holes may not.
+        const required = bothVias
+          ? sharedLayers && copper.owner !== selectedOwner
+            ? Math.max(copperDistance, drillDistance)
+            : drillDistance
+          : copperDistance
+        // A cell may contain many distant segments. Their axis-aligned
+        // separation is a lower bound on the exact distance; preserve the
+        // existing narrow-phase calculation at and near the boundary.
+        if (
+          minX - required - REGION_EPSILON > copper.maxX ||
+          maxX + required + REGION_EPSILON < copper.minX ||
+          minY - required - REGION_EPSILON > copper.maxY ||
+          maxY + required + REGION_EPSILON < copper.minY
+        )
+          continue
+        const distance = segmentToSegmentMinDistance(a, b, copper.a, copper.b)
+        if (distance < required - REGION_EPSILON)
+          hits.push({
+            copper,
+            ratio: (required - distance) / (required * required),
+          })
       }
+      // Match the old integer-cell traversal order. This preserves floating
+      // point accumulation and the order in which displaced spans are queued.
+      const firstCellX = Math.floor(minX - reach)
+      const firstCellY = Math.floor(minY - reach)
+      hits.sort((left, right): number => {
+        const x =
+          Math.max(firstCellX, left.copper.cellX) -
+          Math.max(firstCellX, right.copper.cellX)
+        if (x !== 0) return x
+        const y =
+          Math.max(firstCellY, left.copper.cellY) -
+          Math.max(firstCellY, right.copper.cellY)
+        return y || left.copper.index - right.copper.index
+      })
       return hits
     }
     const getAdditionalEdgeCost = (
