@@ -1,3 +1,4 @@
+import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import {
   segmentToBoundsMinDistance,
   segmentToSegmentMinDistance,
@@ -41,7 +42,7 @@ export type ClearancePathSearchStats = {
 
 /** Clearance-aware routing between fixed anchors, using only cropped context. */
 export function findClearancePath(input: {
-  srj: SimpleRouteJson
+  srj: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean }
   routes: HighDensityRoute[]
   routeIndex: number
   start: Point
@@ -55,6 +56,8 @@ export function findClearancePath(input: {
   allowLayerChanges?: boolean
   /** Maximum actual heap pops in this search; defaults to 30000. */
   maxNodes?: number
+  /** Weight the distance estimate when a bounded search prioritizes finding a route. */
+  heuristicWeight?: number
   /** Optional output accounting, overwritten for this synchronous call. */
   stats?: ClearancePathSearchStats
   /** Nonnegative congestion cost; Infinity prohibits the edge. */
@@ -65,6 +68,9 @@ export function findClearancePath(input: {
   viaHoleDiameter?: number
 }): Point[] | null {
   const { srj, routes, routeIndex, start, end, bounds, traceThickness } = input
+  const heuristicWeight = input.heuristicWeight ?? 1
+  if (!Number.isFinite(heuristicWeight) || heuristicWeight < 1)
+    throw new Error("repair04: heuristic weight must be finite and at least one")
   const extraCost = (a: Point, b: Point): number => {
     const value = input.getAdditionalEdgeCost?.(a, b) ?? 0
     if (Number.isNaN(value) || value < 0)
@@ -223,8 +229,7 @@ export function findClearancePath(input: {
         : undefined,
       visitedQuery: 0,
       ...barrierBounds,
-      minZ: Math.min(a.z, b.z),
-      maxZ: Math.max(a.z, b.z),
+      ...getRepairCopperLayerSpan(srj, a, b),
     })
   }
   for (const obstacle of srj.obstacles) {
@@ -356,8 +361,7 @@ export function findClearancePath(input: {
       maxX = Math.max(a.x, b.x)
     const minY = Math.min(a.y, b.y),
       maxY = Math.max(a.y, b.y)
-    const minZ = Math.min(a.z, b.z),
-      maxZ = Math.max(a.z, b.z)
+    const { minZ, maxZ } = getRepairCopperLayerSpan(srj, a, b)
     for (let x = Math.floor(minX - reach); x <= Math.floor(maxX + reach); x++) {
       const column = cells.get(x)
       if (!column) continue
@@ -489,7 +493,21 @@ export function findClearancePath(input: {
     )
   const heuristic = (p: Point): number =>
     Math.hypot(p.x - end.x, p.y - end.y) + (p.z === end.z ? 0 : 1)
-  const heap = new ClearancePathHeap()
+  const denseNodeCount = nx * ny * srj.layerCount
+  // Bound dense queue storage to 4 MB; unusually large grids remain sparse.
+  const useDenseStorage =
+    nx > 0 &&
+    ny > 0 &&
+    Number.isSafeInteger(srj.layerCount) &&
+    Number.isSafeInteger(denseNodeCount) &&
+    denseNodeCount > 0 &&
+    denseNodeCount <= 1_000_000 &&
+    Number.isInteger(start.z) &&
+    start.z >= 0 &&
+    start.z < srj.layerCount
+  const heap = new ClearancePathHeap(
+    useDenseStorage ? denseNodeCount : undefined,
+  )
   const costs = new Map<number, number>()
   const previous = new Map<number, number>()
   const viaPaths = new Map<number, ViaPath | undefined>()
@@ -509,7 +527,7 @@ export function findClearancePath(input: {
       if (!Number.isFinite(cost)) continue
       costs.set(id, cost)
       previous.set(id, -1)
-      heap.push({ id, cost, priority: cost + heuristic(p) })
+      heap.push({ id, cost, priority: cost + heuristicWeight * heuristic(p) })
     }
   const gridNodeCount = nx * ny * srj.layerCount
   // Only pack edges when every grid-node pair has an exact integer key.
@@ -523,13 +541,21 @@ export function findClearancePath(input: {
     Number.isInteger(start.z) &&
     start.z >= 0 &&
     start.z < srj.layerCount
+  // Weighted search prioritizes a feasible path over the shortest path. Settle
+  // each grid state once so inconsistent weighted estimates cannot repeatedly
+  // reopen it and exhaust the bounded repair allowance.
+  const settled = heuristicWeight > 1 ? new Set<number>() : undefined
   const edgeCache = new Map<number | string, boolean>()
+  // Ordinary vias have the same hard clearance on every electrical layer
+  // pair. Reuse that result at each grid site; blind vias retain edge keys.
+  const fullStackViaClearance = new Map<number, boolean>()
   let expanded = 0
   while (heap.length && expanded < (input.maxNodes ?? 30000)) {
     const current = heap.pop()
     expanded++
     if (input.stats) input.stats.nodesPopped = expanded
     if (current.cost !== costs.get(current.id)) continue
+    settled?.add(current.id)
     const a = point(current.id)
     const viaPath = viaPaths.get(current.id)
     if (
@@ -600,6 +626,7 @@ export function findClearancePath(input: {
         if (z !== a.z) neighbors.push(idAt(x, y, z))
     }
     for (const id of neighbors) {
+      if (settled?.has(id)) continue
       const b = point(id),
         baseCost =
           current.cost +
@@ -608,26 +635,38 @@ export function findClearancePath(input: {
       // Congestion costs are nonnegative, so an edge that cannot improve the
       // geometric cost cannot improve the complete cost either.
       if (baseCost >= previousCost) continue
-      const cost = baseCost + extraCost(a, b)
-      if (cost >= previousCost) continue
+      // Hard-blocked edges cannot enter the queue. Avoid the more expensive
+      // movable-copper congestion query for those edges.
       const low = Math.min(current.id, id),
         high = Math.max(current.id, id)
       const key = useNumericEdgeKeys
         ? low * gridNodeCount + high
         : `${low},${high}`
-      let permitted = edgeCache.get(key)
+      const fullStackViaKey =
+        useNumericEdgeKeys &&
+        a.z !== b.z &&
+        srj.allowBlindAndBuriedVias !== true
+          ? current.id % (nx * ny)
+          : undefined
+      let permitted =
+        fullStackViaKey === undefined
+          ? edgeCache.get(key)
+          : fullStackViaClearance.get(fullStackViaKey)
       if (permitted === undefined) {
         permitted = clear(a, b)
-        edgeCache.set(key, permitted)
+        if (fullStackViaKey === undefined) edgeCache.set(key, permitted)
+        else fullStackViaClearance.set(fullStackViaKey, permitted)
       }
       if (!permitted) continue
+      const cost = baseCost + extraCost(a, b)
+      if (cost >= previousCost) continue
       if (a.z !== b.z && (a.x !== viaPath?.x || a.y !== viaPath?.y))
         viaPaths.set(id, { x: a.x, y: a.y, previous: viaPath })
       else if (viaPath) viaPaths.set(id, viaPath)
       else viaPaths.delete(id)
       costs.set(id, cost)
       previous.set(id, current.id)
-      heap.push({ id, cost, priority: cost + heuristic(b) })
+      heap.push({ id, cost, priority: cost + heuristicWeight * heuristic(b) })
     }
   }
   if (input.stats)

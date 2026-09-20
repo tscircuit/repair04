@@ -34,6 +34,7 @@ test("reused physical contacts retain current ownership, via ordinal, span, diam
       },
     ],
   }
+  Object.assign(srj, { allowBlindAndBuriedVias: true })
   const route: HighDensityRoute = {
     connectionName: "signal",
     traceThickness: 0.1,

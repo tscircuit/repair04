@@ -1,3 +1,4 @@
+import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import type { HighDensityRoute } from "high-density-repair03/lib"
 import {
@@ -208,8 +209,7 @@ export function relaxTraceClearance(
           minY: Math.min(va.y, vb.y),
           maxY: Math.max(va.y, vb.y),
         },
-        minZ: Math.min(a.z, b.z),
-        maxZ: Math.max(a.z, b.z),
+        ...getRepairCopperLayerSpan(input.srj, a, b),
         radius: via
           ? route.viaDiameter / 2
           : Math.max(

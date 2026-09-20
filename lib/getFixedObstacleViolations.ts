@@ -1,3 +1,4 @@
+import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { pointToSegmentClosestPoint } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
@@ -264,11 +265,11 @@ const createEvaluator = ({
           const end = route.route[pointIndex]! as RepairRoutePoint
           if (start.toNextSegmentType === "through_obstacle") continue
           if (start.z !== end.z) {
+            const span = getRepairCopperLayerSpan(srj, start, end)
             if (
               !Array.from(zLayers).some(
                 (z) =>
-                  z >= Math.min(start.z, end.z) &&
-                  z <= Math.max(start.z, end.z),
+                  z >= span.minZ && z <= span.maxZ,
               )
             )
               continue

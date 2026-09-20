@@ -7,7 +7,32 @@ export type ClearancePathSearchNode = {
 /** One pending entry per grid state, with in-place priority decreases. */
 export class ClearancePathHeap {
   private readonly values: ClearancePathSearchNode[] = []
-  private readonly positions = new Map<number, number>()
+  private readonly positions: {
+    get(id: number): number | undefined
+    set(id: number, index: number): void
+    delete(id: number): void
+  }
+
+  constructor(nodeCount?: number) {
+    if (nodeCount === undefined) {
+      this.positions = new Map<number, number>()
+    } else {
+      if (!Number.isSafeInteger(nodeCount) || nodeCount <= 0) {
+        throw new Error("repair04: dense path queue requires a positive grid size")
+      }
+      const indices = new Int32Array(nodeCount)
+      this.positions = {
+        get: (id: number): number | undefined =>
+          indices[id] === 0 ? undefined : indices[id]! - 1,
+        set: (id: number, index: number): void => {
+          indices[id] = index + 1
+        },
+        delete: (id: number): void => {
+          indices[id] = 0
+        },
+      }
+    }
+  }
 
   get length(): number {
     return this.values.length

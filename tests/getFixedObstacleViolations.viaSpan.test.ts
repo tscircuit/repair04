@@ -5,6 +5,7 @@ import { regionSafetyFixture } from "./fixtures/regionSafetyFixture"
 test("checks actual via copper radius across its inclusive inner-layer span", () => {
   const { srj, routes } = regionSafetyFixture()
   srj.layerCount = 4
+  Object.assign(srj, { allowBlindAndBuriedVias: true })
   routes[0]!.traceThickness = 0.1
   routes[0]!.viaDiameter = 0.7
   routes[0]!.route = [
