@@ -42,7 +42,7 @@ export type ClearancePathSearchStats = {
 
 /** Clearance-aware routing between fixed anchors, using only cropped context. */
 export function findClearancePath(input: {
-  srj: SimpleRouteJson
+  srj: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean }
   routes: HighDensityRoute[]
   routeIndex: number
   start: Point
@@ -546,6 +546,9 @@ export function findClearancePath(input: {
   // reopen it and exhaust the bounded repair allowance.
   const settled = heuristicWeight > 1 ? new Set<number>() : undefined
   const edgeCache = new Map<number | string, boolean>()
+  // Ordinary vias have the same hard clearance on every electrical layer
+  // pair. Reuse that result at each grid site; blind vias retain edge keys.
+  const fullStackViaClearance = new Map<number, boolean>()
   let expanded = 0
   while (heap.length && expanded < (input.maxNodes ?? 30000)) {
     const current = heap.pop()
@@ -639,10 +642,20 @@ export function findClearancePath(input: {
       const key = useNumericEdgeKeys
         ? low * gridNodeCount + high
         : `${low},${high}`
-      let permitted = edgeCache.get(key)
+      const fullStackViaKey =
+        useNumericEdgeKeys &&
+        a.z !== b.z &&
+        srj.allowBlindAndBuriedVias !== true
+          ? current.id % (nx * ny)
+          : undefined
+      let permitted =
+        fullStackViaKey === undefined
+          ? edgeCache.get(key)
+          : fullStackViaClearance.get(fullStackViaKey)
       if (permitted === undefined) {
         permitted = clear(a, b)
-        edgeCache.set(key, permitted)
+        if (fullStackViaKey === undefined) edgeCache.set(key, permitted)
+        else fullStackViaClearance.set(fullStackViaKey, permitted)
       }
       if (!permitted) continue
       const cost = baseCost + extraCost(a, b)
