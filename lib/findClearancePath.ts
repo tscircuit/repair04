@@ -506,7 +506,7 @@ export function findClearancePath(input: {
     start.z >= 0 &&
     start.z < srj.layerCount
   const heap = new ClearancePathHeap(
-    useDenseStorage ? denseNodeCount : undefined,
+    useDenseStorage ? denseNodeCount + 1 : undefined,
   )
   const costs = new Map<number, number>()
   const previous = new Map<number, number>()
@@ -530,6 +530,9 @@ export function findClearancePath(input: {
       heap.push({ id, cost, priority: cost + heuristicWeight * heuristic(p) })
     }
   const gridNodeCount = nx * ny * srj.layerCount
+  // The exact terminal is a separate search state. Its final connector must
+  // pay the same congestion cost as grid edges before it can win the queue.
+  const goalId = gridNodeCount
   // Only pack edges when every grid-node pair has an exact integer key.
   const useNumericEdgeKeys =
     nx > 0 &&
@@ -556,16 +559,24 @@ export function findClearancePath(input: {
     if (input.stats) input.stats.nodesPopped = expanded
     if (current.cost !== costs.get(current.id)) continue
     settled?.add(current.id)
-    const a = point(current.id)
-    const viaPath = viaPaths.get(current.id)
+    const a = current.id === goalId ? end : point(current.id)
+    let goalCost = current.id === goalId ? current.cost : Infinity
     if (
+      current.id !== goalId &&
       a.z === end.z &&
       Math.hypot(a.x - end.x, a.y - end.y) < grid * 3 &&
-      clear(a, end) &&
-      Number.isFinite(extraCost(a, end))
+      clear(a, end)
     ) {
+      goalCost =
+        current.cost + Math.hypot(a.x - end.x, a.y - end.y) + extraCost(a, end)
+    }
+    // A complete path no more expensive than this popped priority already
+    // beats the pending queue. In particular, free terminal edges need no
+    // extra heap pop, preserving their existing work accounting.
+    if (goalCost <= current.priority) {
       const reversed: Point[] = [end]
-      for (let id = current.id; id !== -1; id = previous.get(id)!)
+      const lastId = current.id === goalId ? previous.get(goalId)! : current.id
+      for (let id = lastId; id !== -1; id = previous.get(id)!)
         reversed.push(point(id))
       reversed.push(start)
       const path = reversed.reverse(),
@@ -605,6 +616,12 @@ export function findClearancePath(input: {
         throw new Error("repair04: search generated conflicting drill sites")
       if (input.stats) input.stats.completionReason = "found"
       return simplified
+    }
+    const viaPath = viaPaths.get(current.id)
+    if (goalCost < (costs.get(goalId) ?? Infinity)) {
+      costs.set(goalId, goalCost)
+      previous.set(goalId, current.id)
+      heap.push({ id: goalId, cost: goalCost, priority: goalCost })
     }
     const x = current.id % nx,
       y = Math.floor(current.id / nx) % ny
