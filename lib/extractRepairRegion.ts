@@ -1,6 +1,6 @@
+import type { SimpleRouteJson } from "./holeClearanceTypes"
 import type {
   HighDensityRoute,
-  SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { extractFixedTraceContext } from "./extractFixedTraceContext"
 import {
@@ -333,6 +333,7 @@ export const extractRepairRegion = ({
   const clearance = Math.max(
     srj.defaultObstacleMargin ?? 0.2,
     srj.minTraceToPadEdgeClearance ?? 0,
+    srj.minTraceToHoleEdgeClearance ?? 0,
     srj.minViaEdgeToPadEdgeClearance ?? 0,
   )
   let maxCopperDiameter = Math.max(srj.minTraceWidth, srj.minViaDiameter ?? 0)

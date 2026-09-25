@@ -2,7 +2,7 @@ import {
   segmentToBoundsMinDistance,
   segmentToSegmentMinDistance,
 } from "@tscircuit/math-utils"
-import type { SimpleRouteJson } from "high-density-repair03/lib"
+import type { SimpleRouteJson } from "./holeClearanceTypes"
 
 type Point = { x: number; y: number }
 export type ObstacleDistanceGeometry =
@@ -15,6 +15,14 @@ export type ObstacleDistanceGeometry =
 export function getLocalObstacleGeometry(
   obstacle: SimpleRouteJson["obstacles"][number],
 ): ObstacleDistanceGeometry {
+  if (obstacle.shape === "circle") {
+    return {
+      type: "oval",
+      a: { x: 0, y: 0 },
+      b: { x: 0, y: 0 },
+      radius: obstacle.width / 2,
+    }
+  }
   if (obstacle.type === "rect") {
     return {
       type: "rect",
