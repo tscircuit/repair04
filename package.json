@@ -42,7 +42,7 @@
   },
   "dependencies": {
     "@tscircuit/solver-utils": "^0.0.16",
-    "high-density-repair03": "https://codeload.github.com/tscircuit/high-density-repair03/tar.gz/7607a57b3ada2ea53fe7c8ec7d1892028d137ada",
+    "high-density-repair03": "https://codeload.github.com/tscircuit/high-density-repair03/tar.gz/4b72240fe2b6a125325a9304fd05c862163c0865",
     "@tscircuit/math-utils": "^0.0.36",
     "flatbush": "4.6.2"
   }

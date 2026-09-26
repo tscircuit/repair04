@@ -25,7 +25,7 @@ const srj: SimpleRouteJson = {
   obstacles: [
     {
       type: "rect",
-      isHole: true,
+      isNonPlatedHole: true,
       shape: "circle",
       center: { x: -1.3, y: 0 },
       width: 1.2,
@@ -35,7 +35,7 @@ const srj: SimpleRouteJson = {
     },
     {
       type: "rect",
-      isHole: true,
+      isNonPlatedHole: true,
       center: { x: 1.3, y: 0 },
       width: 1.2,
       height: 1.2,

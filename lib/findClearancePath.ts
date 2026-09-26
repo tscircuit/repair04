@@ -25,7 +25,7 @@ type Barrier = {
   radius: number
   viaOnly?: boolean
   pad?: boolean
-  isHole?: boolean
+  isNonPlatedHole?: boolean
   a: Point
   b: Point
   rect?: { width: number; height: number; rotation: number }
@@ -191,7 +191,7 @@ export function findClearancePath(input: {
     rect?: Barrier["rect"],
     viaOnly = false,
     pad = false,
-    isHole = false,
+    isNonPlatedHole = false,
   ): void => {
     const extent = rect ? Math.hypot(rect.width, rect.height) / 2 : radius
     const rectCos = rect ? Math.cos(rect.rotation) : 1
@@ -220,7 +220,7 @@ export function findClearancePath(input: {
       rect,
       viaOnly,
       pad,
-      isHole,
+      isNonPlatedHole,
       rectCos,
       rectSin,
       rectBounds: rect
@@ -244,7 +244,7 @@ export function findClearancePath(input: {
       obstacle.zLayers ??
       obstacle.layers.map(layer)
     const circularObstacle =
-      (obstacle.isHole && obstacle.shape === "circle") ||
+      (obstacle.isNonPlatedHole && obstacle.shape === "circle") ||
       (obstacle.type === "oval" &&
         obstacle.width === obstacle.height &&
         obstacle.ccwRotationDegrees === undefined &&
@@ -266,7 +266,7 @@ export function findClearancePath(input: {
             },
         viaOnly,
         circularObstacle,
-        obstacle.isHole,
+        obstacle.isNonPlatedHole,
       )
     }
   }
@@ -386,7 +386,7 @@ export function findClearancePath(input: {
           barrier.visitedQuery = currentQuery
           if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
           const requiredGap =
-            barrier.isHole &&
+            barrier.isNonPlatedHole &&
             !isVia &&
             srj.minTraceToHoleEdgeClearance !== undefined
               ? srj.minTraceToHoleEdgeClearance

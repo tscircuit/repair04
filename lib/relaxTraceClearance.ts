@@ -355,7 +355,7 @@ export function relaxTraceClearance(
               viaClearance,
               obstacleNets.has(segment.net),
             )
-          : obstacle.isHole &&
+          : obstacle.isNonPlatedHole &&
               input.srj.minTraceToHoleEdgeClearance !== undefined
             ? input.srj.minTraceToHoleEdgeClearance
             : Math.max(

@@ -25,7 +25,7 @@ test("hole clearance reroutes physical obstacles independently of pad clearance"
         obstacles: [
           {
             type: "rect",
-            isHole: true,
+            isNonPlatedHole: true,
             shape,
             center: { x: 0, y: 0 },
             width: 2,
@@ -99,7 +99,7 @@ test("hole clearance reroutes physical obstacles independently of pad clearance"
       }
       expect(JSON.stringify(srj)).toBe(before)
       // Removing the hole marker selects the ordinary obstacle/pad margin.
-      srj.obstacles[0]!.isHole = false
+      srj.obstacles[0]!.isNonPlatedHole = false
       for (const deficit of [0, 0.01]) {
         const y = height / 2 + 0.1 + 0.35 - deficit
         const route: HighDensityRoute = {
