@@ -1,8 +1,8 @@
-import type { SimpleRouteJson } from "./holeClearanceTypes"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { pointToSegmentClosestPoint } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
+  SimpleRouteJson,
 } from "high-density-repair03/lib"
 import {
   getLocalObstacleGeometry,
@@ -200,10 +200,10 @@ const createEvaluator = ({
         : obstacle.isHole && srj.minTraceToHoleEdgeClearance !== undefined
           ? srj.minTraceToHoleEdgeClearance
           : Math.max(
-            traceClearance,
-            srj.defaultObstacleMargin ?? 0,
-            srj.minTraceToPadEdgeClearance ?? 0,
-          )
+              traceClearance,
+              srj.defaultObstacleMargin ?? 0,
+              srj.minTraceToPadEdgeClearance ?? 0,
+            )
       const viaGap = isBoardEdge
         ? 0
         : Math.max(

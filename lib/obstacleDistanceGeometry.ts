@@ -2,7 +2,7 @@ import {
   segmentToBoundsMinDistance,
   segmentToSegmentMinDistance,
 } from "@tscircuit/math-utils"
-import type { SimpleRouteJson } from "./holeClearanceTypes"
+import type { SimpleRouteJson } from "high-density-repair03/lib"
 
 type Point = { x: number; y: number }
 export type ObstacleDistanceGeometry =

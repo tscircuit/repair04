@@ -355,13 +355,14 @@ export function relaxTraceClearance(
               viaClearance,
               obstacleNets.has(segment.net),
             )
-          : obstacle.isHole && input.srj.minTraceToHoleEdgeClearance !== undefined
+          : obstacle.isHole &&
+              input.srj.minTraceToHoleEdgeClearance !== undefined
             ? input.srj.minTraceToHoleEdgeClearance
             : Math.max(
-              traceClearance,
-              input.srj.defaultObstacleMargin ?? 0,
-              input.srj.minTraceToPadEdgeClearance ?? 0,
-            ))
+                traceClearance,
+                input.srj.defaultObstacleMargin ?? 0,
+                input.srj.minTraceToPadEdgeClearance ?? 0,
+              ))
       padContacts.push({
         segment,
         corners,

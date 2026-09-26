@@ -1,6 +1,6 @@
-import type { SimpleRouteJson } from "./holeClearanceTypes"
 import type {
   HighDensityRoute,
+  SimpleRouteJson,
 } from "high-density-repair03/lib"
 
 export type Bounds = SimpleRouteJson["bounds"]

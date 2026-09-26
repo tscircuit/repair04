@@ -1,4 +1,3 @@
-import type { SimpleRouteJson } from "./holeClearanceTypes"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import {
   segmentToBoundsMinDistance,
@@ -6,6 +5,7 @@ import {
 } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
+  SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { ClearancePathHeap } from "./ClearancePathHeap"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
@@ -180,6 +180,7 @@ export function findClearancePath(input: {
     input.viaClearance,
     srj.defaultObstacleMargin ?? 0,
     srj.minTraceToPadEdgeClearance ?? 0,
+    srj.minTraceToHoleEdgeClearance ?? 0,
     srj.minViaEdgeToPadEdgeClearance ?? 0,
   ].every((value) => Number.isFinite(value) && Math.abs(value) <= 10_000)
   const barriers: Barrier[] = []
@@ -242,20 +243,21 @@ export function findClearancePath(input: {
       (obstacle as typeof obstacle & { __zLayers?: number[] }).__zLayers ??
       obstacle.zLayers ??
       obstacle.layers.map(layer)
-    const circularPlatedHole = (obstacle.isHole && obstacle.shape === "circle") || (
-      obstacle.type === "oval" &&
-      obstacle.width === obstacle.height &&
-      obstacle.ccwRotationDegrees === undefined &&
-      zs.length > 1)
+    const circularObstacle =
+      (obstacle.isHole && obstacle.shape === "circle") ||
+      (obstacle.type === "oval" &&
+        obstacle.width === obstacle.height &&
+        obstacle.ccwRotationDegrees === undefined &&
+        zs.length > 1)
     for (const z of zs) {
-      // Round through-hole copper has a circular outline. SMT pads and other
-      // pad shapes retain the conservative rectangle used for validation.
+      // Circular holes and round through-hole copper use their physical outline.
+      // Other pads retain the conservative rectangle used for validation.
       const center = { ...obstacle.center, z }
       add(
         center,
         center,
-        circularPlatedHole ? obstacle.width / 2 : 0,
-        circularPlatedHole
+        circularObstacle ? obstacle.width / 2 : 0,
+        circularObstacle
           ? undefined
           : {
               width: obstacle.width,
@@ -263,7 +265,7 @@ export function findClearancePath(input: {
               rotation: ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180,
             },
         viaOnly,
-        circularPlatedHole,
+        circularObstacle,
         obstacle.isHole,
       )
     }
@@ -358,7 +360,8 @@ export function findClearancePath(input: {
         ? (srj.minViaEdgeToPadEdgeClearance ?? 0)
         : (srj.minTraceToPadEdgeClearance ?? 0),
     )
-    const reach = radius + Math.max(margin, srj.minTraceToHoleEdgeClearance ?? 0) + 1e-5
+    const reach =
+      radius + Math.max(margin, srj.minTraceToHoleEdgeClearance ?? 0) + 1e-5
     // Barriers belong to this synchronous search only. A visit stamp preserves
     // the original first-seen order without allocating a Set for each edge.
     const currentQuery = ++queryId
@@ -383,15 +386,17 @@ export function findClearancePath(input: {
           barrier.visitedQuery = currentQuery
           if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
           const requiredGap =
-            barrier.isHole && !isVia && srj.minTraceToHoleEdgeClearance !== undefined
+            barrier.isHole &&
+            !isVia &&
+            srj.minTraceToHoleEdgeClearance !== undefined
               ? srj.minTraceToHoleEdgeClearance
               : barrier.viaOnly
-              ? getViaPadClearance(srj, input.viaClearance, true)
-              : barrier.rect || barrier.pad
-                ? margin
-                : isVia && barrier.minZ !== barrier.maxZ
-                  ? input.viaClearance
-                  : input.traceClearance
+                ? getViaPadClearance(srj, input.viaClearance, true)
+                : barrier.rect || barrier.pad
+                  ? margin
+                  : isVia && barrier.minZ !== barrier.maxZ
+                    ? input.viaClearance
+                    : input.traceClearance
           const clearance = radius + requiredGap
           // These bounds enclose the entire copper/rotated obstacle. Strict
           // separation can only rule out a collision; exact boundary cases
