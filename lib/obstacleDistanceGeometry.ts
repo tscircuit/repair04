@@ -15,6 +15,14 @@ export type ObstacleDistanceGeometry =
 export function getLocalObstacleGeometry(
   obstacle: SimpleRouteJson["obstacles"][number],
 ): ObstacleDistanceGeometry {
+  if (obstacle.isNonPlatedHole && obstacle.shape === "circle") {
+    return {
+      type: "oval",
+      a: { x: 0, y: 0 },
+      b: { x: 0, y: 0 },
+      radius: obstacle.width / 2,
+    }
+  }
   if (obstacle.type === "rect") {
     return {
       type: "rect",

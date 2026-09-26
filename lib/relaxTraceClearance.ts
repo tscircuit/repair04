@@ -324,6 +324,7 @@ export function relaxTraceClearance(
           viaClearance,
           input.srj.defaultObstacleMargin ?? 0,
           input.srj.minTraceToPadEdgeClearance ?? 0,
+          input.srj.minTraceToHoleEdgeClearance ?? 0,
           input.srj.minViaEdgeToPadEdgeClearance ?? 0,
         ) +
         Math.SQRT2 * MAX_DISPLACEMENT
@@ -354,11 +355,14 @@ export function relaxTraceClearance(
               viaClearance,
               obstacleNets.has(segment.net),
             )
-          : Math.max(
-              traceClearance,
-              input.srj.defaultObstacleMargin ?? 0,
-              input.srj.minTraceToPadEdgeClearance ?? 0,
-            ))
+          : obstacle.isNonPlatedHole &&
+              input.srj.minTraceToHoleEdgeClearance !== undefined
+            ? input.srj.minTraceToHoleEdgeClearance
+            : Math.max(
+                traceClearance,
+                input.srj.defaultObstacleMargin ?? 0,
+                input.srj.minTraceToPadEdgeClearance ?? 0,
+              ))
       padContacts.push({
         segment,
         corners,
