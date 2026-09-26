@@ -242,7 +242,7 @@ export function findClearancePath(input: {
       (obstacle as typeof obstacle & { __zLayers?: number[] }).__zLayers ??
       obstacle.zLayers ??
       obstacle.layers.map(layer)
-    const circularPlatedHole = obstacle.shape === "circle" || (
+    const circularPlatedHole = (obstacle.isHole && obstacle.shape === "circle") || (
       obstacle.type === "oval" &&
       obstacle.width === obstacle.height &&
       obstacle.ccwRotationDegrees === undefined &&
