@@ -1,3 +1,4 @@
+import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import type { HighDensityRoute } from "high-density-repair03/lib"
 import {
@@ -208,8 +209,7 @@ export function relaxTraceClearance(
           minY: Math.min(va.y, vb.y),
           maxY: Math.max(va.y, vb.y),
         },
-        minZ: Math.min(a.z, b.z),
-        maxZ: Math.max(a.z, b.z),
+        ...getRepairCopperLayerSpan(input.srj, a, b),
         radius: via
           ? route.viaDiameter / 2
           : Math.max(
@@ -324,6 +324,7 @@ export function relaxTraceClearance(
           viaClearance,
           input.srj.defaultObstacleMargin ?? 0,
           input.srj.minTraceToPadEdgeClearance ?? 0,
+          input.srj.minTraceToHoleEdgeClearance ?? 0,
           input.srj.minViaEdgeToPadEdgeClearance ?? 0,
         ) +
         Math.SQRT2 * MAX_DISPLACEMENT
@@ -354,11 +355,14 @@ export function relaxTraceClearance(
               viaClearance,
               obstacleNets.has(segment.net),
             )
-          : Math.max(
-              traceClearance,
-              input.srj.defaultObstacleMargin ?? 0,
-              input.srj.minTraceToPadEdgeClearance ?? 0,
-            ))
+          : obstacle.isNonPlatedHole &&
+              input.srj.minTraceToHoleEdgeClearance !== undefined
+            ? input.srj.minTraceToHoleEdgeClearance
+            : Math.max(
+                traceClearance,
+                input.srj.defaultObstacleMargin ?? 0,
+                input.srj.minTraceToPadEdgeClearance ?? 0,
+              ))
       padContacts.push({
         segment,
         corners,

@@ -1,3 +1,4 @@
+import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import {
   getRepairViaGeometry,
   type RepairViaGeometry,
@@ -41,7 +42,7 @@ type StaticContext = Pick<
   | "connections"
   | "defaultObstacleMargin"
   | "minViaEdgeToPadEdgeClearance"
->
+> & { allowBlindAndBuriedVias?: boolean }
 type RouteInput = Omit<NewViaPadViolationInput, "srj" | "viaClearance">
 type Contact = { obstacleIndex: number; severity: number }
 type PreparedObstacle = {
@@ -81,6 +82,7 @@ const createEvaluator = ({
     const cached = contactsByVia.get(via.identity)
     if (cached) return cached
     const contacts: Contact[] = []
+    const span = getRepairCopperLayerSpan(srj, { z: via.minZ }, { z: via.maxZ })
     for (
       let obstacleIndex = 0;
       obstacleIndex < srj.obstacles.length;
@@ -113,7 +115,7 @@ const createEvaluator = ({
         prepared = { zs }
         preparedObstacles.set(obstacleIndex, prepared)
       }
-      if (!prepared.zs.some((z): boolean => z >= via.minZ && z <= via.maxZ))
+      if (!prepared.zs.some((z): boolean => z >= span.minZ && z <= span.maxZ))
         continue
       // Geometry validation remains lazy: the original guard only validates
       // rectangles on a checked via's span, after validating all layer names.
@@ -324,6 +326,8 @@ export const createNewViaPadViolationEvaluator = ({
   createEvaluator({
     srj: {
       layerCount: srj.layerCount,
+      allowBlindAndBuriedVias:
+        "allowBlindAndBuriedVias" in srj && srj.allowBlindAndBuriedVias === true,
       obstacles: structuredClone(srj.obstacles),
       connections: structuredClone(srj.connections),
       defaultObstacleMargin: srj.defaultObstacleMargin,

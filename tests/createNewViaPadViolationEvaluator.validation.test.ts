@@ -22,6 +22,7 @@ test("static preparation preserves lazy obstacle validation and route validation
       },
     ],
   }
+  Object.assign(srj, { allowBlindAndBuriedVias: true })
   const route: HighDensityRoute = {
     connectionName: "signal",
     traceThickness: 0.1,
