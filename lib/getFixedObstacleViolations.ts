@@ -197,11 +197,13 @@ const createEvaluator = ({
         obstacle.obstacleId?.startsWith("repair04_board_edge_") === true
       const wireGap = isBoardEdge
         ? 0
-        : Math.max(
-            traceClearance,
-            srj.defaultObstacleMargin ?? 0,
-            srj.minTraceToPadEdgeClearance ?? 0,
-          )
+        : obstacle.isNonPlatedHole && srj.minTraceToHoleEdgeClearance !== undefined
+          ? srj.minTraceToHoleEdgeClearance
+          : Math.max(
+              traceClearance,
+              srj.defaultObstacleMargin ?? 0,
+              srj.minTraceToPadEdgeClearance ?? 0,
+            )
       const viaGap = isBoardEdge
         ? 0
         : Math.max(
