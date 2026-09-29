@@ -196,16 +196,7 @@
       false,
       false
     ],
-    [
-      false,
-      false,
-      false,
-      false,
-      false,
-      false,
-      false,
-      false
-    ]
+    [false, false, false, false, false, false, false, false]
   ],
   "allowViaMovement": true,
   "traceClearance": 0.13,

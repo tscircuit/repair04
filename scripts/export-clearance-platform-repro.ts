@@ -5,7 +5,10 @@ import { relaxTraceClearance } from "../lib/relaxTraceClearance"
 const outputDirectory = process.argv[2]
 if (!outputDirectory) throw new Error("Expected output directory")
 const inputText = readFileSync(
-  new URL("../tests/fixtures/gameboy-clearance-projection.json", import.meta.url),
+  new URL(
+    "../tests/fixtures/gameboy-clearance-projection.json",
+    import.meta.url,
+  ),
   "utf8",
 )
 const input: Parameters<typeof relaxTraceClearance>[0] = JSON.parse(inputText)

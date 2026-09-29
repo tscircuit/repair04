@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { relaxTraceClearance } from "../lib/relaxTraceClearance"
+import type { RepairRoutePoint } from "../lib/repairRegionTypes"
 
 test("Game Boy clearance projection preserves terminals, layers and widths", (): void => {
   // Unrounded trace sections from the first divergent Game Boy projection.
@@ -23,8 +24,10 @@ test("Game Boy clearance projection preserves terminals, layers and widths", ():
     expect(route.route.map((point) => point.z)).toEqual(
       original.route.map((point) => point.z),
     )
-    expect(route.route.map((point) => point.traceThickness)).toEqual(
-      original.route.map((point) => point.traceThickness),
+    expect(
+      route.route.map((point: RepairRoutePoint) => point.traceThickness),
+    ).toEqual(
+      original.route.map((point: RepairRoutePoint) => point.traceThickness),
     )
     expect(route.traceThickness).toBe(original.traceThickness)
     expect(route.viaDiameter).toBe(original.viaDiameter)
