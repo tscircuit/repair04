@@ -1,4 +1,5 @@
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
+import { getVectorLength } from "./getVectorLength"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import type { HighDensityRoute } from "high-density-repair03/lib"
 import {
@@ -91,7 +92,7 @@ function getContact(a: Point, b: Point, c: Point, d: Point): Contact {
   }
   const x = a.x + s * ux - c.x - t * vx
   const y = a.y + s * uy - c.y - t * vy
-  return { s, t, x, y, distance: Math.hypot(x, y) }
+  return { s, t, x, y, distance: getVectorLength(x, y) }
 }
 
 /** Signed distance to the nearest face of a containing convex pad. */
@@ -109,7 +110,7 @@ function getInteriorPadContact(
       b = corners[(i + 1) % corners.length]!
     const dx = b.x - a.x,
       dy = b.y - a.y
-    const length = Math.hypot(dx, dy)
+    const length = getVectorLength(dx, dy)
     const x = dy / length,
       y = -dx / length
     const depth = -((point.x - a.x) * x + (point.y - a.y) * y)
