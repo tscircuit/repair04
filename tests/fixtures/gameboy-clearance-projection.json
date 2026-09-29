@@ -1,0 +1,213 @@
+{
+  "srj": {
+    "layerCount": 4,
+    "minTraceWidth": 0.1,
+    "minViaDiameter": 0.45,
+    "allowBlindAndBuriedVias": false,
+    "bounds": {
+      "minX": -73.25,
+      "maxX": 73.25,
+      "minY": -42,
+      "maxY": 42
+    },
+    "obstacles": [],
+    "connections": [
+      {
+        "name": "source_trace_99",
+        "pointsToConnect": []
+      },
+      {
+        "name": "source_trace_100",
+        "pointsToConnect": []
+      }
+    ]
+  },
+  "routes": [
+    {
+      "connectionName": "source_trace_99",
+      "rootConnectionName": "source_trace_99",
+      "traceThickness": 0.1,
+      "viaDiameter": 0.45,
+      "route": [
+        {
+          "x": -0.9150091677259807,
+          "y": 19.947026101406575,
+          "z": 0,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.9150091677259807,
+          "y": 19.947026101406575,
+          "z": 1,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.9150091677259807,
+          "y": 19.835800957248093,
+          "z": 1,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.8220330762575239,
+          "y": 19.742824865779635,
+          "z": 1,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.676,
+          "y": 19.537,
+          "z": 1,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.6652569189687806,
+          "y": 19.390769750267882,
+          "z": 1,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.6652569189687806,
+          "y": 19.390769750267882,
+          "z": 0,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.6592822003408719,
+          "y": 19.25205451198223,
+          "z": 0,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.6592822003408719,
+          "y": 19.152529181582608,
+          "z": 0,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.6592822003408719,
+          "y": 18.784282200340872,
+          "z": 0,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.6000999999999996,
+          "y": 18.724923,
+          "z": 0,
+          "traceThickness": 0.1,
+          "pcb_port_id": "pcb_port_24"
+        }
+      ],
+      "vias": [
+        {
+          "x": -0.9150091677259807,
+          "y": 19.947026101406575
+        },
+        {
+          "x": -0.6652569189687806,
+          "y": 19.390769750267882
+        }
+      ],
+      "jumpers": []
+    },
+    {
+      "connectionName": "source_trace_100",
+      "rootConnectionName": "source_trace_100",
+      "traceThickness": 0.1,
+      "viaDiameter": 0.45,
+      "route": [
+        {
+          "x": 0.292826853776565,
+          "y": 19.768350975017494,
+          "z": 1,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.16193701544021585,
+          "y": 19.313587105800714,
+          "z": 1,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.2952619265760646,
+          "y": 19.451679857547955,
+          "z": 1,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.2952619265760646,
+          "y": 19.451679857547955,
+          "z": 0,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.2,
+          "y": 19.227,
+          "z": 0,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.20066045022662587,
+          "y": 19.228805230619443,
+          "z": 0,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.20066045022662587,
+          "y": 18.725660450226627,
+          "z": 0,
+          "traceThickness": 0.1
+        },
+        {
+          "x": -0.20004999999999956,
+          "y": 18.724923,
+          "z": 0,
+          "traceThickness": 0.1,
+          "pcb_port_id": "pcb_port_23"
+        }
+      ],
+      "vias": [
+        {
+          "x": -0.2952619265760646,
+          "y": 19.451679857547955
+        }
+      ],
+      "jumpers": []
+    }
+  ],
+  "bounds": {
+    "minX": -73.25,
+    "maxX": 73.25,
+    "minY": -42,
+    "maxY": 42
+  },
+  "boundaryMargin": 0,
+  "boardEdgeClearance": 0.2,
+  "lockedPointIndices": [
+    [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ],
+    [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  ],
+  "allowViaMovement": true,
+  "traceClearance": 0.13,
+  "viaClearance": 0.1
+}

@@ -2,6 +2,7 @@
 name: Bun Test
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
@@ -9,12 +10,46 @@ on:
       - '!version-bumps/**'
 
 jobs:
+  projection:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - run: bun install --network-concurrency 8
+      - run: bun scripts/export-clearance-platform-repro.ts result
+      - uses: actions/upload-artifact@v4
+        with:
+          name: projection-${{ matrix.os }}
+          path: result/
+
+  compare-projection:
+    if: github.event_name == 'workflow_dispatch'
+    needs: projection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - uses: actions/download-artifact@v4
+        with:
+          path: results
+      - run: bun scripts/compare-clearance-platform-repro.ts results/projection-ubuntu-latest results/projection-macos-14
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     # Skip test for PRs that not chore: bump version
-    if: "${{ github.event_name != 'pull_request' || github.event.pull_request.title != 'chore: bump version' }}"
+    if: "${{ github.event_name != 'workflow_dispatch' && (github.event_name != 'pull_request' || github.event.pull_request.title != 'chore: bump version') }}"
 
     steps:
       - name: Checkout code
