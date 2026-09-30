@@ -399,6 +399,7 @@ export function relaxTraceClearance(
       }
     }
   }
+  let movedInSweep = false
   const project = (
     weights: [Vertex, number][],
     nx: number,
@@ -451,11 +452,14 @@ export function relaxTraceClearance(
       )
         continue
       if (vertex.x !== x || vertex.y !== y) vertex.revision++
+      if (!Object.is(vertex.x, x) || !Object.is(vertex.y, y))
+        movedInSweep = true
       vertex.x = x
       vertex.y = y
     }
   }
   for (let sweep = 0; sweep < MAX_SWEEPS; sweep++) {
+    movedInSweep = false
     // Distances depend only on endpoint coordinates. Reuse them until an
     // actual displacement changes a revision; force order and sweeps stay fixed.
     for (const pair of pairs) {
@@ -542,6 +546,9 @@ export function relaxTraceClearance(
         required - contact.distance,
       )
     }
+    // Every constraint has seen the same unchanged geometry. Another sweep
+    // would repeat it exactly, including contacts that locked vertices cannot fix.
+    if (!movedInSweep) break
   }
   for (const vertex of vertices.values()) {
     for (const point of vertex.points) {
