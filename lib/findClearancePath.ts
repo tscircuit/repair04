@@ -506,7 +506,8 @@ export function findClearancePath(input: {
   const heuristic = (p: Point): number =>
     Math.hypot(p.x - end.x, p.y - end.y) + (p.z === end.z ? 0 : 1)
   const denseNodeCount = nx * ny * srj.layerCount
-  // Bound dense queue storage to 4 MB; unusually large grids remain sparse.
+  // Bound dense queue, cost and predecessor storage to 16 MB; unusually large
+  // grids remain sparse. Both representations use the same search ordering.
   const useDenseStorage =
     nx > 0 &&
     ny > 0 &&
@@ -522,6 +523,12 @@ export function findClearancePath(input: {
   )
   const costs = new Map<number, number>()
   const previous = new Map<number, number>()
+  const denseState = useDenseStorage
+    ? {
+        costs: new Float64Array(denseNodeCount).fill(Infinity),
+        previous: new Int32Array(denseNodeCount),
+      }
+    : undefined
   const viaPaths = new Map<number, ViaPath | undefined>()
   const startId = idOf(start),
     sx = startId % nx,
@@ -537,8 +544,13 @@ export function findClearancePath(input: {
       const cost =
         Math.hypot(p.x - start.x, p.y - start.y) + extraCost(start, p)
       if (!Number.isFinite(cost)) continue
-      costs.set(id, cost)
-      previous.set(id, -1)
+      if (denseState) {
+        denseState.costs[id] = cost
+        denseState.previous[id] = -1
+      } else {
+        costs.set(id, cost)
+        previous.set(id, -1)
+      }
       heap.push({ id, cost, priority: cost + heuristicWeight * heuristic(p) })
     }
   const gridNodeCount = nx * ny * srj.layerCount
@@ -566,7 +578,11 @@ export function findClearancePath(input: {
     const current = heap.pop()
     expanded++
     if (input.stats) input.stats.nodesPopped = expanded
-    if (current.cost !== costs.get(current.id)) continue
+    if (
+      current.cost !==
+      (denseState ? denseState.costs[current.id] : costs.get(current.id))
+    )
+      continue
     settled?.add(current.id)
     const a = point(current.id)
     const viaPath = viaPaths.get(current.id)
@@ -577,7 +593,11 @@ export function findClearancePath(input: {
       Number.isFinite(extraCost(a, end))
     ) {
       const reversed: Point[] = [end]
-      for (let id = current.id; id !== -1; id = previous.get(id)!)
+      for (
+        let id = current.id;
+        id !== -1;
+        id = denseState ? denseState.previous[id]! : previous.get(id)!
+      )
         reversed.push(point(id))
       reversed.push(start)
       const path = reversed.reverse(),
@@ -639,7 +659,9 @@ export function findClearancePath(input: {
     }
     for (const id of neighbors) {
       if (settled?.has(id)) continue
-      const previousCost = costs.get(id) ?? Infinity
+      const previousCost = denseState
+        ? denseState.costs[id]!
+        : (costs.get(id) ?? Infinity)
       // Edge length and congestion are nonnegative. If the current path
       // already costs too much, no geometry calculation can improve this state.
       if (current.cost >= previousCost) continue
@@ -679,8 +701,13 @@ export function findClearancePath(input: {
         viaPaths.set(id, { x: a.x, y: a.y, previous: viaPath })
       else if (viaPath) viaPaths.set(id, viaPath)
       else viaPaths.delete(id)
-      costs.set(id, cost)
-      previous.set(id, current.id)
+      if (denseState) {
+        denseState.costs[id] = cost
+        denseState.previous[id] = current.id
+      } else {
+        costs.set(id, cost)
+        previous.set(id, current.id)
+      }
       heap.push({ id, cost, priority: cost + heuristicWeight * heuristic(b) })
     }
   }
