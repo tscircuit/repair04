@@ -35,6 +35,11 @@ type Copper = {
   cellY: number
   immutable: boolean
 }
+type CopperIndex = {
+  index: Flatbush
+  copper: Copper[]
+  searchWindow?: Bounds & { candidates: number[] }
+}
 export type NegotiatedClearanceInput = {
   srj: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean }
   routes: HighDensityRoute[]
@@ -314,7 +319,7 @@ export function negotiateTraceClearance(
     }
     const createCopperIndex = (
       indexedCopper: Copper[],
-    ): { index: Flatbush; copper: Copper[] } | undefined => {
+    ): CopperIndex | undefined => {
       if (!indexedCopper.length) return undefined
       const index = new Flatbush(indexedCopper.length)
       for (const copper of indexedCopper) {
@@ -329,10 +334,7 @@ export function negotiateTraceClearance(
       return { index, copper: indexedCopper }
     }
     const copperIndex = createCopperIndex(coppers)
-    const copperByLayer = new Map<
-      number,
-      { index: Flatbush; copper: Copper[] } | undefined
-    >()
+    const copperByLayer = new Map<number, CopperIndex | undefined>()
     for (let z = 0; z < input.srj.layerCount; z++) {
       copperByLayer.set(
         z,
@@ -358,15 +360,57 @@ export function negotiateTraceClearance(
       const hits: Array<{ copper: Copper; ratio: number }> = []
       const span = getRepairCopperLayerSpan(input.srj, a, b)
       const activeIndex = via ? copperIndex : copperByLayer.get(a.z)
-      const candidates =
-        activeIndex?.index.search(
-          minX - reach - REGION_EPSILON,
-          minY - reach - REGION_EPSILON,
-          maxX + reach + REGION_EPSILON,
-          maxY + reach + REGION_EPSILON,
-        ) ?? []
+      if (!activeIndex) return hits
+      const queryMinX = minX - reach - REGION_EPSILON,
+        queryMinY = minY - reach - REGION_EPSILON,
+        queryMaxX = maxX + reach + REGION_EPSILON,
+        queryMaxY = maxY + reach + REGION_EPSILON
+      // Neighboring edges repeatedly visit the same fixed copper. Retain one
+      // enclosing search per index, then filter back to the exact query below.
+      // Long anchor/simplification edges must not seed a board-wide window.
+      const localEdge = maxX - minX <= reach && maxY - minY <= reach
+      let candidates: number[]
+      if (localEdge) {
+        let window = activeIndex.searchWindow
+        if (
+          !window ||
+          queryMinX < window.minX ||
+          queryMinY < window.minY ||
+          queryMaxX > window.maxX ||
+          queryMaxY > window.maxY
+        ) {
+          window = {
+            minX: queryMinX - reach,
+            minY: queryMinY - reach,
+            maxX: queryMaxX + reach,
+            maxY: queryMaxY + reach,
+            candidates: activeIndex.index.search(
+              queryMinX - reach,
+              queryMinY - reach,
+              queryMaxX + reach,
+              queryMaxY + reach,
+            ),
+          }
+          activeIndex.searchWindow = window
+        }
+        candidates = window.candidates
+      } else {
+        candidates = activeIndex.index.search(
+          queryMinX,
+          queryMinY,
+          queryMaxX,
+          queryMaxY,
+        )
+      }
       for (const candidate of candidates) {
-        const copper = activeIndex!.copper[candidate]!
+        const copper = activeIndex.copper[candidate]!
+        if (
+          copper.maxX + copper.radius + REGION_EPSILON < queryMinX ||
+          copper.maxY + copper.radius + REGION_EPSILON < queryMinY ||
+          copper.minX - copper.radius - REGION_EPSILON > queryMaxX ||
+          copper.minY - copper.radius - REGION_EPSILON > queryMaxY
+        )
+          continue
         const bothVias = via && copper.minZ !== copper.maxZ
         const sharedLayers =
           copper.minZ <= span.maxZ && copper.maxZ >= span.minZ
