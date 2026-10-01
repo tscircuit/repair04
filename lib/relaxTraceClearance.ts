@@ -417,7 +417,7 @@ export function relaxTraceClearance(
     if (mass < 1e-15) return
     const scale = Math.min(0.05, deficit * 0.7) / mass
     for (const [vertex, weight] of combined) {
-      const x = Math.max(
+      let x = Math.max(
         vertex.bounds.minX,
         vertex.original.x - MAX_DISPLACEMENT,
         Math.min(
@@ -426,7 +426,7 @@ export function relaxTraceClearance(
           vertex.x + nx * scale * weight,
         ),
       )
-      const y = Math.max(
+      let y = Math.max(
         vertex.bounds.minY,
         vertex.original.y - MAX_DISPLACEMENT,
         Math.min(
@@ -435,21 +435,64 @@ export function relaxTraceClearance(
           vertex.y + ny * scale * weight,
         ),
       )
-      // Wire constraints must never move a via through a fixed solder pad.
-      // Test its proposed position against every nearby pad before moving it.
+      const constraints = viaPadConstraints.get(vertex) ?? []
+      // Keep the tangential part of a correction blocked by a pad. Rejecting
+      // the entire correction also prevents a via from sliding along its edge.
+      for (const pad of constraints) {
+        const dx = x - pad.center.x,
+          dy = y - pad.center.y
+        let localX = dx * pad.cosine + dy * pad.sine
+        let localY = -dx * pad.sine + dy * pad.cosine
+        let nearestX: number,
+          nearestY: number
+        let required = pad.clearance
+        if (pad.shape.type === "rect") {
+          const { minX, maxX, minY, maxY } = pad.shape.bounds
+          nearestX = Math.max(minX, Math.min(maxX, localX))
+          nearestY = Math.max(minY, Math.min(maxY, localY))
+          if (localX === nearestX && localY === nearestY) continue
+        } else {
+          const { a, b, radius } = pad.shape
+          const sx = b.x - a.x,
+            sy = b.y - a.y,
+            lengthSquared = sx * sx + sy * sy
+          const t = lengthSquared > 0
+            ? Math.max(0, Math.min(1,
+                ((localX - a.x) * sx + (localY - a.y) * sy) / lengthSquared,
+              ))
+            : 0
+          nearestX = a.x + sx * t
+          nearestY = a.y + sy * t
+          required += radius
+        }
+        const nx = localX - nearestX,
+          ny = localY - nearestY
+        const distance = getVectorLength(nx, ny)
+        if (distance >= required || distance < 1e-15) continue
+        // Leave the geometric tolerance outside the boundary so transforming
+        // back to board coordinates cannot put the annulus inside the pad.
+        localX = nearestX + nx * (required + REGION_EPSILON) / distance
+        localY = nearestY + ny * (required + REGION_EPSILON) / distance
+        x = pad.center.x + localX * pad.cosine - localY * pad.sine
+        y = pad.center.y + localX * pad.sine + localY * pad.cosine
+      }
+      // Sliding around one pad must still respect every other pad, the board
+      // boundary and the displacement allowance used by the contact index.
       if (
-        viaPadConstraints.get(vertex)?.some((pad): boolean => {
+        x < vertex.bounds.minX || x > vertex.bounds.maxX ||
+        y < vertex.bounds.minY || y > vertex.bounds.maxY ||
+        Math.abs(x - vertex.original.x) > MAX_DISPLACEMENT ||
+        Math.abs(y - vertex.original.y) > MAX_DISPLACEMENT ||
+        constraints.some((pad): boolean => {
           const dx = x - pad.center.x,
             dy = y - pad.center.y
-          const localX = dx * pad.cosine + dy * pad.sine
-          const localY = -dx * pad.sine + dy * pad.cosine
-          const local = { x: localX, y: localY }
-          return (
-            getLocalObstacleDistance(local, local, pad.shape) < pad.clearance
-          )
+          const local = {
+            x: dx * pad.cosine + dy * pad.sine,
+            y: -dx * pad.sine + dy * pad.cosine,
+          }
+          return getLocalObstacleDistance(local, local, pad.shape) < pad.clearance
         })
-      )
-        continue
+      ) continue
       if (vertex.x !== x || vertex.y !== y) vertex.revision++
       vertex.x = x
       vertex.y = y
