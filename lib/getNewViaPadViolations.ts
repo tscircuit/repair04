@@ -204,7 +204,9 @@ const createEvaluator = ({
       const owner = nets.get(route.connectionName) ?? route.connectionName
       const getRouteContacts = (via: RepairViaGeometry): Contact[] =>
         getContacts(via).flatMap((contact): Contact[] => {
-          const sameNet = srj.obstacles[contact.obstacleIndex]!.connectedTo.some(
+          const sameNet = srj.obstacles[
+            contact.obstacleIndex
+          ]!.connectedTo.some(
             (name): boolean => (nets!.get(name) ?? name) === owner,
           )
           const severity =
@@ -327,7 +329,8 @@ export const createNewViaPadViolationEvaluator = ({
     srj: {
       layerCount: srj.layerCount,
       allowBlindAndBuriedVias:
-        "allowBlindAndBuriedVias" in srj && srj.allowBlindAndBuriedVias === true,
+        "allowBlindAndBuriedVias" in srj &&
+        srj.allowBlindAndBuriedVias === true,
       obstacles: structuredClone(srj.obstacles),
       connections: structuredClone(srj.connections),
       defaultObstacleMargin: srj.defaultObstacleMargin,

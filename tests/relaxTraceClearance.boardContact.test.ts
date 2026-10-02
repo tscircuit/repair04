@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test"
 import { pointToSegmentDistance } from "@tscircuit/math-utils"
-import type { HighDensityRoute, SimpleRouteJson } from "high-density-repair03/lib"
+import type {
+  HighDensityRoute,
+  SimpleRouteJson,
+} from "high-density-repair03/lib"
 import { relaxTraceClearance } from "../lib/relaxTraceClearance"
 
 test("coupled projection preserves incoming board clearance while opening a via gap", (): void => {
@@ -53,11 +56,8 @@ test("coupled projection preserves incoming board clearance while opening a via 
   const via = result[0]!.route[1]!
   expect(via.x - srj.bounds.minX - 0.15).toBeGreaterThanOrEqual(0.2 - 1e-9)
   expect(
-    pointToSegmentDistance(
-      via,
-      result[1]!.route[1]!,
-      result[1]!.route[2]!,
-    ) - 0.2,
+    pointToSegmentDistance(via, result[1]!.route[1]!, result[1]!.route[2]!) -
+      0.2,
   ).toBeGreaterThanOrEqual(0.1 - 1e-6)
   expect(result[1]!.route[1]!.x).toBeGreaterThan(routes[1]!.route[1]!.x)
   expect(result[0]!.route[2]).toEqual({ ...via, z: 1 })
