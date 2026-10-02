@@ -28,3 +28,13 @@ export {
   type NegotiatedClearanceInput,
   type NegotiatedClearanceResult,
 } from "./negotiateTraceClearance"
+
+export { FindClearancePathSolver } from "./FindClearancePathSolver"
+export { findClearancePath } from "./findClearancePath"
+export { NegotiateTraceClearanceSolver } from "./NegotiateTraceClearanceSolver"
+export { RelaxTraceClearanceSolver } from "./RelaxTraceClearanceSolver"
+export type {
+  ClearancePathInput,
+  ClearancePathSearchStats,
+} from "./findClearancePath"
+export type { RelaxTraceClearanceInput } from "./relaxTraceClearance"

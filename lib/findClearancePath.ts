@@ -41,6 +41,8 @@ export type ClearancePathSearchStats = {
   completionReason: "found" | "no-path" | "node-limit"
 }
 
+export type ClearancePathInput = Parameters<typeof findClearancePath>[0]
+
 /** Clearance-aware routing between fixed anchors, using only cropped context. */
 export function findClearancePath(input: {
   srj: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean }
@@ -71,7 +73,9 @@ export function findClearancePath(input: {
   const { srj, routes, routeIndex, start, end, bounds, traceThickness } = input
   const heuristicWeight = input.heuristicWeight ?? 1
   if (!Number.isFinite(heuristicWeight) || heuristicWeight < 1)
-    throw new Error("repair04: heuristic weight must be finite and at least one")
+    throw new Error(
+      "repair04: heuristic weight must be finite and at least one",
+    )
   const extraCost = (a: Point, b: Point): number => {
     const value = input.getAdditionalEdgeCost?.(a, b) ?? 0
     if (Number.isNaN(value) || value < 0)
@@ -641,8 +645,7 @@ export function findClearancePath(input: {
       if (settled?.has(id)) continue
       const b = point(id),
         baseCost =
-          current.cost +
-          (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
+          current.cost + (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
         previousCost = costs.get(id) ?? Infinity
       // Congestion costs are nonnegative, so an edge that cannot improve the
       // geometric cost cannot improve the complete cost either.

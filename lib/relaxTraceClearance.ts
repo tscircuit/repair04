@@ -120,6 +120,13 @@ function getInteriorPadContact(
   return contact
 }
 
+export type RelaxTraceClearanceInput = RepairRegionInput & {
+  traceClearance?: number
+  viaClearance?: number
+  allowViaMovement?: boolean
+  boardEdgeClearance?: number
+}
+
 /**
  * Project coupled clearance constraints without changing routing topology.
  * The caller must validate the resulting candidate before publishing it.
@@ -509,12 +516,7 @@ export function relaxTraceClearance(
         segment.a.revision !== pad.revisions[0] ||
         segment.b.revision !== pad.revisions[1]
       ) {
-        let nearest = getContact(
-          segment.a,
-          segment.b,
-          corners[0]!,
-          corners[1]!,
-        )
+        let nearest = getContact(segment.a, segment.b, corners[0]!, corners[1]!)
         for (let i = 1; i < corners.length; i++) {
           const candidate = getContact(
             segment.a,
