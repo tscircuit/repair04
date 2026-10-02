@@ -42,7 +42,9 @@ test("coarser path searches preserve anchors and pad clearance with less work", 
     expect(result.routes[0]!.route).not.toEqual(routes[0]!.route)
     expect(result.routes[0]!.route[0]).toEqual(routes[0]!.route[0])
     expect(result.routes[0]!.route.at(-1)).toEqual(routes[0]!.route.at(-1))
-    expect(getFixedObstacleViolations({ srj, routes: result.routes })).toEqual([])
+    expect(getFixedObstacleViolations({ srj, routes: result.routes })).toEqual(
+      [],
+    )
   }
   expect(coarse.pathSearchNodes).toBeLessThan(fine.pathSearchNodes)
   for (const scale of [0, -1, Infinity, NaN]) {

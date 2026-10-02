@@ -102,9 +102,12 @@ export function negotiateTraceClearance(
     throw new Error("repair04: per-path work budget must be a positive integer")
   if (
     input.pathHeuristicWeight !== undefined &&
-    (!Number.isFinite(input.pathHeuristicWeight) || input.pathHeuristicWeight < 1)
+    (!Number.isFinite(input.pathHeuristicWeight) ||
+      input.pathHeuristicWeight < 1)
   )
-    throw new Error("repair04: heuristic weight must be finite and at least one")
+    throw new Error(
+      "repair04: heuristic weight must be finite and at least one",
+    )
   if (
     input.pathGridSizeScale !== undefined &&
     (!Number.isFinite(input.pathGridSizeScale) || input.pathGridSizeScale <= 0)

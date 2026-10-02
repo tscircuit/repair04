@@ -197,7 +197,8 @@ const createEvaluator = ({
         obstacle.obstacleId?.startsWith("repair04_board_edge_") === true
       const wireGap = isBoardEdge
         ? 0
-        : obstacle.isNonPlatedHole && srj.minTraceToHoleEdgeClearance !== undefined
+        : obstacle.isNonPlatedHole &&
+            srj.minTraceToHoleEdgeClearance !== undefined
           ? srj.minTraceToHoleEdgeClearance
           : Math.max(
               traceClearance,
@@ -269,10 +270,7 @@ const createEvaluator = ({
           if (start.z !== end.z) {
             const span = getRepairCopperLayerSpan(srj, start, end)
             if (
-              !Array.from(zLayers).some(
-                (z) =>
-                  z >= span.minZ && z <= span.maxZ,
-              )
+              !Array.from(zLayers).some((z) => z >= span.minZ && z <= span.maxZ)
             )
               continue
             if (

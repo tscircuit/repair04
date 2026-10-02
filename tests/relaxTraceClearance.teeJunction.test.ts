@@ -5,7 +5,10 @@ import { relaxTraceClearance } from "../lib/relaxTraceClearance"
 
 test("preserves an interior tee attachment while opening unrelated clearances", (): void => {
   for (const angle of [0, Math.PI / 3]) {
-    const point = (x: number, y: number): { x: number; y: number; z: number } => ({
+    const point = (
+      x: number,
+      y: number,
+    ): { x: number; y: number; z: number } => ({
       x: 10 + x * Math.cos(angle) - y * Math.sin(angle),
       y: -7 + x * Math.sin(angle) + y * Math.cos(angle),
       z: 0,
@@ -23,11 +26,40 @@ test("preserves an interior tee attachment while opening unrelated clearances", 
       route: coordinates.map(([x, y]) => point(x!, y!)),
     })
     const routes = [
-      makeRoute("trunk", [[-2, 0], [-1, 0], [1, 0], [2, 0]], "tee-net"),
-      makeRoute("branch", [[0, 0], [0, -1]], "tee-net"),
-      makeRoute("fixed-neighbor", [[-0.7, 0.01], [0.7, 0.01]]),
-      makeRoute("free-a", [[-3, 2.2], [-1, 2.5], [1, 2.5], [3, 2.2]]),
-      makeRoute("free-b", [[-3, 2.97], [-1, 2.67], [1, 2.67], [3, 2.97]]),
+      makeRoute(
+        "trunk",
+        [
+          [-2, 0],
+          [-1, 0],
+          [1, 0],
+          [2, 0],
+        ],
+        "tee-net",
+      ),
+      makeRoute(
+        "branch",
+        [
+          [0, 0],
+          [0, -1],
+        ],
+        "tee-net",
+      ),
+      makeRoute("fixed-neighbor", [
+        [-0.7, 0.01],
+        [0.7, 0.01],
+      ]),
+      makeRoute("free-a", [
+        [-3, 2.2],
+        [-1, 2.5],
+        [1, 2.5],
+        [3, 2.2],
+      ]),
+      makeRoute("free-b", [
+        [-3, 2.97],
+        [-1, 2.67],
+        [1, 2.67],
+        [3, 2.97],
+      ]),
     ]
     const before = structuredClone(routes)
     const bounds = { minX: 4, maxX: 16, minY: -13, maxY: -1 }

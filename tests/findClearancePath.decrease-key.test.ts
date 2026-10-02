@@ -56,6 +56,9 @@ test("decreasing queued priorities reaches a legal detour within actual pop limi
     }),
   ).toEqual([])
   expect(findClearancePath({ ...input, maxNodes: 34 })).toBeNull()
-  expect(input.stats).toEqual({ nodesPopped: 34, completionReason: "node-limit" })
+  expect(input.stats).toEqual({
+    nodesPopped: 34,
+    completionReason: "node-limit",
+  })
   expect(route.route).toEqual([start, end])
 })

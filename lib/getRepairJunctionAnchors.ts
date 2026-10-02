@@ -314,7 +314,7 @@ export const getRepairJunctionAnchors = (
       // through one physical pad. Prove copper attachment before treating
       // additional intersections of their routes as redundant junctions.
       const padIndices = point.pcb_port_id
-        ? padIndicesByPort.get(point.pcb_port_id) ?? []
+        ? (padIndicesByPort.get(point.pcb_port_id) ?? [])
         : []
       for (const obstacleIndex of padIndices) {
         const obstacle = srj.obstacles[obstacleIndex]!

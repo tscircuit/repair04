@@ -2,7 +2,9 @@ import type { SimpleRouteJson } from "high-density-repair03/lib"
 
 /** Trace layers are electrical; a default drilled via occupies the whole board. */
 export function getRepairCopperLayerSpan(
-  srj: Pick<SimpleRouteJson, "layerCount"> & { allowBlindAndBuriedVias?: boolean },
+  srj: Pick<SimpleRouteJson, "layerCount"> & {
+    allowBlindAndBuriedVias?: boolean
+  },
   a: { z: number },
   b: { z: number },
 ): { minZ: number; maxZ: number } {

@@ -18,7 +18,9 @@ export class ClearancePathHeap {
       this.positions = new Map<number, number>()
     } else {
       if (!Number.isSafeInteger(nodeCount) || nodeCount <= 0) {
-        throw new Error("repair04: dense path queue requires a positive grid size")
+        throw new Error(
+          "repair04: dense path queue requires a positive grid size",
+        )
       }
       const indices = new Int32Array(nodeCount)
       this.positions = {
