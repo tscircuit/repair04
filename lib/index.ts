@@ -10,7 +10,10 @@ export type {
 export { mergeRepairRegion } from "./mergeRepairRegion"
 export { normalizeRepairTrace } from "./normalizeRepairTrace"
 export { getFixedObstacleViolations } from "./getFixedObstacleViolations"
-export { getNewViaPadViolations } from "./getNewViaPadViolations"
+export {
+  getNewViaPadViolations,
+  createNewViaPadViolationEvaluator,
+} from "./getNewViaPadViolations"
 export type {
   NewViaPadViolation,
   NewViaPadViolationInput,
@@ -18,3 +21,20 @@ export type {
 
 export { getRepairViaGeometry } from "./getRepairViaGeometry"
 export type { RepairViaGeometry } from "./getRepairViaGeometry"
+
+export { relaxTraceClearance } from "./relaxTraceClearance"
+export {
+  negotiateTraceClearance,
+  type NegotiatedClearanceInput,
+  type NegotiatedClearanceResult,
+} from "./negotiateTraceClearance"
+
+export { FindClearancePathSolver } from "./FindClearancePathSolver"
+export { findClearancePath } from "./findClearancePath"
+export { NegotiateTraceClearanceSolver } from "./NegotiateTraceClearanceSolver"
+export { RelaxTraceClearanceSolver } from "./RelaxTraceClearanceSolver"
+export type {
+  ClearancePathInput,
+  ClearancePathSearchStats,
+} from "./findClearancePath"
+export type { RelaxTraceClearanceInput } from "./relaxTraceClearance"
