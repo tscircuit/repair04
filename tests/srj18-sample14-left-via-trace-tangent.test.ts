@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import "bun-match-svg"
 import fixtureData from "./fixtures/clearance-repros/srj18-sample14-left-via-trace-tangent.json"
 import {
+  measureHighlightedViaTrace,
   renderClearanceRepro,
   type ClearanceVisualReproFixture,
 } from "./fixtures/renderClearanceRepro"
@@ -11,6 +12,9 @@ test("Sample 14: tangent movement clears a neighboring trace", async (): Promise
   const fixture = fixtureData as ClearanceVisualReproFixture
   const original = structuredClone(fixture.input)
   const output = runClearanceVisualRepro(fixture)
+  const target = measureHighlightedViaTrace(fixture, output)
+  expect(target).not.toBeNull()
+  expect(target!.gap).toBeGreaterThanOrEqual(fixture.input.traceClearance)
   expect(fixture.input).toEqual(original)
   expect(output).toHaveLength(original.routes.length)
   for (const [routeIndex, route] of output.entries()) {
