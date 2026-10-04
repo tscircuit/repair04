@@ -1,0 +1,89 @@
+{
+  "baselineRevision": "422b75460e80147c0a1b92521a765d9ae8eab548",
+  "baselineSourceSha256": "0378bab40963dc2bcd75ccbab106a7733c4f3e5d6b10c60744624f2803da69d0",
+  "results": [
+    {
+      "name": "dense",
+      "iterations": 12,
+      "calls": 1643,
+      "identities": 2409,
+      "callsHash": "2f2a19060b10106ab16c19422d4830fd66cb8b99213d8092926d4b4ac2b0f8b2",
+      "retainedHash": "cd811c97fff9c5ae9987308366add5ec8400ced0e14288a4af0c0cdf00e9ec30",
+      "stepsHash": "1da375bb48d26ebfb8a9b7c01c0fcfc28cb2b66d12b6534b553a63f1c6cd0ad1",
+      "output": null,
+      "error": null
+    },
+    {
+      "name": "weighted",
+      "iterations": 8,
+      "calls": 906,
+      "identities": 912,
+      "callsHash": "19ba80794e9a1335db125f612182ac8aa35ad503b98be6104c6e95080a082ee5",
+      "retainedHash": "c95f28cd6259246893dee56ff96eb9eb739801538d5b956c97fc037a86a84a5c",
+      "stepsHash": "8c07aa41f993fd64bb9a33d3fd7973ecae18a0a0601e9406efcfeaaa08e4b9ba",
+      "output": [
+        {
+          "x": -4.5,
+          "y": 0,
+          "z": 0
+        },
+        {
+          "x": 0.07500000000000018,
+          "y": -0.27499999999999947,
+          "z": 0,
+          "traceThickness": 0.1
+        },
+        {
+          "x": 4.5,
+          "y": 0,
+          "z": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "name": "layered",
+      "iterations": 12,
+      "calls": 3974,
+      "identities": 4743,
+      "callsHash": "9c23ddbe45ae7dccb9853f44e649c68a6cd6fd85d3d5a5541f04ac775fc2a208",
+      "retainedHash": "c806a399e96ad3d5df7a06af3ae75949673953418c62e62c0cd19b131aa5520c",
+      "stepsHash": "10cc4718240d924d607793f61b97e15d8024ffc846cf81d0b2dc12048b54728b",
+      "output": null,
+      "error": null
+    },
+    {
+      "name": "blind",
+      "iterations": 12,
+      "calls": 3974,
+      "identities": 4743,
+      "callsHash": "9c23ddbe45ae7dccb9853f44e649c68a6cd6fd85d3d5a5541f04ac775fc2a208",
+      "retainedHash": "c806a399e96ad3d5df7a06af3ae75949673953418c62e62c0cd19b131aa5520c",
+      "stepsHash": "10cc4718240d924d607793f61b97e15d8024ffc846cf81d0b2dc12048b54728b",
+      "output": null,
+      "error": null
+    },
+    {
+      "name": "sparse",
+      "iterations": 8,
+      "calls": 648,
+      "identities": 899,
+      "callsHash": "e9f3339a39453044e17d78a2a9754823ce2f0592238e1d1b5be5b4af8c77a298",
+      "retainedHash": "d10a7d1a1a7a819753b8cfad2d428175d259dbbca2cec6fc53d9a26fe78d0a2e",
+      "stepsHash": "c45f852f0d871b07c394f9be4c08aa1315c66fbedace6269295ef92fb81aa2e1",
+      "output": null,
+      "error": null
+    },
+    {
+      "name": "live",
+      "iterations": 12,
+      "calls": 1665,
+      "identities": 2431,
+      "callsHash": "af492d2136ce942b6397aeeac939048182daef12c91ebd3a4d370dc5a954819f",
+      "retainedHash": "e3553ffae229c9f6d638b088dddeaf9f6641bf13686eedd244761e0e0b0829b1",
+      "stepsHash": "1da375bb48d26ebfb8a9b7c01c0fcfc28cb2b66d12b6534b553a63f1c6cd0ad1",
+      "output": null,
+      "error": null
+    }
+  ]
+}

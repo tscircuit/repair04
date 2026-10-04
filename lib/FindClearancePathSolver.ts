@@ -798,10 +798,12 @@ export class FindClearancePathSolver extends BaseSolver {
           }
           for (const id of neighbors) {
             if (settled?.has(id)) continue
-            const b = point(id),
+            const bx = bounds.minX + ((id % nx) + 0.5) * grid,
+              by = bounds.minY + ((Math.floor(id / nx) % ny) + 0.5) * grid,
+              bz = Math.floor(id / (nx * ny)),
               baseCost =
                 current.cost +
-                (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
+                (a.z === bz ? Math.hypot(a.x - bx, a.y - by) : 1),
               previousCost = costs.get(id) ?? Infinity
             // Congestion costs are nonnegative, so an edge that cannot improve the
             // geometric cost cannot improve the complete cost either.
@@ -815,7 +817,7 @@ export class FindClearancePathSolver extends BaseSolver {
               : `${low},${high}`
             const fullStackViaKey =
               useNumericEdgeKeys &&
-              a.z !== b.z &&
+              a.z !== bz &&
               srj.allowBlindAndBuriedVias !== true
                 ? current.id % (nx * ny)
                 : undefined
@@ -823,6 +825,10 @@ export class FindClearancePathSolver extends BaseSolver {
               fullStackViaKey === undefined
                 ? edgeCache.get(key)
                 : fullStackViaClearance.get(fullStackViaKey)
+            // Pruned edges have no callback-visible point. Materialize a fresh
+            // point only when a clearance check or congestion callback needs it.
+            if (permitted === false) continue
+            const b: Point = { x: bx, y: by, z: bz, traceThickness }
             if (permitted === undefined) {
               permitted = clear(a, b)
               if (fullStackViaKey === undefined) edgeCache.set(key, permitted)
