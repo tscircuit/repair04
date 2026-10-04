@@ -100,7 +100,7 @@ function run(Solver: typeof FindClearancePathSolver, name: string): unknown {
   }
 }
 test("deferred clearance points preserve callback aliases and step accounting", (): void => {
-  expect(cases.map((name): unknown => run(FindClearancePathSolver, name))).toEqual(
-    golden.results,
-  )
+  expect(
+    cases.map((name): unknown => run(FindClearancePathSolver, name)),
+  ).toEqual(golden.results)
 })
