@@ -62,6 +62,16 @@ type PadContact = {
 
 const MAX_SWEEPS = 256
 const MAX_DISPLACEMENT = 0.25
+const MUTABLE_BOUNDARY_INSET = REGION_EPSILON * 8
+
+export const getClearanceProjectionBounds = (
+  input: Pick<RepairRegionInput, "bounds" | "boundaryMargin">,
+): Bounds => ({
+  minX: input.bounds.minX + input.boundaryMargin + MUTABLE_BOUNDARY_INSET,
+  maxX: input.bounds.maxX - input.boundaryMargin - MUTABLE_BOUNDARY_INSET,
+  minY: input.bounds.minY + input.boundaryMargin + MUTABLE_BOUNDARY_INSET,
+  maxY: input.bounds.maxY - input.boundaryMargin - MUTABLE_BOUNDARY_INSET,
+})
 
 /** Closest points and their interpolation weights, including zero-length vias. */
 function getContact(a: Point, b: Point, c: Point, d: Point): Contact {
@@ -147,12 +157,7 @@ export function relaxTraceClearance(
   const nets = getNetRepresentatives(input.srj, routes)
   const traceClearance = input.traceClearance ?? 0.1
   const viaClearance = input.viaClearance ?? 0.1
-  const mutable: Bounds = {
-    minX: input.bounds.minX + input.boundaryMargin,
-    maxX: input.bounds.maxX - input.boundaryMargin,
-    minY: input.bounds.minY + input.boundaryMargin,
-    maxY: input.bounds.maxY - input.boundaryMargin,
-  }
+  const mutable = getClearanceProjectionBounds(input)
   // Keep existing endpoint, wire and via attachments without inserting points.
   // Retaining both ends of the contacted segment also retains interior contacts.
   const junctions = getRepairJunctionAnchors(input.srj, routes, input.bounds)

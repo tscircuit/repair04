@@ -1,5 +1,8 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
-import type { RelaxTraceClearanceInput } from "./relaxTraceClearance"
+import {
+  getClearanceProjectionBounds,
+  type RelaxTraceClearanceInput,
+} from "./relaxTraceClearance"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { getVectorLength } from "./getVectorLength"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
@@ -157,12 +160,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
     const nets = getNetRepresentatives(input.srj, routes)
     const traceClearance = input.traceClearance ?? 0.1
     const viaClearance = input.viaClearance ?? 0.1
-    const mutable: Bounds = {
-      minX: input.bounds.minX + input.boundaryMargin,
-      maxX: input.bounds.maxX - input.boundaryMargin,
-      minY: input.bounds.minY + input.boundaryMargin,
-      maxY: input.bounds.maxY - input.boundaryMargin,
-    }
+    const mutable = getClearanceProjectionBounds(input)
     // Keep existing endpoint, wire and via attachments without inserting points.
     // Retaining both ends of the contacted segment also retains interior contacts.
     const junctions = getRepairJunctionAnchors(input.srj, routes, input.bounds)
