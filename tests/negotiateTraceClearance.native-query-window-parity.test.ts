@@ -69,6 +69,32 @@ test("native windows preserve steps, output and live rules", (): void => {
   }
   const run = (blind: boolean, mutate: boolean): unknown => {
     const input = createInput(blind, mutate)
+    const inputReads: string[] = []
+    for (const key of ["traceClearance", "viaClearance"] as const) {
+      let value = input[key]
+      Object.defineProperty(input, key, {
+        get(): number {
+          inputReads.push(key)
+          return value
+        },
+        set(next: number): void {
+          value = next
+        },
+      })
+    }
+    Object.defineProperty(input, "pathGridSizeScale", {
+      get(): undefined {
+        inputReads.push("pathGridSizeScale")
+        return undefined
+      },
+    })
+    const layerCount = input.srj.layerCount
+    Object.defineProperty(input.srj, "layerCount", {
+      get(): number {
+        inputReads.push("layerCount")
+        return layerCount
+      },
+    })
     const originalRoutes = structuredClone(input.routes)
     const solver = new NegotiateTraceClearanceSolver(input)
     const steps: unknown[] = []
@@ -98,6 +124,21 @@ test("native windows preserve steps, output and live rules", (): void => {
     if (mutate) expect(changedDuringSearch).toBe(true)
     expect(solver.failed).toBe(false)
     expect(input.routes).toEqual(originalRoutes)
+    const gridReads = inputReads.flatMap((key, index): number[] =>
+      key === "pathGridSizeScale" ? [index] : [],
+    )
+    expect(gridReads.length).toBeGreaterThan(1)
+    for (const index of gridReads.slice(1)) {
+      expect(inputReads.slice(index - 6, index + 1)).toEqual([
+        "layerCount",
+        "layerCount",
+        "layerCount",
+        "layerCount",
+        "traceClearance",
+        "viaClearance",
+        "pathGridSizeScale",
+      ])
+    }
     return { steps, output: solver.getOutput() }
   }
   for (const blind of [false, true]) {

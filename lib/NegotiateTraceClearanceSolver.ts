@@ -444,10 +444,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
           }
         }
         this.startPath = (): void => {
-          const pathGridSize = Math.min(
-            0.1,
-            (route.traceThickness * (input.pathGridSizeScale ?? 1)) / 2,
-          )
+          let pathGridSize: number
           const createCopperIndex = (
             indexedCopper: Copper[],
           ): CopperQueryIndex<Copper> | undefined => {
@@ -643,7 +640,10 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               traceThickness: route.traceThickness,
               traceClearance: input.traceClearance,
               viaClearance: input.viaClearance,
-              gridSize: pathGridSize,
+              gridSize: (pathGridSize = Math.min(
+                0.1,
+                (route.traceThickness * (input.pathGridSizeScale ?? 1)) / 2,
+              )),
               allowLayerChanges: input.allowLayerChanges,
               maxNodes: Math.min(
                 input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
