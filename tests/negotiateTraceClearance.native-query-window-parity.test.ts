@@ -127,7 +127,8 @@ test("native windows preserve steps, output and live rules", (): void => {
     const gridReads = inputReads.flatMap((key, index): number[] =>
       key === "pathGridSizeScale" ? [index] : [],
     )
-    expect(gridReads.length).toBeGreaterThan(1)
+    const output = solver.getOutput()
+    expect(gridReads.length).toBe(1 + output.pathSearchCalls)
     for (const index of gridReads.slice(1)) {
       expect(inputReads.slice(index - 6, index + 1)).toEqual([
         "layerCount",
@@ -139,7 +140,7 @@ test("native windows preserve steps, output and live rules", (): void => {
         "pathGridSizeScale",
       ])
     }
-    return { steps, output: solver.getOutput() }
+    return { steps, output }
   }
   for (const blind of [false, true]) {
     for (const mutate of [false, true]) {
