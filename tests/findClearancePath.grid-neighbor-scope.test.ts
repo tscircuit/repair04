@@ -17,7 +17,10 @@ test("grid scopes retain callback scheduling and origin reads", (): void => {
         maxY: 1.14,
       }
       if (originKind !== "plain") {
-        for (const [key, origin] of [["minX", -0.93], ["minY", -0.86]] as const)
+        for (const [key, origin] of [
+          ["minX", -0.93],
+          ["minY", -0.86],
+        ] as const)
           Object.defineProperty(bounds, key, {
             get(): unknown {
               reads.push(key)
@@ -64,19 +67,16 @@ test("grid scopes retain callback scheduling and origin reads", (): void => {
           ): number {
             return edgeCost.call(this, a, b) + 0.02
           }
-        if (throws && callbacks.length === 35) throw new Error("callback failure")
+        if (throws && callbacks.length === 35)
+          throw new Error("callback failure")
         const neighborhood = activeNeighborhood
         if (neighborhood) {
           scopedCalls++
           if (originKind === "plain") {
             expect(neighborhood.minX).toBeLessThanOrEqual(Math.min(a.x, b.x))
             expect(neighborhood.minY).toBeLessThanOrEqual(Math.min(a.y, b.y))
-            expect(neighborhood.maxX).toBeGreaterThanOrEqual(
-              Math.max(a.x, b.x),
-            )
-            expect(neighborhood.maxY).toBeGreaterThanOrEqual(
-              Math.max(a.y, b.y),
-            )
+            expect(neighborhood.maxX).toBeGreaterThanOrEqual(Math.max(a.x, b.x))
+            expect(neighborhood.maxY).toBeGreaterThanOrEqual(Math.max(a.y, b.y))
             if (Math.abs(a.x - b.x) > 0.1 || Math.abs(a.y - b.y) > 0.1)
               roundedNeighborCalls++
           }

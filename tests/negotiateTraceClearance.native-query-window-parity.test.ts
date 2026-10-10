@@ -102,7 +102,10 @@ test("native windows preserve steps, output and live rules", (): void => {
   }
   for (const blind of [false, true]) {
     for (const mutate of [false, true]) {
-      const scopedSearch = spyOn(CopperQueryIndex.prototype, "searchWithinBounds")
+      const scopedSearch = spyOn(
+        CopperQueryIndex.prototype,
+        "searchWithinBounds",
+      )
       const reused = run(blind, mutate)
       expect(scopedSearch).toHaveBeenCalled()
       scopedSearch.mockRestore()

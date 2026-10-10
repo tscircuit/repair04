@@ -131,8 +131,14 @@ test("copper windows preserve exact sets and unusual boxes", (): void => {
   ])
     expect(
       cached.searchWithinBounds(
-        0, 0, 0.1, 0.1,
-        window[0]!, window[1]!, window[2]!, window[3]!,
+        0,
+        0,
+        0.1,
+        0.1,
+        window[0]!,
+        window[1]!,
+        window[2]!,
+        window[3]!,
       ),
     ).toEqual(original.search(0, 0, 0.1, 0.1))
 })
