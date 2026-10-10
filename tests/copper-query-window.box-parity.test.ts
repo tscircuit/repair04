@@ -58,6 +58,11 @@ test("copper windows preserve exact sets and unusual boxes", (): void => {
     expect(
       cached.search(minX!, minY!, maxX!, maxY!, 1).sort((a, b) => a - b),
     ).toEqual(original.search(minX!, minY!, maxX!, maxY!).sort((a, b) => a - b))
+    expect(
+      cached
+        .searchWithinBounds(minX!, minY!, maxX!, maxY!, -1, -1, 1, 1)
+        .sort((a, b) => a - b),
+    ).toEqual(original.search(minX!, minY!, maxX!, maxY!).sort((a, b) => a - b))
   }
   // The cache filters against the finalized index's captured Float64 bounds,
   // even when source records change after indexing.
@@ -87,6 +92,9 @@ test("copper windows preserve exact sets and unusual boxes", (): void => {
   const containedCandidates = reversedOriginal.search(...contained)
   expect(containedCandidates).toHaveLength(17)
   expect(reversedCached.search(...contained, 1)).toEqual(containedCandidates)
+  expect(reversedCached.searchWithinBounds(...contained, ...contained)).toEqual(
+    containedCandidates,
+  )
 
   for (const records of [
     [{ minX: 0, minY: 0, maxX: 0, maxY: 0, radius: -REGION_EPSILON }],
@@ -97,6 +105,9 @@ test("copper windows preserve exact sets and unusual boxes", (): void => {
     const direct = createOriginal(records)
     const indexed = new CopperQueryIndex(records)
     expect(indexed.search(-1, -1, 1, 1, 1)).toEqual(direct.search(-1, -1, 1, 1))
+    expect(indexed.searchWithinBounds(-1, -1, 1, 1, -2, -2, 2, 2)).toEqual(
+      direct.search(-1, -1, 1, 1),
+    )
   }
   for (const [minX, minY, maxX, maxY] of [
     [NaN, 0, 1, 1],
@@ -107,5 +118,21 @@ test("copper windows preserve exact sets and unusual boxes", (): void => {
     expect(cached.search(minX!, minY!, maxX!, maxY!, 1)).toEqual(
       original.search(minX!, minY!, maxX!, maxY!),
     )
+    expect(
+      cached.searchWithinBounds(minX!, minY!, maxX!, maxY!, -1, -1, 1, 1),
+    ).toEqual(original.search(minX!, minY!, maxX!, maxY!))
   }
+  // A stale or malformed proposed neighborhood must never hide actual hits.
+  for (const window of [
+    [0.2, 0.2, 0.3, 0.3],
+    [NaN, -1, 1, 1],
+    [-Infinity, -1, Infinity, 1],
+    [1, 1, -1, -1],
+  ])
+    expect(
+      cached.searchWithinBounds(
+        0, 0, 0.1, 0.1,
+        window[0]!, window[1]!, window[2]!, window[3]!,
+      ),
+    ).toEqual(original.search(0, 0, 0.1, 0.1))
 })

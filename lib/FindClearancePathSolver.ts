@@ -70,7 +70,14 @@ export class FindClearancePathSolver extends BaseSolver {
   private seedSearch?: () => void
   private searchBatch?: () => void
 
-  constructor(input: ClearancePathInput) {
+  constructor(
+    input: ClearancePathInput,
+    // Internal movable-copper queries may share the exact grid-neighbor union.
+    // Public callbacks keep their original two arguments and call scheduling.
+    private readonly setGridNeighborhood?: (
+      neighborhood: Readonly<Bounds> | undefined,
+    ) => void,
+  ) {
     super()
     this.input = input
     this.stats = input.stats ?? { nodesPopped: 0, completionReason: "no-path" }
@@ -112,7 +119,13 @@ export class FindClearancePathSolver extends BaseSolver {
       return
     }
     if (this.phase === "search") {
-      this.searchBatch!()
+      if (this.setGridNeighborhood) {
+        try {
+          this.searchBatch!()
+        } finally {
+          this.setGridNeighborhood(undefined)
+        }
+      } else this.searchBatch!()
       if (!this.solved)
         this.progress = Math.min(
           0.99,
@@ -630,9 +643,13 @@ export class FindClearancePathSolver extends BaseSolver {
         )
       const nx = Math.floor((bounds.maxX - bounds.minX) / grid)
       const ny = Math.floor((bounds.maxY - bounds.minY) / grid)
+      let pointOriginX = 0
+      let pointOriginY = 0
       const point = (id: number): Point => ({
-        x: bounds.minX + ((id % nx) + 0.5) * grid,
-        y: bounds.minY + ((Math.floor(id / nx) % ny) + 0.5) * grid,
+        x: (pointOriginX = bounds.minX) + ((id % nx) + 0.5) * grid,
+        y:
+          (pointOriginY = bounds.minY) +
+          ((Math.floor(id / nx) % ny) + 0.5) * grid,
         z: Math.floor(id / (nx * ny)),
         traceThickness,
       })
@@ -709,6 +726,13 @@ export class FindClearancePathSolver extends BaseSolver {
         Number.isInteger(start.z) &&
         start.z >= 0 &&
         start.z < srj.layerCount
+      // Reuse one private record for a bounded integer grid, without reading
+      // any public metadata again. Each synchronous neighbor loop consumes it
+      // before another popped node overwrites these coordinate bounds.
+      const gridNeighborhood: Bounds | undefined =
+        this.setGridNeighborhood && useNumericEdgeKeys
+          ? { minX: 0, minY: 0, maxX: 0, maxY: 0 }
+          : undefined
       // Weighted search prioritizes a feasible path over the shortest path. Settle
       // each grid state once so inconsistent weighted estimates cannot repeatedly
       // reopen it and exhaust the bounded repair allowance.
@@ -738,6 +762,13 @@ export class FindClearancePathSolver extends BaseSolver {
           if (denseSettled) denseSettled[current.id] = 1
           else settled?.add(current.id)
           const a = point(current.id)
+          const currentOriginX = pointOriginX
+          const currentOriginY = pointOriginY
+          const neighborhood =
+            typeof currentOriginX === "number" &&
+            typeof currentOriginY === "number"
+              ? gridNeighborhood
+              : undefined
           const viaPath = viaPaths.get(current.id)
           if (
             a.z === end.z &&
@@ -804,6 +835,7 @@ export class FindClearancePathSolver extends BaseSolver {
           }
           const x = current.id % nx,
             y = Math.floor(current.id / nx) % ny
+          let preparedNeighborhood = false
           const neighbors: number[] = []
           for (let dx = -1; dx <= 1; dx++)
             for (let dy = -1; dy <= 1; dy++) {
@@ -857,6 +889,21 @@ export class FindClearancePathSolver extends BaseSolver {
               else fullStackViaClearance.set(fullStackViaKey, permitted)
             }
             if (!permitted) continue
+            if (neighborhood && !preparedNeighborhood) {
+              // Use exactly point()'s coordinate reconstruction for the
+              // outermost actual grid neighbors. Capture only the original
+              // point() origin reads, retaining accessor order and counts.
+              neighborhood.minX =
+                currentOriginX + (Math.max(0, x - 1) + 0.5) * grid
+              neighborhood.maxX =
+                currentOriginX + (Math.min(nx - 1, x + 1) + 0.5) * grid
+              neighborhood.minY =
+                currentOriginY + (Math.max(0, y - 1) + 0.5) * grid
+              neighborhood.maxY =
+                currentOriginY + (Math.min(ny - 1, y + 1) + 0.5) * grid
+              preparedNeighborhood = true
+              this.setGridNeighborhood!(neighborhood)
+            }
             const cost = baseCost + extraCost(a, b)
             if (cost >= previousCost) continue
             if (a.z !== b.z && (a.x !== viaPath?.x || a.y !== viaPath?.y))
@@ -873,6 +920,7 @@ export class FindClearancePathSolver extends BaseSolver {
               priority: cost + heuristicWeight * heuristic(b),
             })
           }
+          if (preparedNeighborhood) this.setGridNeighborhood!(undefined)
         }
         if (heap.length && expanded < (input.maxNodes ?? 30000)) return
         this.stats.completionReason = heap.length ? "node-limit" : "no-path"

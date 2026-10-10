@@ -48,8 +48,13 @@ test("canonical hits preserve order and owner sums", (): void => {
     }
     const originalHits = sortedHits(direct)
     const reusedHits = sortedHits(reused)
+    const scopedHits = sortedHits(
+      indexed.searchWithinBounds(minX, minY, maxX, maxY, -1, -1, 1, 1),
+    )
     expect(reusedHits).toEqual(originalHits)
     expect(getOwnerCosts(reusedHits)).toEqual(getOwnerCosts(originalHits))
+    expect(scopedHits).toEqual(originalHits)
+    expect(getOwnerCosts(scopedHits)).toEqual(getOwnerCosts(originalHits))
   }
   // Exercise the query-dependent Flatbush optimization, rather than merely
   // comparing two coincidentally equal candidate iteration orders.

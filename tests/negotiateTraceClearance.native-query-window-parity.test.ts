@@ -102,10 +102,25 @@ test("native windows preserve steps, output and live rules", (): void => {
   }
   for (const blind of [false, true]) {
     for (const mutate of [false, true]) {
+      const scopedSearch = spyOn(CopperQueryIndex.prototype, "searchWithinBounds")
       const reused = run(blind, mutate)
+      expect(scopedSearch).toHaveBeenCalled()
+      scopedSearch.mockRestore()
       const originalSearch = spyOn(
         CopperQueryIndex.prototype,
         "search",
+      ).mockImplementation(function (
+        this: { index: Flatbush },
+        minX: number,
+        minY: number,
+        maxX: number,
+        maxY: number,
+      ): number[] {
+        return this.index.search(minX, minY, maxX, maxY)
+      })
+      const originalScopedSearch = spyOn(
+        CopperQueryIndex.prototype,
+        "searchWithinBounds",
       ).mockImplementation(function (
         this: { index: Flatbush },
         minX: number,
@@ -119,6 +134,7 @@ test("native windows preserve steps, output and live rules", (): void => {
         expect(run(blind, mutate)).toEqual(reused)
       } finally {
         originalSearch.mockRestore()
+        originalScopedSearch.mockRestore()
       }
     }
   }

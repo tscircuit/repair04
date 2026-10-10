@@ -102,9 +102,78 @@ export class CopperQueryIndex<Copper extends CopperBounds> {
       this.window = window
     }
 
+    return this.filterCandidates(window.candidates, minX, minY, maxX, maxY)
+  }
+
+  /**
+   * Reuses the exact union of a caller's grid-neighbor query rectangles. The
+   * supplied window must contain this actual edge query. Candidate order still
+   * requires the caller's original total sort, as with search().
+   */
+  searchWithinBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+    windowMinX: number,
+    windowMinY: number,
+    windowMaxX: number,
+    windowMaxY: number,
+  ): number[] {
+    if (
+      !this.canReuseWindows ||
+      !Number.isFinite(minX) ||
+      !Number.isFinite(minY) ||
+      !Number.isFinite(maxX) ||
+      !Number.isFinite(maxY) ||
+      !Number.isFinite(windowMinX) ||
+      !Number.isFinite(windowMinY) ||
+      !Number.isFinite(windowMaxX) ||
+      !Number.isFinite(windowMaxY) ||
+      minX > maxX ||
+      minY > maxY ||
+      windowMinX > minX ||
+      windowMinY > minY ||
+      windowMaxX < maxX ||
+      windowMaxY < maxY
+    )
+      return this.index.search(minX, minY, maxX, maxY)
+
+    let window = this.window
+    if (
+      !window ||
+      minX < window.minX ||
+      minY < window.minY ||
+      maxX > window.maxX ||
+      maxY > window.maxY
+    ) {
+      window = {
+        minX: windowMinX,
+        minY: windowMinY,
+        maxX: windowMaxX,
+        maxY: windowMaxY,
+        candidates: this.index.search(
+          windowMinX,
+          windowMinY,
+          windowMaxX,
+          windowMaxY,
+        ),
+      }
+      this.window = window
+    }
+    return this.filterCandidates(window.candidates, minX, minY, maxX, maxY)
+  }
+
+  private filterCandidates(
+    windowCandidates: number[],
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): number[] {
     const candidates: number[] = []
     const bounds = this.indexedBounds
-    for (const candidate of window.candidates) {
+    for (const candidate of windowCandidates) {
       const offset = candidate * 4
       // These are the exact Float64 bounds supplied to index.add, tested with
       // Flatbush's strict rejection comparisons, including touching equality.

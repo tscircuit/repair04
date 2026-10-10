@@ -469,10 +469,12 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               ),
             )
           }
+          let gridNeighborhood: Readonly<Bounds> | undefined
           const query = (
             a: RepairRoutePoint,
             b: RepairRoutePoint,
           ): Array<{ copper: Copper; ratio: number }> => {
+            const neighborhood = gridNeighborhood
             const via = a.z !== b.z
             const minX = Math.min(a.x, b.x),
               maxX = Math.max(a.x, b.x),
@@ -485,17 +487,26 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             const span = getRepairCopperLayerSpan(input.srj, a, b)
             const activeIndex = via ? copperIndex : copperByLayer.get(a.z)
             const candidates =
-              activeIndex?.search(
-                minX - reach - REGION_EPSILON,
-                minY - reach - REGION_EPSILON,
-                maxX + reach + REGION_EPSILON,
-                maxY + reach + REGION_EPSILON,
-                // One existing grid step covers the other neighboring edges;
-                // anchor and shortcut edges retain the original direct query.
-                maxX - minX <= pathGridSize && maxY - minY <= pathGridSize
-                  ? pathGridSize
-                  : 0,
-              ) ?? []
+              (neighborhood
+                ? activeIndex?.searchWithinBounds(
+                    minX - reach - REGION_EPSILON,
+                    minY - reach - REGION_EPSILON,
+                    maxX + reach + REGION_EPSILON,
+                    maxY + reach + REGION_EPSILON,
+                    neighborhood.minX - reach - REGION_EPSILON,
+                    neighborhood.minY - reach - REGION_EPSILON,
+                    neighborhood.maxX + reach + REGION_EPSILON,
+                    neighborhood.maxY + reach + REGION_EPSILON,
+                  )
+                : activeIndex?.search(
+                    minX - reach - REGION_EPSILON,
+                    minY - reach - REGION_EPSILON,
+                    maxX + reach + REGION_EPSILON,
+                    maxY + reach + REGION_EPSILON,
+                    maxX - minX <= pathGridSize && maxY - minY <= pathGridSize
+                      ? pathGridSize
+                      : 0,
+                  )) ?? []
             for (const candidate of candidates) {
               const copper = activeIndex!.copper[candidate]!
               const bothVias = via && copper.minZ !== copper.maxZ
@@ -621,28 +632,33 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             nodesPopped: 0,
             completionReason: "no-path",
           }
-          const solver = new FindClearancePathSolver({
-            srj: input.srj,
-            routes: [...fixed, route],
-            routeIndex: fixed.length,
-            start: route.route[0]!,
-            end: route.route.at(-1)!,
-            bounds: input.bounds,
-            traceThickness: route.traceThickness,
-            traceClearance: input.traceClearance,
-            viaClearance: input.viaClearance,
-            gridSize: pathGridSize,
-            allowLayerChanges: input.allowLayerChanges,
-            maxNodes: Math.min(
-              input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
-              input.maxPathSearchNodes - pathSearchNodes,
-            ),
-            heuristicWeight: input.pathHeuristicWeight,
-            stats,
-            getAdditionalEdgeCost,
-            existingPath: route.route,
-            viaHoleDiameter: input.viaHoleDiameter,
-          })
+          const solver = new FindClearancePathSolver(
+            {
+              srj: input.srj,
+              routes: [...fixed, route],
+              routeIndex: fixed.length,
+              start: route.route[0]!,
+              end: route.route.at(-1)!,
+              bounds: input.bounds,
+              traceThickness: route.traceThickness,
+              traceClearance: input.traceClearance,
+              viaClearance: input.viaClearance,
+              gridSize: pathGridSize,
+              allowLayerChanges: input.allowLayerChanges,
+              maxNodes: Math.min(
+                input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
+                input.maxPathSearchNodes - pathSearchNodes,
+              ),
+              heuristicWeight: input.pathHeuristicWeight,
+              stats,
+              getAdditionalEdgeCost,
+              existingPath: route.route,
+              viaHoleDiameter: input.viaHoleDiameter,
+            },
+            (neighborhood): void => {
+              gridNeighborhood = neighborhood
+            },
+          )
 
           this.pathSolver = solver
           this.activeSubSolver = solver
