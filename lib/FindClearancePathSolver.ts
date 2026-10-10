@@ -661,6 +661,15 @@ export class FindClearancePathSolver extends BaseSolver {
       const heap = new ClearancePathHeap(
         useDenseStorage ? denseNodeCount : undefined,
       )
+      // The queue's bounded integer grid also admits exact numeric state arrays.
+      // Costs are finite when queued, so Infinity retains the meaning of an
+      // undiscovered state without storing a Map entry for each visited node.
+      const denseCosts = useDenseStorage
+        ? new Float64Array(denseNodeCount).fill(Infinity)
+        : undefined
+      const densePrevious = useDenseStorage
+        ? new Int32Array(denseNodeCount)
+        : undefined
       const costs = new Map<number, number>()
       const previous = new Map<number, number>()
       const viaPaths = new Map<number, ViaPath | undefined>()
@@ -678,8 +687,10 @@ export class FindClearancePathSolver extends BaseSolver {
           const cost =
             Math.hypot(p.x - start.x, p.y - start.y) + extraCost(start, p)
           if (!Number.isFinite(cost)) continue
-          costs.set(id, cost)
-          previous.set(id, -1)
+          if (denseCosts) denseCosts[id] = cost
+          else costs.set(id, cost)
+          if (densePrevious) densePrevious[id] = -1
+          else previous.set(id, -1)
           heap.push({
             id,
             cost,
@@ -701,7 +712,12 @@ export class FindClearancePathSolver extends BaseSolver {
       // Weighted search prioritizes a feasible path over the shortest path. Settle
       // each grid state once so inconsistent weighted estimates cannot repeatedly
       // reopen it and exhaust the bounded repair allowance.
-      const settled = heuristicWeight > 1 ? new Set<number>() : undefined
+      const denseSettled =
+        useDenseStorage && heuristicWeight > 1
+          ? new Uint8Array(denseNodeCount)
+          : undefined
+      const settled =
+        !useDenseStorage && heuristicWeight > 1 ? new Set<number>() : undefined
       const edgeCache = new Map<number | string, boolean>()
       // Ordinary vias have the same hard clearance on every electrical layer
       // pair. Reuse that result at each grid site; blind vias retain edge keys.
@@ -714,8 +730,13 @@ export class FindClearancePathSolver extends BaseSolver {
           const current = heap.pop()
           expanded++
           if (this.stats) this.stats.nodesPopped = expanded
-          if (current.cost !== costs.get(current.id)) continue
-          settled?.add(current.id)
+          if (
+            current.cost !==
+            (denseCosts ? denseCosts[current.id] : costs.get(current.id))
+          )
+            continue
+          if (denseSettled) denseSettled[current.id] = 1
+          else settled?.add(current.id)
           const a = point(current.id)
           const viaPath = viaPaths.get(current.id)
           if (
@@ -725,7 +746,11 @@ export class FindClearancePathSolver extends BaseSolver {
             Number.isFinite(extraCost(a, end))
           ) {
             const reversed: Point[] = [end]
-            for (let id = current.id; id !== -1; id = previous.get(id)!)
+            for (
+              let id = current.id;
+              id !== -1;
+              id = densePrevious ? densePrevious[id]! : previous.get(id)!
+            )
               reversed.push(point(id))
             reversed.push(start)
             const path = reversed.reverse(),
@@ -797,12 +822,15 @@ export class FindClearancePathSolver extends BaseSolver {
               if (z !== a.z) neighbors.push(idAt(x, y, z))
           }
           for (const id of neighbors) {
-            if (settled?.has(id)) continue
+            if (denseSettled ? denseSettled[id] === 1 : settled?.has(id))
+              continue
             const b = point(id),
               baseCost =
                 current.cost +
                 (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
-              previousCost = costs.get(id) ?? Infinity
+              previousCost = denseCosts
+                ? denseCosts[id]!
+                : (costs.get(id) ?? Infinity)
             // Congestion costs are nonnegative, so an edge that cannot improve the
             // geometric cost cannot improve the complete cost either.
             if (baseCost >= previousCost) continue
@@ -835,8 +863,10 @@ export class FindClearancePathSolver extends BaseSolver {
               viaPaths.set(id, { x: a.x, y: a.y, previous: viaPath })
             else if (viaPath) viaPaths.set(id, viaPath)
             else viaPaths.delete(id)
-            costs.set(id, cost)
-            previous.set(id, current.id)
+            if (denseCosts) denseCosts[id] = cost
+            else costs.set(id, cost)
+            if (densePrevious) densePrevious[id] = current.id
+            else previous.set(id, current.id)
             heap.push({
               id,
               cost,
