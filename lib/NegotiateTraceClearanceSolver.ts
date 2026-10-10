@@ -5,7 +5,7 @@ import type {
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { FindClearancePathSolver } from "./FindClearancePathSolver"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
-import Flatbush from "flatbush"
+import { CopperQueryIndex } from "./CopperQueryIndex"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
@@ -444,26 +444,20 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
           }
         }
         this.startPath = (): void => {
+          const pathGridSize = Math.min(
+            0.1,
+            (route.traceThickness * (input.pathGridSizeScale ?? 1)) / 2,
+          )
           const createCopperIndex = (
             indexedCopper: Copper[],
-          ): { index: Flatbush; copper: Copper[] } | undefined => {
+          ): CopperQueryIndex<Copper> | undefined => {
             if (!indexedCopper.length) return undefined
-            const index = new Flatbush(indexedCopper.length)
-            for (const copper of indexedCopper) {
-              index.add(
-                copper.minX - copper.radius - REGION_EPSILON,
-                copper.minY - copper.radius - REGION_EPSILON,
-                copper.maxX + copper.radius + REGION_EPSILON,
-                copper.maxY + copper.radius + REGION_EPSILON,
-              )
-            }
-            index.finish()
-            return { index, copper: indexedCopper }
+            return new CopperQueryIndex(indexedCopper)
           }
           const copperIndex = createCopperIndex(coppers)
           const copperByLayer = new Map<
             number,
-            { index: Flatbush; copper: Copper[] } | undefined
+            CopperQueryIndex<Copper> | undefined
           >()
           for (let z = 0; z < input.srj.layerCount; z++) {
             copperByLayer.set(
@@ -491,11 +485,16 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             const span = getRepairCopperLayerSpan(input.srj, a, b)
             const activeIndex = via ? copperIndex : copperByLayer.get(a.z)
             const candidates =
-              activeIndex?.index.search(
+              activeIndex?.search(
                 minX - reach - REGION_EPSILON,
                 minY - reach - REGION_EPSILON,
                 maxX + reach + REGION_EPSILON,
                 maxY + reach + REGION_EPSILON,
+                // One existing grid step covers the other neighboring edges;
+                // anchor and shortcut edges retain the original direct query.
+                maxX - minX <= pathGridSize && maxY - minY <= pathGridSize
+                  ? pathGridSize
+                  : 0,
               ) ?? []
             for (const candidate of candidates) {
               const copper = activeIndex!.copper[candidate]!
@@ -632,10 +631,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             traceThickness: route.traceThickness,
             traceClearance: input.traceClearance,
             viaClearance: input.viaClearance,
-            gridSize: Math.min(
-              0.1,
-              (route.traceThickness * (input.pathGridSizeScale ?? 1)) / 2,
-            ),
+            gridSize: pathGridSize,
             allowLayerChanges: input.allowLayerChanges,
             maxNodes: Math.min(
               input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
