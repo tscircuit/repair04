@@ -644,8 +644,37 @@ export class FindClearancePathSolver extends BaseSolver {
           Math.max(0, Math.min(ny - 1, Math.floor((p.y - bounds.minY) / grid))),
           p.z,
         )
-      const heuristic = (p: Point): number =>
-        Math.hypot(p.x - end.x, p.y - end.y) + (p.z === end.z ? 0 : 1)
+      const heuristic = (p: Point): number => {
+        const px = p.x,
+          ex = end.x
+        const dx = px - ex
+        const py = p.y,
+          ey = end.y
+        const dy = py - ey
+        const euclidean = Math.hypot(dx, dy)
+        let xy = euclidean
+        if (
+          typeof heuristicWeight === "number" &&
+          heuristicWeight > 1 &&
+          useDenseStorage &&
+          ordinaryBoundsDomain &&
+          grid >= 1e-5 &&
+          typeof px === "number" &&
+          typeof ex === "number" &&
+          typeof py === "number" &&
+          typeof ey === "number" &&
+          Math.max(Math.abs(px), Math.abs(ex), Math.abs(py), Math.abs(ey)) <=
+            10_000
+        ) {
+          const x = Math.abs(dx),
+            y = Math.abs(dy)
+          const octile = Math.max(x, y) + (Math.SQRT2 - 1) * Math.min(x, y)
+          // Leave 10 ppm for grid rounding and 0.25 grid steps for the
+          // octile/Euclidean norm difference of the final connector.
+          xy = Math.max(euclidean, 0.99999 * octile - 0.25 * grid)
+        }
+        return xy + (p.z === end.z ? 0 : 1)
+      }
       const denseNodeCount = nx * ny * srj.layerCount
       // Bound dense queue storage to 4 MB; unusually large grids remain sparse.
       const useDenseStorage =
