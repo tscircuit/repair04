@@ -1,7 +1,4 @@
-import {
-  getFixedObstacleViolations,
-  RelaxTraceClearanceSolver,
-} from "../lib"
+import { getFixedObstacleViolations, RelaxTraceClearanceSolver } from "../lib"
 import { expect, test } from "bun:test"
 import type { HighDensityRoute } from "high-density-repair03/lib"
 
