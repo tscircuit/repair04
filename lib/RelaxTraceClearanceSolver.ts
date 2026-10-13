@@ -1,4 +1,5 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
+import Flatbush from "flatbush"
 import type { RelaxTraceClearanceInput } from "./relaxTraceClearance"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { getVectorLength } from "./getVectorLength"
@@ -64,6 +65,22 @@ type PadContact = {
 
 const MAX_SWEEPS = 256
 const MAX_DISPLACEMENT = 0.25
+
+function createSegmentBoundsIndex(segments: Segment[]): Flatbush | undefined {
+  if (segments.length === 0) return undefined
+  const segmentBoundsIndex = new Flatbush(segments.length)
+  for (const segment of segments) {
+    const { initialBounds, radius } = segment
+    segmentBoundsIndex.add(
+      initialBounds.minX - radius,
+      initialBounds.minY - radius,
+      initialBounds.maxX + radius,
+      initialBounds.maxY + radius,
+    )
+  }
+  segmentBoundsIndex.finish()
+  return segmentBoundsIndex
+}
 
 /** Closest points and their interpolation weights, including zero-length vias. */
 function getContact(a: Point, b: Point, c: Point, d: Point): Contact {
@@ -131,19 +148,23 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
   private nets = new Map<string, string>()
   private vertices = new Map<string, Vertex>()
   private segments: Segment[] = []
+  private segmentBoundsIndex?: Flatbush
   private pairs: SegmentPair[] = []
   private padContacts: PadContact[] = []
   private viaPadConstraints = new Map<Vertex, ViaPadConstraint[]>()
   private traceClearance = 0.1
   private viaClearance = 0.1
   private pairOuterIndex = 0
-  private pairInnerIndex = 1
+  private pairCandidateOuterIndex = -1
+  private pairCandidateIndices: number[] = []
+  private pairCandidateIndex = 0
   private obstacleIndex = 0
   private sweepIndex = 0
   private sweepPairIndex = 0
   private sweepPadIndex = 0
   private preparedPairCount = 0
   private projectedConstraintCount = 0
+  private evaluatedConstraintCount = 0
 
   constructor(input: RelaxTraceClearanceInput) {
     super()
@@ -273,6 +294,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
     this.nets = nets
     this.vertices = vertices
     this.segments = segments
+    this.segmentBoundsIndex = createSegmentBoundsIndex(segments)
     this.traceClearance = traceClearance
     this.viaClearance = viaClearance
     const pairCount = (segments.length * (segments.length - 1)) / 2
@@ -289,13 +311,34 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
   private preparePairs(): void {
     let processed = 0
     while (processed < 4096 && this.pairOuterIndex < this.segments.length) {
-      if (this.pairInnerIndex >= this.segments.length) {
+      const a = this.segments[this.pairOuterIndex]!
+      if (this.pairCandidateOuterIndex !== this.pairOuterIndex) {
+        const reach =
+          a.radius +
+          Math.max(this.traceClearance, this.viaClearance) +
+          2 * Math.SQRT2 * MAX_DISPLACEMENT +
+          REGION_EPSILON
+        this.pairCandidateIndices = (
+          this.segmentBoundsIndex?.search(
+            a.initialBounds.minX - reach,
+            a.initialBounds.minY - reach,
+            a.initialBounds.maxX + reach,
+            a.initialBounds.maxY + reach,
+          ) ?? []
+        )
+          .filter((segmentIndex): boolean => segmentIndex > this.pairOuterIndex)
+          // Preserve the original nested-loop projection order exactly.
+          .sort((left, right): number => left - right)
+        this.pairCandidateOuterIndex = this.pairOuterIndex
+        this.pairCandidateIndex = 0
+      }
+      if (this.pairCandidateIndex >= this.pairCandidateIndices.length) {
         this.pairOuterIndex++
-        this.pairInnerIndex = this.pairOuterIndex + 1
+        this.pairCandidateIndices = []
         continue
       }
-      const a = this.segments[this.pairOuterIndex]!
-      const b = this.segments[this.pairInnerIndex++]!
+      const b =
+        this.segments[this.pairCandidateIndices[this.pairCandidateIndex++]!]!
       processed++
       this.preparedPairCount++
       if (a.net === b.net || a.maxZ < b.minZ || b.maxZ < a.minZ) continue
@@ -372,7 +415,28 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         minY: Math.min(...corners.map((corner): number => corner.y)),
         maxY: Math.max(...corners.map((corner): number => corner.y)),
       }
-      for (const segment of segments) {
+      const obstacleReach =
+        Math.max(
+          traceClearance,
+          viaClearance,
+          input.srj.defaultObstacleMargin ?? 0,
+          input.srj.minTraceToPadEdgeClearance ?? 0,
+          input.srj.minTraceToHoleEdgeClearance ?? 0,
+          input.srj.minViaEdgeToPadEdgeClearance ?? 0,
+        ) +
+        Math.SQRT2 * MAX_DISPLACEMENT +
+        REGION_EPSILON
+      // Preserve obstacle-first, route-first contact ordering exactly.
+      const segmentIndices = (
+        this.segmentBoundsIndex?.search(
+          padBounds.minX - obstacleReach,
+          padBounds.minY - obstacleReach,
+          padBounds.maxX + obstacleReach,
+          padBounds.maxY + obstacleReach,
+        ) ?? []
+      ).sort((left, right): number => left - right)
+      for (const segmentIndex of segmentIndices) {
+        const segment = segments[segmentIndex]!
         if (
           (!segment.via && obstacleNets.has(segment.net)) ||
           !zs.some((z) => z >= segment.minZ && z <= segment.maxZ)
@@ -758,6 +822,16 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
 
   private projectPair(pair: SegmentPair): void {
     const { a, b, revisions } = pair
+    // An unchanged constraint repeats the same no-op. A successful projection
+    // increments a vertex revision, so every affected constraint is revisited.
+    if (
+      a.a.revision === revisions[0] &&
+      a.b.revision === revisions[1] &&
+      b.a.revision === revisions[2] &&
+      b.b.revision === revisions[3]
+    )
+      return
+    this.evaluatedConstraintCount++
     if (
       a.a.revision !== revisions[0] ||
       a.b.revision !== revisions[1] ||
@@ -794,6 +868,13 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
 
   private projectPad(pad: PadContact): void {
     const { segment, corners, required } = pad
+    // Pad contacts obey the same revision contract as segment pairs.
+    if (
+      segment.a.revision === pad.revisions[0] &&
+      segment.b.revision === pad.revisions[1]
+    )
+      return
+    this.evaluatedConstraintCount++
     const endpointCount = segment.a === segment.b ? 1 : 2
     for (let endpoint = 0; endpoint < endpointCount; endpoint++) {
       const vertex = endpoint === 0 ? segment.a : segment.b
@@ -871,6 +952,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       ...this.stats,
       sweepCount: this.sweepIndex,
       projectedConstraintCount: this.projectedConstraintCount,
+      evaluatedConstraintCount: this.evaluatedConstraintCount,
       lastProjectedConstraintBatchCount: processed,
     }
   }
