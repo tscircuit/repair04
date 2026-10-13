@@ -721,9 +721,7 @@ export class FindClearancePathSolver extends BaseSolver {
       // Settled searches visit each ordinary undirected edge at most once.
       // Full-stack via clearance still has reuse across different layer pairs.
       const edgeCache =
-        heuristicWeight === 1
-          ? new Map<number | string, boolean>()
-          : undefined
+        heuristicWeight === 1 ? new Map<number | string, boolean>() : undefined
       // Ordinary vias have the same hard clearance on every electrical layer
       // pair. Reuse that result at each grid site; blind vias retain edge keys.
       const fullStackViaClearance = new Map<number, boolean>()
