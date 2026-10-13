@@ -724,7 +724,11 @@ export class FindClearancePathSolver extends BaseSolver {
         heuristicWeight === 1 ? new Map<number | string, boolean>() : undefined
       // Ordinary vias have the same hard clearance on every electrical layer
       // pair. Reuse that result at each grid site; blind vias retain edge keys.
-      const fullStackViaClearance = new Map<number, boolean>()
+      // With two layers, a settled search has only one pair per drill site.
+      const fullStackViaClearance =
+        heuristicWeight === 1 || srj.layerCount > 2
+          ? new Map<number, boolean>()
+          : undefined
 
       let expanded = 0
       this.searchBatch = (): void => {
@@ -846,6 +850,7 @@ export class FindClearancePathSolver extends BaseSolver {
                 : `${Math.min(current.id, id)},${Math.max(current.id, id)}`
               : 0
             const fullStackViaKey =
+              fullStackViaClearance !== undefined &&
               useNumericEdgeKeys &&
               a.z !== b.z &&
               srj.allowBlindAndBuriedVias !== true
@@ -854,11 +859,11 @@ export class FindClearancePathSolver extends BaseSolver {
             let permitted =
               fullStackViaKey === undefined
                 ? edgeCache?.get(key)
-                : fullStackViaClearance.get(fullStackViaKey)
+                : fullStackViaClearance!.get(fullStackViaKey)
             if (permitted === undefined) {
               permitted = clear(a, b)
               if (fullStackViaKey === undefined) edgeCache?.set(key, permitted)
-              else fullStackViaClearance.set(fullStackViaKey, permitted)
+              else fullStackViaClearance!.set(fullStackViaKey, permitted)
             }
             if (!permitted) continue
             const cost = baseCost + extraCost(a, b)
