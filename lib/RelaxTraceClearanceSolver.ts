@@ -116,8 +116,11 @@ function getInteriorPadContact(
     const x = dy / length,
       y = -dx / length
     const depth = -((point.x - a.x) * x + (point.y - a.y) * y)
-    if (depth < 0) return null
-    if (depth < contact.depth) contact = { x, y, depth }
+    // Match projectPad's zero-distance scale when selecting an outward normal.
+    // This only classifies the boundary; physical clearance checks stay exact.
+    if (depth < -1e-10) return null
+    const interiorDepth = Math.max(0, depth)
+    if (interiorDepth < contact.depth) contact = { x, y, depth: interiorDepth }
   }
   return contact
 }
