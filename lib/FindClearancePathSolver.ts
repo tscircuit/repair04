@@ -16,6 +16,7 @@ import { ClearancePathHeap } from "./ClearancePathHeap"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { getViaPadClearance } from "./getViaPadClearance"
 import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
+import { getNetRepresentatives } from "./getFixedObstacleViolations"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 import { REGION_EPSILON } from "./repairRegionGeometry"
 
@@ -240,40 +241,9 @@ export class FindClearancePathSolver extends BaseSolver {
       }
       return true
     }
-    const parents = new Map<string, string>()
-    const net = (name: string): string => {
-      const parent = parents.get(name)
-      if (parent === undefined || parent === name) return name
-      const root = net(parent)
-      parents.set(name, root)
-      return root
-    }
-    const join = (names: Array<string | undefined>): void => {
-      const present = names.filter((n): n is string => Boolean(n))
-      if (!present.length) return
-      const root = net(present[0]!)
-      for (const name of present) parents.set(net(name), root)
-    }
-    for (const original of srj.connections) {
-      const connection = original as typeof original & {
-        __rootConnectionNames?: string[]
-        __netConnectionName?: string
-      }
-      join([
-        connection.name,
-        connection.rootConnectionName,
-        connection.netConnectionName,
-        connection.__netConnectionName,
-        ...(connection.mergedConnectionNames ?? []),
-        ...(connection.__rootConnectionNames ?? []),
-        ...connection.pointsToConnect.flatMap((p) => [
-          p.pcb_port_id,
-          p.pointId,
-        ]),
-      ])
-    }
-    for (const obstacle of srj.obstacles) join(obstacle.connectedTo)
-    for (const r of routes) join([r.connectionName, r.rootConnectionName])
+    const netRepresentatives =
+      input.netRepresentatives ?? getNetRepresentatives(srj, routes)
+    const net = (name: string): string => netRepresentatives.get(name) ?? name
     const owner = net(route.connectionName)
     const layer = (name: string): number =>
       name === "top"
