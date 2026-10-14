@@ -646,6 +646,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             getAdditionalEdgeCost,
             existingPath: route.route,
             viaHoleDiameter: input.viaHoleDiameter,
+            netRepresentatives: nets,
           })
 
           this.pathSolver = solver
