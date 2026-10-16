@@ -40,6 +40,7 @@ type Barrier = {
   visitedQuery: number
 }
 type ViaPath = { x: number; y: number; previous?: ViaPath }
+type ClearanceEdgeKey = number | string
 
 type ClearancePathPhase =
   | "initialize"
@@ -718,7 +719,13 @@ export class FindClearancePathSolver extends BaseSolver {
           : undefined
       const settled =
         !useDenseStorage && heuristicWeight > 1 ? new Set<number>() : undefined
-      const edgeCache = new Map<number | string, boolean>()
+      // With exact grid keys, a settled-once search checks each undirected
+      // edge at most once: its reverse is skipped after the first end settles.
+      // Reopening searches and grids without exact edge keys keep the cache.
+      const edgeCache =
+        heuristicWeight > 1 && useNumericEdgeKeys
+          ? undefined
+          : new Map<ClearanceEdgeKey, boolean>()
       // Ordinary vias have the same hard clearance on every electrical layer
       // pair. Reuse that result at each grid site; blind vias retain edge keys.
       const fullStackViaClearance = new Map<number, boolean>()
@@ -849,11 +856,11 @@ export class FindClearancePathSolver extends BaseSolver {
                 : undefined
             let permitted =
               fullStackViaKey === undefined
-                ? edgeCache.get(key)
+                ? edgeCache?.get(key)
                 : fullStackViaClearance.get(fullStackViaKey)
             if (permitted === undefined) {
               permitted = clear(a, b)
-              if (fullStackViaKey === undefined) edgeCache.set(key, permitted)
+              if (fullStackViaKey === undefined) edgeCache?.set(key, permitted)
               else fullStackViaClearance.set(fullStackViaKey, permitted)
             }
             if (!permitted) continue
