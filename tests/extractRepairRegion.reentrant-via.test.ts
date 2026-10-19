@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
-import type { HighDensityRoute, SimpleRouteJson } from "high-density-repair03/lib"
+import type {
+  HighDensityRoute,
+  SimpleRouteJson,
+} from "high-density-repair03/lib"
 import { extractRepairRegion } from "../lib/extractRepairRegion"
 import { mergeRepairRegion } from "../lib/mergeRepairRegion"
 import { negotiateTraceClearance } from "../lib/negotiateTraceClearance"

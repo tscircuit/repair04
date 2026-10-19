@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
-import type { HighDensityRoute, SimpleRouteJson } from "high-density-repair03/lib"
+import type {
+  HighDensityRoute,
+  SimpleRouteJson,
+} from "high-density-repair03/lib"
 import { extractRepairRegion } from "../lib/extractRepairRegion"
 import { mergeRepairRegion } from "../lib/mergeRepairRegion"
 import { negotiateTraceClearance } from "../lib/negotiateTraceClearance"
@@ -34,7 +37,10 @@ test("extraction and negotiation retain departure metadata at coincident vertice
           { x: 4.75, y: 0, z: 2 },
           { x: 5.25, y: 0, z: 2, pcb_port_id: "end" },
         ],
-        vias: [{ x: -4.75, y: 0 }, ...(!throughHole ? [{ x: 4.75, y: 0 }] : [])],
+        vias: [
+          { x: -4.75, y: 0 },
+          ...(!throughHole ? [{ x: 4.75, y: 0 }] : []),
+        ],
       }
       const before = structuredClone(route)
       const srj: SimpleRouteJson = {
