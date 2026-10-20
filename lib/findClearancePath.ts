@@ -543,7 +543,7 @@ export function findClearancePath(input: {
       if (!Number.isFinite(cost)) continue
       costs.set(id, cost)
       previous.set(id, -1)
-      heap.push({ id, cost, priority: cost + heuristicWeight * heuristic(p) })
+      heap.pushValues(id, cost, cost + heuristicWeight * heuristic(p))
     }
   const gridNodeCount = nx * ny * srj.layerCount
   // Only pack edges when every grid-node pair has an exact integer key.
@@ -681,7 +681,7 @@ export function findClearancePath(input: {
       else viaPaths.delete(id)
       costs.set(id, cost)
       previous.set(id, current.id)
-      heap.push({ id, cost, priority: cost + heuristicWeight * heuristic(b) })
+      heap.pushValues(id, cost, cost + heuristicWeight * heuristic(b))
     }
   }
   if (input.stats)

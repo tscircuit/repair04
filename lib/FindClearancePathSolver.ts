@@ -691,11 +691,7 @@ export class FindClearancePathSolver extends BaseSolver {
           else costs.set(id, cost)
           if (densePrevious) densePrevious[id] = -1
           else previous.set(id, -1)
-          heap.push({
-            id,
-            cost,
-            priority: cost + heuristicWeight * heuristic(p),
-          })
+          heap.pushValues(id, cost, cost + heuristicWeight * heuristic(p))
         }
       const gridNodeCount = nx * ny * srj.layerCount
       // Only pack edges when every grid-node pair has an exact integer key.
@@ -867,11 +863,7 @@ export class FindClearancePathSolver extends BaseSolver {
             else costs.set(id, cost)
             if (densePrevious) densePrevious[id] = current.id
             else previous.set(id, current.id)
-            heap.push({
-              id,
-              cost,
-              priority: cost + heuristicWeight * heuristic(b),
-            })
+            heap.pushValues(id, cost, cost + heuristicWeight * heuristic(b))
           }
         }
         if (heap.length && expanded < (input.maxNodes ?? 30000)) return
