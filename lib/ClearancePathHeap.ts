@@ -55,6 +55,7 @@ export class ClearancePathHeap {
       throw new Error("repair04: queued path priorities may only decrease")
     const value =
       this.reusableEntries && previous ? previous : { id, cost, priority }
+    value.id = id
     value.cost = cost
     value.priority = priority
     this.insert(value, index)

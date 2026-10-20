@@ -31,5 +31,17 @@ test("object enqueues preserve caller references through mixed scalar updates", 
     // Public object pushes still return the exact supplied object after reset.
     actual.push(first)
     expect(actual.pop()).toBe(first)
+    // Grid lookup treats signed zeros as the same ID, but the latest payload
+    // must retain the exact sign supplied by the replacement enqueue.
+    for (const [firstId, replacementId] of [
+      [0, -0],
+      [-0, 0],
+    ] as const) {
+      actual.pushValues(firstId, 10, 10)
+      reference.push({ id: firstId, cost: 10, priority: 10 })
+      actual.pushValues(replacementId, 5, 5)
+      reference.push({ id: replacementId, cost: 5, priority: 5 })
+      expect(Object.is(actual.pop().id, reference.pop().id)).toBeTrue()
+    }
   }
 })
