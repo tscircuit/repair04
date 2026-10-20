@@ -466,11 +466,17 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             { index: Flatbush; copper: Copper[] } | undefined
           >()
           for (let z = 0; z < input.srj.layerCount; z++) {
+            // Planar queries always discard immutable and same-net copper.
+            // Via queries retain the full index for physical drill spacing.
             copperByLayer.set(
               z,
               createCopperIndex(
                 coppers.filter(
-                  (copper): boolean => copper.minZ <= z && copper.maxZ >= z,
+                  (copper): boolean =>
+                    !copper.immutable &&
+                    copper.owner !== selectedOwner &&
+                    copper.minZ <= z &&
+                    copper.maxZ >= z,
                 ),
               ),
             )
