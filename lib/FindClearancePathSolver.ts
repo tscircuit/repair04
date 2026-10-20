@@ -19,6 +19,7 @@ import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBo
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 import { REGION_EPSILON } from "./repairRegionGeometry"
 
+type ClearanceEdgeKey = number | string
 type Point = RepairRoutePoint
 type Barrier = {
   minX: number
@@ -662,10 +663,10 @@ export class FindClearancePathSolver extends BaseSolver {
         useDenseStorage ? denseNodeCount : undefined,
       )
       // The queue's bounded integer grid also admits exact numeric state arrays.
-      // Costs are finite when queued, so Infinity retains the meaning of an
-      // undiscovered state without storing a Map entry for each visited node.
+      // Encode predecessors as parent + 2: zero is undiscovered and one is a
+      // root. The zero-filled buffers then need no whole-grid Infinity fill.
       const denseCosts = useDenseStorage
-        ? new Float64Array(denseNodeCount).fill(Infinity)
+        ? new Float64Array(denseNodeCount)
         : undefined
       const densePrevious = useDenseStorage
         ? new Int32Array(denseNodeCount)
@@ -689,7 +690,7 @@ export class FindClearancePathSolver extends BaseSolver {
           if (!Number.isFinite(cost)) continue
           if (denseCosts) denseCosts[id] = cost
           else costs.set(id, cost)
-          if (densePrevious) densePrevious[id] = -1
+          if (densePrevious) densePrevious[id] = 1
           else previous.set(id, -1)
           heap.push({
             id,
@@ -718,7 +719,10 @@ export class FindClearancePathSolver extends BaseSolver {
           : undefined
       const settled =
         !useDenseStorage && heuristicWeight > 1 ? new Set<number>() : undefined
-      const edgeCache = new Map<number | string, boolean>()
+      // Weighted search settles each node once and skips settled neighbors.
+      // An undirected edge therefore cannot be queried again in this mode.
+      const edgeCache =
+        heuristicWeight === 1 ? new Map<ClearanceEdgeKey, boolean>() : undefined
       // Ordinary vias have the same hard clearance on every electrical layer
       // pair. Reuse that result at each grid site; blind vias retain edge keys.
       const fullStackViaClearance = new Map<number, boolean>()
@@ -749,7 +753,7 @@ export class FindClearancePathSolver extends BaseSolver {
             for (
               let id = current.id;
               id !== -1;
-              id = densePrevious ? densePrevious[id]! : previous.get(id)!
+              id = densePrevious ? densePrevious[id]! - 2 : previous.get(id)!
             )
               reversed.push(point(id))
             reversed.push(start)
@@ -829,7 +833,9 @@ export class FindClearancePathSolver extends BaseSolver {
                 current.cost +
                 (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
               previousCost = denseCosts
-                ? denseCosts[id]!
+                ? densePrevious![id] === 0
+                  ? Infinity
+                  : denseCosts[id]!
                 : (costs.get(id) ?? Infinity)
             // Congestion costs are nonnegative, so an edge that cannot improve the
             // geometric cost cannot improve the complete cost either.
@@ -849,11 +855,11 @@ export class FindClearancePathSolver extends BaseSolver {
                 : undefined
             let permitted =
               fullStackViaKey === undefined
-                ? edgeCache.get(key)
+                ? edgeCache?.get(key)
                 : fullStackViaClearance.get(fullStackViaKey)
             if (permitted === undefined) {
               permitted = clear(a, b)
-              if (fullStackViaKey === undefined) edgeCache.set(key, permitted)
+              if (fullStackViaKey === undefined) edgeCache?.set(key, permitted)
               else fullStackViaClearance.set(fullStackViaKey, permitted)
             }
             if (!permitted) continue
@@ -865,7 +871,7 @@ export class FindClearancePathSolver extends BaseSolver {
             else viaPaths.delete(id)
             if (denseCosts) denseCosts[id] = cost
             else costs.set(id, cost)
-            if (densePrevious) densePrevious[id] = current.id
+            if (densePrevious) densePrevious[id] = current.id + 2
             else previous.set(id, current.id)
             heap.push({
               id,
