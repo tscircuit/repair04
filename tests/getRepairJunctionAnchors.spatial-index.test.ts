@@ -49,24 +49,27 @@ test("indexed anchors retain the exhaustive scan's copper contacts and insertion
       ],
     })
   }
-  const traces: SimplifiedPcbTrace[] = Array.from({ length: 24 }, (_, index) => {
-    const x = ((index * 7) % 24) - 12
-    return {
-      type: "pcb_trace",
-      pcb_trace_id: `fixed-${index}`,
-      connection_name: "preload-alias",
-      route: [
-        {
-          route_type: "wire",
-          x: x + REGION_EPSILON * (index % 2),
-          y: 0.2,
-          width: 0.2,
-          layer: "top",
-        },
-        { route_type: "wire", x, y: 2, width: 0.2, layer: "top" },
-      ],
-    }
-  })
+  const traces: SimplifiedPcbTrace[] = Array.from(
+    { length: 24 },
+    (_, index) => {
+      const x = ((index * 7) % 24) - 12
+      return {
+        type: "pcb_trace",
+        pcb_trace_id: `fixed-${index}`,
+        connection_name: "preload-alias",
+        route: [
+          {
+            route_type: "wire",
+            x: x + REGION_EPSILON * (index % 2),
+            y: 0.2,
+            width: 0.2,
+            layer: "top",
+          },
+          { route_type: "wire", x, y: 2, width: 0.2, layer: "top" },
+        ],
+      }
+    },
+  )
   traces.push({
     type: "pcb_trace",
     pcb_trace_id: "fixed-via",
@@ -89,7 +92,11 @@ test("indexed anchors retain the exhaustive scan's copper contacts and insertion
     bounds: fullBounds,
     obstacles: [],
     connections: [
-      { name: "preload-alias", rootConnectionName: "shared-net", pointsToConnect: [] },
+      {
+        name: "preload-alias",
+        rootConnectionName: "shared-net",
+        pointsToConnect: [],
+      },
     ],
     traces,
   }
@@ -115,11 +122,13 @@ test("indexed anchors retain the exhaustive scan's copper contacts and insertion
       (anchors, index) =>
         anchors.segmentTimes.size === 0 && anchors.viaPositions.length === 0
           ? []
-          : [{
-              route: routes[index]!.connectionName,
-              segmentTimes: [...anchors.segmentTimes],
-              viaPositions: anchors.viaPositions,
-            }],
+          : [
+              {
+                route: routes[index]!.connectionName,
+                segmentTimes: [...anchors.segmentTimes],
+                viaPositions: anchors.viaPositions,
+              },
+            ],
     ),
   }))
   expect(results).toMatchSnapshot()
