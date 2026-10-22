@@ -7,7 +7,7 @@ import {
 } from "../lib/findClearancePath"
 import type { RepairRoutePoint } from "../lib/repairRegionTypes"
 
-test("weighted edge-cache bypass preserves dense, sparse and via searches", (): void => {
+test("clearance pruning preserves dense, sparse and via searches", (): void => {
   for (const extent of [6, 600, 100_000]) {
     for (const heuristicWeight of [1, 3]) {
       for (const allowBlindAndBuriedVias of [false, true]) {

@@ -824,13 +824,16 @@ export class FindClearancePathSolver extends BaseSolver {
           for (const id of neighbors) {
             if (denseSettled ? denseSettled[id] === 1 : settled?.has(id))
               continue
+            const previousCost = denseCosts
+              ? denseCosts[id]!
+              : (costs.get(id) ?? Infinity)
+            // Every move has nonnegative cost. Reject a cheaper known state
+            // before constructing its point or measuring the edge length.
+            if (current.cost >= previousCost) continue
             const b = point(id),
               baseCost =
                 current.cost +
-                (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
-              previousCost = denseCosts
-                ? denseCosts[id]!
-                : (costs.get(id) ?? Infinity)
+                (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1)
             // Congestion costs are nonnegative, so an edge that cannot improve the
             // geometric cost cannot improve the complete cost either.
             if (baseCost >= previousCost) continue
