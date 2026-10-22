@@ -892,6 +892,11 @@ export class FindClearancePathSolver extends BaseSolver {
     return this.output
   }
 
+  /** Preparation has finished; the next step performs bounded A* work. */
+  isSearchPrepared(): boolean {
+    return this.phase === "search"
+  }
+
   getResult(): Point[] | null {
     return this.getOutput()
   }
