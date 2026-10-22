@@ -61,7 +61,8 @@ test("weighted edge-cache bypass preserves dense, sparse and via searches", (): 
           }
           const outputs: Array<RepairRoutePoint[] | null> = []
           const work: ClearancePathSearchStats[] = []
-          const callbacks: Array<Array<[RepairRoutePoint, RepairRoutePoint]>> = []
+          const callbacks: Array<Array<[RepairRoutePoint, RepairRoutePoint]>> =
+            []
           for (const incremental of [false, true]) {
             const calls: Array<[RepairRoutePoint, RepairRoutePoint]> = []
             const stats: ClearancePathSearchStats = {
