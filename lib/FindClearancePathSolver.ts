@@ -836,25 +836,34 @@ export class FindClearancePathSolver extends BaseSolver {
             if (baseCost >= previousCost) continue
             // Hard-blocked edges cannot enter the queue. Avoid the more expensive
             // movable-copper congestion query for those edges.
-            const low = Math.min(current.id, id),
-              high = Math.max(current.id, id)
-            const key = useNumericEdgeKeys
-              ? low * gridNodeCount + high
-              : `${low},${high}`
             const fullStackViaKey =
               useNumericEdgeKeys &&
               a.z !== b.z &&
               srj.allowBlindAndBuriedVias !== true
                 ? current.id % (nx * ny)
                 : undefined
-            let permitted =
-              fullStackViaKey === undefined
-                ? edgeCache.get(key)
-                : fullStackViaClearance.get(fullStackViaKey)
-            if (permitted === undefined) {
+            let permitted: boolean | undefined
+            if (fullStackViaKey !== undefined) {
+              permitted = fullStackViaClearance.get(fullStackViaKey)
+              if (permitted === undefined) {
+                permitted = clear(a, b)
+                fullStackViaClearance.set(fullStackViaKey, permitted)
+              }
+            } else if (heuristicWeight > 1) {
+              // Settled states are never reopened, so an undirected edge is
+              // checked only once. Caching it cannot produce a cache hit.
               permitted = clear(a, b)
-              if (fullStackViaKey === undefined) edgeCache.set(key, permitted)
-              else fullStackViaClearance.set(fullStackViaKey, permitted)
+            } else {
+              const low = Math.min(current.id, id),
+                high = Math.max(current.id, id)
+              const key = useNumericEdgeKeys
+                ? low * gridNodeCount + high
+                : `${low},${high}`
+              permitted = edgeCache.get(key)
+              if (permitted === undefined) {
+                permitted = clear(a, b)
+                edgeCache.set(key, permitted)
+              }
             }
             if (!permitted) continue
             const cost = baseCost + extraCost(a, b)
