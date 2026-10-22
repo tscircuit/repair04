@@ -5,6 +5,7 @@ import type {
 } from "./negotiateTraceClearance"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { FindClearancePathSolver } from "./FindClearancePathSolver"
+import { PairedClearancePathSolver } from "./PairedClearancePathSolver"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import Flatbush from "flatbush"
 import type {
@@ -74,7 +75,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
   private copperCursor = 0
   private spanCount = 0
   private output?: NegotiatedClearanceResult
-  private pathSolver?: FindClearancePathSolver
+  private pathSolver?: FindClearancePathSolver | PairedClearancePathSolver
   private prepareRoute!: (routeIndex: number) => void
   private finishSetup!: () => void
   private selectSpan!: () => void
@@ -164,6 +165,12 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
 
   private initialize(): void {
     const input = this.input
+    if (
+      input.searchDirectionCount !== undefined &&
+      input.searchDirectionCount !== 1 && input.searchDirectionCount !== 2
+    ) {
+      throw new Error("repair04: search direction count must be one or two")
+    }
     for (const value of [input.maxPathSearchNodes, input.maxPathSearchCalls]) {
       if (!Number.isSafeInteger(value) || value < 0)
         throw new Error(
@@ -626,7 +633,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             nodesPopped: 0,
             completionReason: "no-path",
           }
-          const solver = new FindClearancePathSolver({
+          const pathInput = {
             srj: input.srj,
             routes: [...fixed, route],
             routeIndex: fixed.length,
@@ -646,11 +653,27 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               input.maxPathSearchNodes - pathSearchNodes,
             ),
             heuristicWeight: input.pathHeuristicWeight,
-            stats,
-            getAdditionalEdgeCost,
             existingPath: route.route,
             viaHoleDiameter: input.viaHoleDiameter,
-          })
+          }
+          const reverseNodes = Math.min(
+            input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
+            input.maxPathSearchNodes - pathSearchNodes - pathInput.maxNodes,
+          )
+          const solver = input.searchDirectionCount === 2
+            ? new PairedClearancePathSolver({
+                task: { pathInput, coppers, selectedOwner, weights },
+                reverseMaxNodes:
+                  input.maxPathSearchCalls - pathSearchCalls >= 2 &&
+                  reverseNodes > 0
+                    ? reverseNodes
+                    : undefined,
+              })
+            : new FindClearancePathSolver({
+                ...pathInput,
+                stats,
+                getAdditionalEdgeCost,
+              })
 
           this.pathSolver = solver
           this.activeSubSolver = solver
@@ -662,9 +685,14 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
           )
           this.phase = "path"
           this.applyPath = (path): void => {
-            pathSearchCalls++
-            pathSearchNodes += stats.nodesPopped
-            input.onSearch?.(stats)
+            const laneStats = solver instanceof PairedClearancePathSolver
+              ? solver.getLaneStats()
+              : [stats]
+            pathSearchCalls += laneStats.length
+            for (const lane of laneStats) {
+              pathSearchNodes += lane.nodesPopped
+              input.onSearch?.(lane)
+            }
             if (!path) {
               frozen.add(index)
               fixed.push(route)
