@@ -309,8 +309,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         b.radius +
         Math.max(this.traceClearance, this.viaClearance) +
         2 * Math.SQRT2 * MAX_DISPLACEMENT
-      if (areExpandedBoundsSeparated(a.bounds, b.bounds, reach))
-        continue
+      if (areExpandedBoundsSeparated(a.bounds, b.bounds, reach)) continue
       if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach) {
         this.pairs.push({ a, b, revisions: [-1, -1, -1, -1], contact: null })
       }
