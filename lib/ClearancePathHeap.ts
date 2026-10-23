@@ -1,7 +1,14 @@
+export type ClearancePathVia = {
+  readonly x: number
+  readonly y: number
+  readonly previous?: ClearancePathVia
+}
+
 export type ClearancePathSearchNode = {
   id: number
   cost: number
   priority: number
+  viaPath?: ClearancePathVia
 }
 
 /** One pending entry per grid state, with in-place priority decreases. */
