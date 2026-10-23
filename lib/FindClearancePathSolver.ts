@@ -4,10 +4,7 @@ import type {
 } from "./findClearancePath"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
-import {
-  segmentToBoundsMinDistance,
-  segmentToSegmentMinDistance,
-} from "@tscircuit/math-utils"
+import { segmentToBoundsMinDistance } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
@@ -19,8 +16,13 @@ import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBo
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 import { REGION_EPSILON } from "./repairRegionGeometry"
 
+import {
+  getPreparedSegmentDistance,
+  type PreparedSegment,
+} from "./getPreparedSegmentDistance"
+
 type Point = RepairRoutePoint
-type Barrier = {
+type Barrier = PreparedSegment & {
   minX: number
   maxX: number
   minY: number
@@ -335,6 +337,9 @@ export class FindClearancePathSolver extends BaseSolver {
         a,
         b,
         radius,
+        deltaX: b.x - a.x,
+        deltaY: b.y - a.y,
+        lengthSquared: (b.x - a.x) ** 2 + (b.y - a.y) ** 2,
         rect,
         viaOnly,
         pad,
@@ -475,10 +480,18 @@ export class FindClearancePathSolver extends BaseSolver {
       }
     }
     let queryId = 0
-    // Exact-distance helpers are synchronous and retain no point references.
+    // Distance queries are synchronous; reuse one prepared edge per search.
     const localA = { x: 0, y: 0 }
     const localB = { x: 0, y: 0 }
+    const querySegment: PreparedSegment = {
+      a: start,
+      b: start,
+      deltaX: 0,
+      deltaY: 0,
+      lengthSquared: 0,
+    }
     const clear = (a: Point, b: Point): boolean => {
+      let segmentPrepared = false
       const isVia = a.z !== b.z
       const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
       const margin = Math.max(
@@ -559,10 +572,19 @@ export class FindClearancePathSolver extends BaseSolver {
                 localB,
                 barrier.rectBounds!,
               )
-            } else
+            } else {
+              if (!segmentPrepared) {
+                querySegment.a = a
+                querySegment.b = b
+                querySegment.deltaX = b.x - a.x
+                querySegment.deltaY = b.y - a.y
+                querySegment.lengthSquared =
+                  (b.x - a.x) ** 2 + (b.y - a.y) ** 2
+                segmentPrepared = true
+              }
               distance =
-                segmentToSegmentMinDistance(a, b, barrier.a, barrier.b) -
-                barrier.radius
+                getPreparedSegmentDistance(querySegment, barrier) - barrier.radius
+            }
             // Keep exactly feasible corridors open within coordinate precision.
             if (distance + REGION_EPSILON < clearance) return false
           }

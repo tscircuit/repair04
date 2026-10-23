@@ -5,7 +5,10 @@ import type {
 } from "./negotiateTraceClearance"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { FindClearancePathSolver } from "./FindClearancePathSolver"
-import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
+import {
+  getPreparedSegmentDistance,
+  type PreparedSegment,
+} from "./getPreparedSegmentDistance"
 import Flatbush from "flatbush"
 import type {
   HighDensityRoute,
@@ -22,7 +25,7 @@ type Span = {
   mutable: boolean
   route: HighDensityRoute
 }
-type Copper = {
+type Copper = PreparedSegment & {
   a: RepairRoutePoint
   b: RepairRoutePoint
   radius: number
@@ -432,6 +435,9 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               a,
               b,
               radius,
+              deltaX: b.x - a.x,
+              deltaY: b.y - a.y,
+              lengthSquared: (b.x - a.x) ** 2 + (b.y - a.y) ** 2,
               minX: Math.min(a.x, b.x),
               maxX: Math.max(a.x, b.x),
               minY: Math.min(a.y, b.y),
@@ -474,15 +480,27 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               z,
               createCopperIndex(
                 coppers.filter(
-                  (copper): boolean => copper.minZ <= z && copper.maxZ >= z,
+                  (copper): boolean =>
+                    !copper.immutable &&
+                    copper.owner !== selectedOwner &&
+                    copper.minZ <= z &&
+                    copper.maxZ >= z,
                 ),
               ),
             )
+          }
+          const querySegment: PreparedSegment = {
+            a: route.route[0]!,
+            b: route.route[0]!,
+            deltaX: 0,
+            deltaY: 0,
+            lengthSquared: 0,
           }
           const query = (
             a: RepairRoutePoint,
             b: RepairRoutePoint,
           ): Array<{ copper: Copper; ratio: number }> => {
+            let segmentPrepared = false
             const via = a.z !== b.z
             const minX = Math.min(a.x, b.x),
               maxX = Math.max(a.x, b.x),
@@ -538,12 +556,16 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
                 maxY + required + REGION_EPSILON < copper.minY
               )
                 continue
-              const distance = segmentToSegmentMinDistance(
-                a,
-                b,
-                copper.a,
-                copper.b,
-              )
+              if (!segmentPrepared) {
+                querySegment.a = a
+                querySegment.b = b
+                querySegment.deltaX = b.x - a.x
+                querySegment.deltaY = b.y - a.y
+                querySegment.lengthSquared =
+                  (b.x - a.x) ** 2 + (b.y - a.y) ** 2
+                segmentPrepared = true
+              }
+              const distance = getPreparedSegmentDistance(querySegment, copper)
               if (distance < required - REGION_EPSILON)
                 hits.push({
                   copper,
