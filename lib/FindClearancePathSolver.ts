@@ -12,7 +12,7 @@ import type {
   HighDensityRoute,
   SimpleRouteJson,
 } from "high-density-repair03/lib"
-import { ClearancePathHeap } from "./ClearancePathHeap"
+import { ClearancePathHeap, type ClearancePathVia } from "./ClearancePathHeap"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { getViaPadClearance } from "./getViaPadClearance"
 import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
@@ -39,7 +39,7 @@ type Barrier = {
   rectBounds?: Bounds
   visitedQuery: number
 }
-type ViaPath = { x: number; y: number; previous?: ViaPath }
+type ViaPath = ClearancePathVia
 
 type ClearancePathPhase =
   | "initialize"
@@ -672,7 +672,6 @@ export class FindClearancePathSolver extends BaseSolver {
         : undefined
       const costs = new Map<number, number>()
       const previous = new Map<number, number>()
-      const viaPaths = new Map<number, ViaPath | undefined>()
       const startId = idOf(start),
         sx = startId % nx,
         sy = Math.floor(startId / nx) % ny
@@ -695,6 +694,7 @@ export class FindClearancePathSolver extends BaseSolver {
             id,
             cost,
             priority: cost + heuristicWeight * heuristic(p),
+            viaPath: undefined,
           })
         }
       const gridNodeCount = nx * ny * srj.layerCount
@@ -738,7 +738,7 @@ export class FindClearancePathSolver extends BaseSolver {
           if (denseSettled) denseSettled[current.id] = 1
           else settled?.add(current.id)
           const a = point(current.id)
-          const viaPath = viaPaths.get(current.id)
+          const viaPath = current.viaPath
           if (
             a.z === end.z &&
             Math.hypot(a.x - end.x, a.y - end.y) < grid * 3 &&
@@ -859,10 +859,10 @@ export class FindClearancePathSolver extends BaseSolver {
             if (!permitted) continue
             const cost = baseCost + extraCost(a, b)
             if (cost >= previousCost) continue
-            if (a.z !== b.z && (a.x !== viaPath?.x || a.y !== viaPath?.y))
-              viaPaths.set(id, { x: a.x, y: a.y, previous: viaPath })
-            else if (viaPath) viaPaths.set(id, viaPath)
-            else viaPaths.delete(id)
+            const nextViaPath =
+              a.z !== b.z && (a.x !== viaPath?.x || a.y !== viaPath?.y)
+                ? { x: a.x, y: a.y, previous: viaPath }
+                : viaPath
             if (denseCosts) denseCosts[id] = cost
             else costs.set(id, cost)
             if (densePrevious) densePrevious[id] = current.id
@@ -871,6 +871,7 @@ export class FindClearancePathSolver extends BaseSolver {
               id,
               cost,
               priority: cost + heuristicWeight * heuristic(b),
+              viaPath: nextViaPath,
             })
           }
         }
