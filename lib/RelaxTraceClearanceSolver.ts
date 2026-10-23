@@ -52,14 +52,12 @@ type SegmentPair = {
   a: Segment
   b: Segment
   revisions: [number, number, number, number]
-  contact: Contact | null
 }
 type PadContact = {
   segment: Segment
   corners: Point[]
   required: number
   revisions: [number, number]
-  contact: Contact | null
 }
 
 const MAX_SWEEPS = 256
@@ -307,7 +305,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       if (areExpandedBoundsSeparated(a.initialBounds, b.initialBounds, reach))
         continue
       if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach) {
-        this.pairs.push({ a, b, revisions: [-1, -1, -1, -1], contact: null })
+        this.pairs.push({ a, b, revisions: [-1, -1, -1, -1] })
       }
     }
     if (this.pairOuterIndex >= this.segments.length) this.phase = "obstacles"
@@ -429,7 +427,6 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
           corners,
           required,
           revisions: [-1, -1],
-          contact: null,
         })
         if (segment.via) {
           const constraint: ViaPadConstraint = {
@@ -759,18 +756,19 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
   private projectPair(pair: SegmentPair): void {
     const { a, b, revisions } = pair
     if (
-      a.a.revision !== revisions[0] ||
-      a.b.revision !== revisions[1] ||
-      b.a.revision !== revisions[2] ||
-      b.b.revision !== revisions[3]
-    ) {
-      pair.contact = getContact(a.a, a.b, b.a, b.b)
-      revisions[0] = a.a.revision
-      revisions[1] = a.b.revision
-      revisions[2] = b.a.revision
-      revisions[3] = b.b.revision
-    }
-    const contact = pair.contact!
+      a.a.revision === revisions[0] &&
+      a.b.revision === revisions[1] &&
+      b.a.revision === revisions[2] &&
+      b.b.revision === revisions[3]
+    )
+      return
+    // Repeating this projection with identical inputs cannot move a vertex.
+    // Record before projecting so our own movement also wakes the constraint.
+    revisions[0] = a.a.revision
+    revisions[1] = a.b.revision
+    revisions[2] = b.a.revision
+    revisions[3] = b.b.revision
+    const contact = getContact(a.a, a.b, b.a, b.b)
     const required =
       a.radius +
       b.radius +
@@ -794,6 +792,15 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
 
   private projectPad(pad: PadContact): void {
     const { segment, corners, required } = pad
+    if (
+      segment.a.revision === pad.revisions[0] &&
+      segment.b.revision === pad.revisions[1]
+    )
+      return
+    // Interior projections can need several sweeps. Cache their input revisions,
+    // rather than the revisions after moving an endpoint out of the pad.
+    pad.revisions[0] = segment.a.revision
+    pad.revisions[1] = segment.b.revision
     const endpointCount = segment.a === segment.b ? 1 : 2
     for (let endpoint = 0; endpoint < endpointCount; endpoint++) {
       const vertex = endpoint === 0 ? segment.a : segment.b
@@ -808,26 +815,17 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         )
       }
     }
-    if (
-      segment.a.revision !== pad.revisions[0] ||
-      segment.b.revision !== pad.revisions[1]
-    ) {
-      let nearest = getContact(segment.a, segment.b, corners[0]!, corners[1]!)
-      for (let i = 1; i < corners.length; i++) {
-        const candidate = getContact(
-          segment.a,
-          segment.b,
-          corners[i]!,
-          corners[(i + 1) % corners.length]!,
-        )
-        // The original reduction selected the last edge at equal distance.
-        nearest = nearest.distance < candidate.distance ? nearest : candidate
-      }
-      pad.contact = nearest
-      pad.revisions[0] = segment.a.revision
-      pad.revisions[1] = segment.b.revision
+    let contact = getContact(segment.a, segment.b, corners[0]!, corners[1]!)
+    for (let i = 1; i < corners.length; i++) {
+      const candidate = getContact(
+        segment.a,
+        segment.b,
+        corners[i]!,
+        corners[(i + 1) % corners.length]!,
+      )
+      // The original reduction selected the last edge at equal distance.
+      contact = contact.distance < candidate.distance ? contact : candidate
     }
-    const contact = pad.contact!
     if (contact.distance < 1e-10) return
     if (contact.distance >= required) return
     this.project(
