@@ -38,3 +38,9 @@ export type {
   ClearancePathSearchStats,
 } from "./findClearancePath"
 export type { RelaxTraceClearanceInput } from "./relaxTraceClearance"
+
+export {
+  PairedClearancePathSolver,
+  findPairedClearancePath,
+} from "./PairedClearancePathSolver"
+export type { PairedClearancePathInput } from "./PairedClearancePathSolver"

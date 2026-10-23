@@ -1,4 +1,5 @@
 import { getRepairRouteVias } from "./getRepairRouteVias"
+import { NegotiateTraceClearanceSolver } from "./NegotiateTraceClearanceSolver"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import Flatbush from "flatbush"
 import type {
@@ -54,6 +55,8 @@ export type NegotiatedClearanceInput = {
   pathHeuristicWeight?: number
   /** Scale the trace-width grid, capped at 0.1 mm; defaults to one. */
   pathGridSizeScale?: number
+  /** Search both anchor directions with deterministic logical generations. */
+  searchDirectionCount?: 1 | 2
   maxPathSearchCalls: number
   onSearch?: (stats: ClearancePathSearchStats) => void
 }
@@ -88,6 +91,18 @@ function withPoints({
 export function negotiateTraceClearance(
   input: NegotiatedClearanceInput,
 ): NegotiatedClearanceResult {
+  if (
+    input.searchDirectionCount !== undefined &&
+    input.searchDirectionCount !== 1 &&
+    input.searchDirectionCount !== 2
+  ) {
+    throw new Error("repair04: search direction count must be one or two")
+  }
+  if (input.searchDirectionCount === 2) {
+    const solver = new NegotiateTraceClearanceSolver(input)
+    solver.solve()
+    return solver.getOutput()
+  }
   for (const value of [input.maxPathSearchNodes, input.maxPathSearchCalls]) {
     if (!Number.isSafeInteger(value) || value < 0)
       throw new Error(
