@@ -6,12 +6,16 @@ test("cached board connectivity keeps route-specific unions and compression loca
   const task = createPairedClearanceTask()
   const srj = task.pathInput.srj
   srj.connections = [
-    { name: "left", rootConnectionName: "left-root", pointsToConnect: [
-      { x: 0, y: 0, layer: "top", pcb_port_id: "left-pin" },
-    ] },
-    { name: "right", rootConnectionName: "right-root", pointsToConnect: [
-      { x: 1, y: 0, layer: "top", pcb_port_id: "right-pin" },
-    ] },
+    {
+      name: "left",
+      rootConnectionName: "left-root",
+      pointsToConnect: [{ x: 0, y: 0, layer: "top", pcb_port_id: "left-pin" }],
+    },
+    {
+      name: "right",
+      rootConnectionName: "right-root",
+      pointsToConnect: [{ x: 1, y: 0, layer: "top", pcb_port_id: "right-pin" }],
+    },
   ]
   srj.obstacles[0]!.connectedTo = ["pad", "left-pin"]
   const connections = structuredClone(srj.connections)
@@ -19,8 +23,14 @@ test("cached board connectivity keeps route-specific unions and compression loca
   let connectionReads = 0
   let obstacleReads = 0
   const context = new ClearancePathConnectivity({
-    get connections() { connectionReads++; return srj.connections },
-    get obstacles() { obstacleReads++; return srj.obstacles },
+    get connections() {
+      connectionReads++
+      return srj.connections
+    },
+    get obstacles() {
+      obstacleReads++
+      return srj.obstacles
+    },
   })
   expect(connectionReads).toBe(0)
   expect(obstacleReads).toBe(0)

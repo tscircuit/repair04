@@ -3,9 +3,7 @@ import type {
   SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { PairedClearancePathSolver } from "../../lib/PairedClearancePathSolver"
-import type {
-  NegotiatedClearanceSearchInput,
-} from "../../lib/negotiatedClearanceSearchKernel"
+import type { NegotiatedClearanceSearchInput } from "../../lib/negotiatedClearanceSearchKernel"
 
 export function createPairedClearanceTask(
   geometry: "clear" | "endpoint" | "detour" | "wall" = "detour",
@@ -72,9 +70,7 @@ export function createPairedClearanceTask(
   }
 }
 
-export function pairedPublicState(
-  solver: PairedClearancePathSolver,
-): unknown {
+export function pairedPublicState(solver: PairedClearancePathSolver): unknown {
   return {
     iterations: solver.iterations,
     MAX_ITERATIONS: solver.MAX_ITERATIONS,

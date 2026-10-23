@@ -43,7 +43,10 @@ export class PairedClearancePathSolver extends BaseSolver {
       throw new Error("repair04: reverse node budget must be positive")
     }
     this.input = input
-    this.forward = createNegotiatedClearanceSearch(input.task, input.connectivity)
+    this.forward = createNegotiatedClearanceSearch(
+      input.task,
+      input.connectivity,
+    )
     this.activeSubSolver = this.forward
     const forwardNodes = input.task.pathInput.maxNodes ?? 30000
     const reverseMaximum =
@@ -66,10 +69,7 @@ export class PairedClearancePathSolver extends BaseSolver {
     )
   }
 
-  private stepLane(
-    lane: FindClearancePathSolver,
-    index: number,
-  ): void {
+  private stepLane(lane: FindClearancePathSolver, index: number): void {
     try {
       lane.step()
     } catch (error) {
@@ -116,8 +116,8 @@ export class PairedClearancePathSolver extends BaseSolver {
   }
 
   private checkFailure(): boolean {
-    const failed = [this.forward, this.reverse].find(
-      (lane): boolean => Boolean(lane?.failed),
+    const failed = [this.forward, this.reverse].find((lane): boolean =>
+      Boolean(lane?.failed),
     )
     if (!failed) return false
     this.failed = true
@@ -158,16 +158,19 @@ export class PairedClearancePathSolver extends BaseSolver {
       // another geometry/index preparation and a second constructed search.
       if (this.forward.stats.nodesPopped < 1024) return
       const { task } = this.input
-      this.reverse = createNegotiatedClearanceSearch({
-        ...task,
-        pathInput: {
-          ...task.pathInput,
-          start: task.pathInput.end,
-          end: task.pathInput.start,
-          existingPath: task.pathInput.existingPath?.slice().reverse(),
-          maxNodes: this.input.reverseMaxNodes,
+      this.reverse = createNegotiatedClearanceSearch(
+        {
+          ...task,
+          pathInput: {
+            ...task.pathInput,
+            start: task.pathInput.end,
+            end: task.pathInput.start,
+            existingPath: task.pathInput.existingPath?.slice().reverse(),
+            maxNodes: this.input.reverseMaxNodes,
+          },
         },
-      }, this.input.connectivity)
+        this.input.connectivity,
+      )
       this.activeSubSolver = this.reverse
       this.phase = "prepare-reverse"
       return

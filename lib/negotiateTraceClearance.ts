@@ -93,7 +93,8 @@ export function negotiateTraceClearance(
 ): NegotiatedClearanceResult {
   if (
     input.searchDirectionCount !== undefined &&
-    input.searchDirectionCount !== 1 && input.searchDirectionCount !== 2
+    input.searchDirectionCount !== 1 &&
+    input.searchDirectionCount !== 2
   ) {
     throw new Error("repair04: search direction count must be one or two")
   }

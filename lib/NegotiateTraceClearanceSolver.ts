@@ -175,7 +175,8 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
     const connectivity = new ClearancePathConnectivity(input.srj)
     if (
       input.searchDirectionCount !== undefined &&
-      input.searchDirectionCount !== 1 && input.searchDirectionCount !== 2
+      input.searchDirectionCount !== 1 &&
+      input.searchDirectionCount !== 2
     ) {
       throw new Error("repair04: search direction count must be one or two")
     }
@@ -481,10 +482,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             return { index, copper: indexedCopper, cellCandidates: new Map() }
           }
           const copperIndex = createCopperIndex(coppers)
-          const copperByLayer = new Map<
-            number,
-            CopperIndex | undefined
-          >()
+          const copperByLayer = new Map<number, CopperIndex | undefined>()
           for (let z = 0; z < input.srj.layerCount; z++) {
             copperByLayer.set(
               z,
@@ -516,15 +514,19 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             const queryMinY = minY - reach - REGION_EPSILON
             const queryMaxX = maxX + reach + REGION_EPSILON
             const queryMaxY = maxY + reach + REGION_EPSILON
-            const firstX = Math.floor(queryMinX), lastX = Math.floor(queryMaxX)
-            const firstY = Math.floor(queryMinY), lastY = Math.floor(queryMaxY)
+            const firstX = Math.floor(queryMinX),
+              lastX = Math.floor(queryMaxX)
+            const firstY = Math.floor(queryMinY),
+              lastY = Math.floor(queryMaxY)
             const currentQuery = ++queryId
             let candidates: number[]
             if (
               activeIndex &&
               (lastX - firstX + 1) * (lastY - firstY + 1) <= 16 &&
-              Number.isSafeInteger(firstX) && Number.isSafeInteger(lastX) &&
-              Number.isSafeInteger(firstY) && Number.isSafeInteger(lastY)
+              Number.isSafeInteger(firstX) &&
+              Number.isSafeInteger(lastX) &&
+              Number.isSafeInteger(firstY) &&
+              Number.isSafeInteger(lastY)
             ) {
               // Adjacent A* edges repeatedly visit the same small spatial cells.
               // Cache their broad-phase candidates, then apply the original
@@ -548,18 +550,28 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
                     if (copper.visitedQuery === currentQuery) continue
                     copper.visitedQuery = currentQuery
                     if (
-                      queryMaxX < copper.minX - copper.radius - REGION_EPSILON ||
-                      queryMaxY < copper.minY - copper.radius - REGION_EPSILON ||
-                      queryMinX > copper.maxX + copper.radius + REGION_EPSILON ||
+                      queryMaxX <
+                        copper.minX - copper.radius - REGION_EPSILON ||
+                      queryMaxY <
+                        copper.minY - copper.radius - REGION_EPSILON ||
+                      queryMinX >
+                        copper.maxX + copper.radius + REGION_EPSILON ||
                       queryMinY > copper.maxY + copper.radius + REGION_EPSILON
-                    ) continue
+                    )
+                      continue
                     candidateScratch.push(candidate)
                   }
                 }
               }
               candidates = candidateScratch
             } else {
-              candidates = activeIndex?.index.search(queryMinX, queryMinY, queryMaxX, queryMaxY) ?? []
+              candidates =
+                activeIndex?.index.search(
+                  queryMinX,
+                  queryMinY,
+                  queryMaxX,
+                  queryMaxY,
+                ) ?? []
             }
             for (const candidate of candidates) {
               const copper = activeIndex!.copper[candidate]!
@@ -713,21 +725,25 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
             input.maxPathSearchNodes - pathSearchNodes - pathInput.maxNodes,
           )
-          const solver = input.searchDirectionCount === 2
-            ? new PairedClearancePathSolver({
-                task: { pathInput, coppers, selectedOwner, weights },
-                connectivity,
-                reverseMaxNodes:
-                  input.maxPathSearchCalls - pathSearchCalls >= 2 &&
-                  reverseNodes > 0
-                    ? reverseNodes
-                    : undefined,
-              })
-            : new FindClearancePathSolver({
-                ...pathInput,
-                stats,
-                getAdditionalEdgeCost,
-              }, connectivity)
+          const solver =
+            input.searchDirectionCount === 2
+              ? new PairedClearancePathSolver({
+                  task: { pathInput, coppers, selectedOwner, weights },
+                  connectivity,
+                  reverseMaxNodes:
+                    input.maxPathSearchCalls - pathSearchCalls >= 2 &&
+                    reverseNodes > 0
+                      ? reverseNodes
+                      : undefined,
+                })
+              : new FindClearancePathSolver(
+                  {
+                    ...pathInput,
+                    stats,
+                    getAdditionalEdgeCost,
+                  },
+                  connectivity,
+                )
 
           this.pathSolver = solver
           this.activeSubSolver = solver
@@ -739,9 +755,10 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
           )
           this.phase = "path"
           this.applyPath = (path): void => {
-            const laneStats = solver instanceof PairedClearancePathSolver
-              ? solver.getLaneStats()
-              : [stats]
+            const laneStats =
+              solver instanceof PairedClearancePathSolver
+                ? solver.getLaneStats()
+                : [stats]
             pathSearchCalls += laneStats.length
             for (const lane of laneStats) {
               pathSearchNodes += lane.nodesPopped

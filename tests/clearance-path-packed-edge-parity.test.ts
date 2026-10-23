@@ -36,7 +36,15 @@ test("packed edge permissions preserve narrow grids, diagonals and via spans", (
                 },
               ],
             },
-            routes: [{ connectionName: "signal", traceThickness: 0.1, viaDiameter: 0.4, vias: [], route: [start!, end!] }],
+            routes: [
+              {
+                connectionName: "signal",
+                traceThickness: 0.1,
+                viaDiameter: 0.4,
+                vias: [],
+                route: [start!, end!],
+              },
+            ],
             routeIndex: 0,
             start: start!,
             end: end!,
@@ -52,7 +60,10 @@ test("packed edge permissions preserve narrow grids, diagonals and via spans", (
           const counters: ClearancePathSearchStats[] = []
           const querySequences: string[][] = []
           for (const stepped of [false, true]) {
-            const stats: ClearancePathSearchStats = { nodesPopped: 0, completionReason: "no-path" }
+            const stats: ClearancePathSearchStats = {
+              nodesPopped: 0,
+              completionReason: "no-path",
+            }
             const queries: string[] = []
             const args: ClearancePathInput = {
               ...input,
@@ -60,7 +71,9 @@ test("packed edge permissions preserve narrow grids, diagonals and via spans", (
               getAdditionalEdgeCost: (a, b): number => {
                 queries.push(JSON.stringify([a, b]))
                 return Math.abs((a.x + b.x) / 2 - nx / 2) < 1 &&
-                  Math.abs((a.y + b.y) / 2 - 4) < 2 ? 0.25 : 0
+                  Math.abs((a.y + b.y) / 2 - 4) < 2
+                  ? 0.25
+                  : 0
               },
             }
             if (stepped) {

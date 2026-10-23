@@ -5,9 +5,7 @@ import type {
 } from "./findClearancePath"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
-import {
-  segmentToBoundsMinDistance,
-} from "@tscircuit/math-utils"
+import { segmentToBoundsMinDistance } from "@tscircuit/math-utils"
 import { getSegmentToSegmentMinDistance as segmentToSegmentMinDistance } from "./getSegmentToSegmentMinDistance"
 import type {
   HighDensityRoute,
@@ -71,7 +69,10 @@ export class FindClearancePathSolver extends BaseSolver {
   private seedSearch?: () => void
   private searchBatch?: () => void
 
-  constructor(input: ClearancePathInput, private readonly connectivity?: ClearancePathConnectivity) {
+  constructor(
+    input: ClearancePathInput,
+    private readonly connectivity?: ClearancePathConnectivity,
+  ) {
     super()
     this.input = input
     this.stats = input.stats ?? { nodesPopped: 0, completionReason: "no-path" }
@@ -241,7 +242,9 @@ export class FindClearancePathSolver extends BaseSolver {
       }
       return true
     }
-    const net = (this.connectivity ?? new ClearancePathConnectivity(srj)).createNetResolver(routes)
+    const net = (
+      this.connectivity ?? new ClearancePathConnectivity(srj)
+    ).createNetResolver(routes)
     const owner = net(route.connectionName)
     const layer = (name: string): number =>
       name === "top"
@@ -688,9 +691,7 @@ export class FindClearancePathSolver extends BaseSolver {
       // each examined edge. Narrow grids have overlapping linear offsets, so
       // retain the general key representation for those grids.
       const denseEdgePermissions =
-        useDenseStorage && nx >= 3
-          ? new Uint8Array(denseNodeCount)
-          : undefined
+        useDenseStorage && nx >= 3 ? new Uint8Array(denseNodeCount) : undefined
       // Ordinary vias have the same hard clearance on every electrical layer
       // pair. Reuse that result at each grid site; blind vias retain edge keys.
       const fullStackViaClearance = new Map<number, boolean>()

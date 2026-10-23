@@ -98,8 +98,7 @@ export function createNegotiatedClearanceSearchKernel(
     for (const candidate of candidates) {
       const copper = activeIndex!.copper[candidate]!
       const bothVias = via && copper.minZ !== copper.maxZ
-      const sharedLayers =
-        copper.minZ <= span.maxZ && copper.maxZ >= span.minZ
+      const sharedLayers = copper.minZ <= span.maxZ && copper.maxZ >= span.minZ
       if (!sharedLayers && !bothVias) continue
       if (copper.immutable && !bothVias) continue
       if (
@@ -132,12 +131,7 @@ export function createNegotiatedClearanceSearchKernel(
         maxY + required + REGION_EPSILON < copper.minY
       )
         continue
-      const distance = segmentToSegmentMinDistance(
-        a,
-        b,
-        copper.a,
-        copper.b,
-      )
+      const distance = segmentToSegmentMinDistance(a, b, copper.a, copper.b)
       if (distance < required - REGION_EPSILON)
         hits.push({
           copper,
@@ -175,8 +169,7 @@ export function createNegotiatedClearanceSearchKernel(
       return Infinity
     const costs = new Map<string, number>()
     for (const { copper, ratio } of query(a, b)) {
-      if (copper.owner === selectedOwner || copper.immutable)
-        return Infinity
+      if (copper.owner === selectedOwner || copper.immutable) return Infinity
       costs.set(
         copper.owner,
         Math.max(

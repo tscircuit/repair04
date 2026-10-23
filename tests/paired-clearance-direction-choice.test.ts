@@ -90,7 +90,11 @@ const exerciseChoice = (sameGenerationTie: boolean): void => {
   const task = makeTask()
   const before = JSON.stringify(task)
   const paired = new PairedClearancePathSolver({ task, reverseMaxNodes: 384 })
-  for (let step = 0; step < 100 && !paired.reverse?.isSearchPrepared(); step++) {
+  for (
+    let step = 0;
+    step < 100 && !paired.reverse?.isSearchPrepared();
+    step++
+  ) {
     expect(paired.solved).toBe(false)
     expect(paired.failed).toBe(false)
     paired.step()
@@ -170,10 +174,7 @@ const exerciseChoice = (sameGenerationTie: boolean): void => {
   expect(JSON.stringify(task)).toBe(before)
 }
 
-test(
-  "paired direction choice charges both lanes and preserves reversed port and drill geometry",
-  (): void => {
-    exerciseChoice(true)
-    exerciseChoice(false)
-  },
-)
+test("paired direction choice charges both lanes and preserves reversed port and drill geometry", (): void => {
+  exerciseChoice(true)
+  exerciseChoice(false)
+})

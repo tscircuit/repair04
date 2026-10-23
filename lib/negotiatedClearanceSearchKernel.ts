@@ -71,10 +71,7 @@ export function createNegotiatedClearanceSearchKernel(
     }
   }
   const copperIndex = createCopperIndex(coppers)
-  const copperByLayer = new Map<
-    number,
-    CopperIndex | undefined
-  >()
+  const copperByLayer = new Map<number, CopperIndex | undefined>()
   for (let z = 0; z < input.srj.layerCount; z++) {
     copperByLayer.set(
       z,
@@ -106,8 +103,10 @@ export function createNegotiatedClearanceSearchKernel(
     const queryMinY = minY - reach - REGION_EPSILON
     const queryMaxX = maxX + reach + REGION_EPSILON
     const queryMaxY = maxY + reach + REGION_EPSILON
-    const firstX = Math.floor(queryMinX), lastX = Math.floor(queryMaxX)
-    const firstY = Math.floor(queryMinY), lastY = Math.floor(queryMaxY)
+    const firstX = Math.floor(queryMinX),
+      lastX = Math.floor(queryMaxX)
+    const firstY = Math.floor(queryMinY),
+      lastY = Math.floor(queryMaxY)
     if (queryId === 0xffffffff) {
       copperIndex?.queryStamps.fill(0)
       for (const index of copperByLayer.values()) index?.queryStamps.fill(0)
@@ -118,8 +117,10 @@ export function createNegotiatedClearanceSearchKernel(
     if (
       activeIndex &&
       (lastX - firstX + 1) * (lastY - firstY + 1) <= 16 &&
-      Number.isSafeInteger(firstX) && Number.isSafeInteger(lastX) &&
-      Number.isSafeInteger(firstY) && Number.isSafeInteger(lastY)
+      Number.isSafeInteger(firstX) &&
+      Number.isSafeInteger(lastX) &&
+      Number.isSafeInteger(firstY) &&
+      Number.isSafeInteger(lastY)
     ) {
       // Adjacent A* edges repeatedly visit the same small spatial cells.
       // Cache their broad-phase candidates, then apply the original
@@ -147,20 +148,22 @@ export function createNegotiatedClearanceSearchKernel(
               queryMaxY < copper.minY - copper.radius - REGION_EPSILON ||
               queryMinX > copper.maxX + copper.radius + REGION_EPSILON ||
               queryMinY > copper.maxY + copper.radius + REGION_EPSILON
-            ) continue
+            )
+              continue
             candidateScratch.push(candidate)
           }
         }
       }
       candidates = candidateScratch
     } else {
-      candidates = activeIndex?.index.search(queryMinX, queryMinY, queryMaxX, queryMaxY) ?? []
+      candidates =
+        activeIndex?.index.search(queryMinX, queryMinY, queryMaxX, queryMaxY) ??
+        []
     }
     for (const candidate of candidates) {
       const copper = activeIndex!.copper[candidate]!
       const bothVias = via && copper.minZ !== copper.maxZ
-      const sharedLayers =
-        copper.minZ <= span.maxZ && copper.maxZ >= span.minZ
+      const sharedLayers = copper.minZ <= span.maxZ && copper.maxZ >= span.minZ
       if (!sharedLayers && !bothVias) continue
       if (copper.immutable && !bothVias) continue
       if (
@@ -193,12 +196,7 @@ export function createNegotiatedClearanceSearchKernel(
         maxY + required + REGION_EPSILON < copper.minY
       )
         continue
-      const distance = segmentToSegmentMinDistance(
-        a,
-        b,
-        copper.a,
-        copper.b,
-      )
+      const distance = segmentToSegmentMinDistance(a, b, copper.a, copper.b)
       if (distance < required - REGION_EPSILON)
         hits.push({
           copper,
@@ -236,8 +234,7 @@ export function createNegotiatedClearanceSearchKernel(
       return Infinity
     const costs = new Map<string, number>()
     for (const { copper, ratio } of query(a, b)) {
-      if (copper.owner === selectedOwner || copper.immutable)
-        return Infinity
+      if (copper.owner === selectedOwner || copper.immutable) return Infinity
       costs.set(
         copper.owner,
         Math.max(
