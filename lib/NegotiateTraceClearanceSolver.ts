@@ -6,7 +6,7 @@ import type {
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { FindClearancePathSolver } from "./FindClearancePathSolver"
 import { PairedClearancePathSolver } from "./PairedClearancePathSolver"
-import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
+import { getSegmentToSegmentMinDistance as segmentToSegmentMinDistance } from "./getSegmentToSegmentMinDistance"
 import Flatbush from "flatbush"
 import type {
   HighDensityRoute,
@@ -39,6 +39,12 @@ type Copper = {
   cellX: number
   cellY: number
   immutable: boolean
+  visitedQuery: number
+}
+type CopperIndex = {
+  index: Flatbush
+  copper: Copper[]
+  cellCandidates: Map<number, Map<number, number[]>>
 }
 function withPoints({
   route,
@@ -450,6 +456,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               cellX: Math.floor(Math.min(a.x, b.x) - radius),
               cellY: Math.floor(Math.min(a.y, b.y) - radius),
               immutable,
+              visitedQuery: 0,
             }
             coppers.push(copper)
           }
@@ -457,7 +464,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
         this.startPath = (): void => {
           const createCopperIndex = (
             indexedCopper: Copper[],
-          ): { index: Flatbush; copper: Copper[] } | undefined => {
+          ): CopperIndex | undefined => {
             if (!indexedCopper.length) return undefined
             const index = new Flatbush(indexedCopper.length)
             for (const copper of indexedCopper) {
@@ -469,12 +476,12 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               )
             }
             index.finish()
-            return { index, copper: indexedCopper }
+            return { index, copper: indexedCopper, cellCandidates: new Map() }
           }
           const copperIndex = createCopperIndex(coppers)
           const copperByLayer = new Map<
             number,
-            { index: Flatbush; copper: Copper[] } | undefined
+            CopperIndex | undefined
           >()
           for (let z = 0; z < input.srj.layerCount; z++) {
             copperByLayer.set(
@@ -486,6 +493,8 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               ),
             )
           }
+          const candidateScratch: number[] = []
+          let queryId = 0
           const query = (
             a: RepairRoutePoint,
             b: RepairRoutePoint,
@@ -501,13 +510,55 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             const hits: Array<{ copper: Copper; ratio: number }> = []
             const span = getRepairCopperLayerSpan(input.srj, a, b)
             const activeIndex = via ? copperIndex : copperByLayer.get(a.z)
-            const candidates =
-              activeIndex?.index.search(
-                minX - reach - REGION_EPSILON,
-                minY - reach - REGION_EPSILON,
-                maxX + reach + REGION_EPSILON,
-                maxY + reach + REGION_EPSILON,
-              ) ?? []
+            const queryMinX = minX - reach - REGION_EPSILON
+            const queryMinY = minY - reach - REGION_EPSILON
+            const queryMaxX = maxX + reach + REGION_EPSILON
+            const queryMaxY = maxY + reach + REGION_EPSILON
+            const firstX = Math.floor(queryMinX), lastX = Math.floor(queryMaxX)
+            const firstY = Math.floor(queryMinY), lastY = Math.floor(queryMaxY)
+            const currentQuery = ++queryId
+            let candidates: number[]
+            if (
+              activeIndex &&
+              (lastX - firstX + 1) * (lastY - firstY + 1) <= 16 &&
+              Number.isSafeInteger(firstX) && Number.isSafeInteger(lastX) &&
+              Number.isSafeInteger(firstY) && Number.isSafeInteger(lastY)
+            ) {
+              // Adjacent A* edges repeatedly visit the same small spatial cells.
+              // Cache their broad-phase candidates, then apply the original
+              // exact query bounds below. Long simplification edges query the
+              // tree directly rather than walking a large rectangle of cells.
+              candidateScratch.length = 0
+              for (let x = firstX; x <= lastX; x++) {
+                let column = activeIndex.cellCandidates.get(x)
+                if (!column) {
+                  column = new Map()
+                  activeIndex.cellCandidates.set(x, column)
+                }
+                for (let y = firstY; y <= lastY; y++) {
+                  let bucket = column.get(y)
+                  if (!bucket) {
+                    bucket = activeIndex.index.search(x, y, x + 1, y + 1)
+                    column.set(y, bucket)
+                  }
+                  for (const candidate of bucket) {
+                    const copper = activeIndex.copper[candidate]!
+                    if (copper.visitedQuery === currentQuery) continue
+                    copper.visitedQuery = currentQuery
+                    if (
+                      queryMaxX < copper.minX - copper.radius - REGION_EPSILON ||
+                      queryMaxY < copper.minY - copper.radius - REGION_EPSILON ||
+                      queryMinX > copper.maxX + copper.radius + REGION_EPSILON ||
+                      queryMinY > copper.maxY + copper.radius + REGION_EPSILON
+                    ) continue
+                    candidateScratch.push(candidate)
+                  }
+                }
+              }
+              candidates = candidateScratch
+            } else {
+              candidates = activeIndex?.index.search(queryMinX, queryMinY, queryMaxX, queryMaxY) ?? []
+            }
             for (const candidate of candidates) {
               const copper = activeIndex!.copper[candidate]!
               const bothVias = via && copper.minZ !== copper.maxZ

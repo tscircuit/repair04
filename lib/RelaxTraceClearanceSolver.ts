@@ -2,7 +2,7 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import type { RelaxTraceClearanceInput } from "./relaxTraceClearance"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { getVectorLength } from "./getVectorLength"
-import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
+import { getSegmentToSegmentMinDistance as segmentToSegmentMinDistance } from "./getSegmentToSegmentMinDistance"
 import type { HighDensityRoute } from "high-density-repair03/lib"
 import {
   getLocalObstacleGeometry,
@@ -487,18 +487,25 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
     allowViaTangents: boolean,
   ): void {
     const viaPadConstraints = this.viaPadConstraints
-    const combined = new Map<Vertex, number>()
+    const combinedVertices: Vertex[] = []
+    const combinedWeights: number[] = []
     for (const [vertex, weight] of weights) {
-      if (!vertex.locked)
-        combined.set(vertex, (combined.get(vertex) ?? 0) + weight)
+      if (vertex.locked) continue
+      const index = combinedVertices.indexOf(vertex)
+      if (index === -1) {
+        combinedVertices.push(vertex)
+        combinedWeights.push(0 + weight)
+      } else {
+        combinedWeights[index] = combinedWeights[index]! + weight
+      }
     }
-    const mass = [...combined.values()].reduce(
-      (sum, weight) => sum + weight * weight,
-      0,
-    )
+    let mass = 0
+    for (const weight of combinedWeights) mass += weight * weight
     if (mass < 1e-15) return
     const scale = Math.min(0.05, deficit * 0.7) / mass
-    for (const [vertex, weight] of combined) {
+    for (let index = 0; index < combinedVertices.length; index++) {
+      const vertex = combinedVertices[index]!
+      const weight = combinedWeights[index]!
       let x = Math.max(
         vertex.bounds.minX,
         vertex.original.x - MAX_DISPLACEMENT,
@@ -758,6 +765,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
 
   private projectPair(pair: SegmentPair): void {
     const { a, b, revisions } = pair
+    if (a.a.locked && a.b.locked && b.a.locked && b.b.locked) return
     if (
       a.a.revision !== revisions[0] ||
       a.b.revision !== revisions[1] ||
@@ -794,6 +802,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
 
   private projectPad(pad: PadContact): void {
     const { segment, corners, required } = pad
+    if (segment.a.locked && segment.b.locked) return
     const endpointCount = segment.a === segment.b ? 1 : 2
     for (let endpoint = 0; endpoint < endpointCount; endpoint++) {
       const vertex = endpoint === 0 ? segment.a : segment.b
