@@ -152,9 +152,9 @@ export class PairedClearancePathSolver extends BaseSolver {
         this.finish(this.forward.getOutput())
         return
       }
-      // Give ordinary forward searches eight native batches before paying for
+      // Give ordinary forward searches two native batches before paying for
       // another geometry/index preparation and a second constructed search.
-      if (this.forward.stats.nodesPopped < 1024) return
+      if (this.forward.stats.nodesPopped < 256) return
       const { task } = this.input
       this.reverse = createNegotiatedClearanceSearch({
         ...task,
