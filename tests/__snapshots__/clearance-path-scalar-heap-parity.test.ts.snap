@@ -1,0 +1,72 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`scalar queues preserve complete heap state and ties while reusing decreases: priority decreases reuse pending entries and preserve popped objects 1`] = `
+[
+  {
+    "afterHeapOwnedScalarEnqueues": {
+      "allocatedEntries": 1033,
+    },
+    "beforeObjectEnqueues": {
+      "allocatedEntries": 3001,
+    },
+    "enqueues": 3001,
+    "entryAllocationsAvoided": 1968,
+    "firstPoppedIds": [
+      43,
+      15,
+      51,
+      23,
+      59,
+      31,
+      3,
+      39,
+    ],
+    "lastPoppedIds": [
+      2,
+      5,
+      22,
+      42,
+      21,
+      9,
+      17,
+      60,
+    ],
+    "poppedEntries": 1033,
+    "positionStorage": "sparse",
+    "retainedPoppedObjects": 999,
+  },
+  {
+    "afterHeapOwnedScalarEnqueues": {
+      "allocatedEntries": 1033,
+    },
+    "beforeObjectEnqueues": {
+      "allocatedEntries": 3001,
+    },
+    "enqueues": 3001,
+    "entryAllocationsAvoided": 1968,
+    "firstPoppedIds": [
+      43,
+      15,
+      51,
+      23,
+      59,
+      31,
+      3,
+      39,
+    ],
+    "lastPoppedIds": [
+      2,
+      5,
+      22,
+      42,
+      21,
+      9,
+      17,
+      60,
+    ],
+    "poppedEntries": 1033,
+    "positionStorage": "dense",
+    "retainedPoppedObjects": 999,
+  },
+]
+`;

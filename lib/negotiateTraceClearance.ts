@@ -1,3 +1,4 @@
+import { getRepairRouteVias } from "./getRepairRouteVias"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import Flatbush from "flatbush"
 import type {
@@ -63,21 +64,20 @@ export type NegotiatedClearanceResult = {
   unresolvedSpanCount: number
 }
 
-function withPoints(
-  route: HighDensityRoute,
-  points: RepairRoutePoint[],
-): HighDensityRoute {
-  const vias: HighDensityRoute["vias"] = []
-  for (let index = 1; index < points.length; index++) {
-    const a = points[index - 1]!,
-      b = points[index]!
-    if (a.z === b.z || a.toNextSegmentType === "through_obstacle") continue
-    if (a.x !== b.x || a.y !== b.y)
-      throw new Error("repair04: negotiated via endpoints must coincide")
-    if (!vias.some((via): boolean => via.x === b.x && via.y === b.y))
-      vias.push({ x: b.x, y: b.y })
+function withPoints({
+  route,
+  points,
+  mutableBounds,
+}: {
+  route: HighDensityRoute
+  points: RepairRoutePoint[]
+  mutableBounds: Bounds
+}): HighDensityRoute {
+  const updatedRoute = { ...route, route: points }
+  return {
+    ...updatedRoute,
+    vias: getRepairRouteVias({ route: updatedRoute, mutableBounds }),
   }
-  return { ...route, route: points, vias }
 }
 
 /**
@@ -208,7 +208,11 @@ export function negotiateTraceClearance(
       spans.push({
         routeIndex: ri,
         mutable: Boolean(mutable),
-        route: withPoints({ ...route, traceThickness: width }, fragment),
+        route: withPoints({
+          route: { ...route, traceThickness: width },
+          points: fragment,
+          mutableBounds: input.bounds,
+        }),
       })
     }
   }
@@ -520,7 +524,11 @@ export function negotiateTraceClearance(
       fixed.push(route)
       continue
     }
-    current[index] = withPoints(route, path)
+    current[index] = withPoints({
+      route,
+      points: path,
+      mutableBounds: input.bounds,
+    })
     const conflicts = new Set<number>()
     for (let pi = 1; pi < path.length; pi++)
       for (const { copper } of query(path[pi - 1]!, path[pi]!))
@@ -540,7 +548,7 @@ export function negotiateTraceClearance(
       const points = byRoute[ri]!.flatMap((si, index): RepairRoutePoint[] =>
         index === 0 ? current[si]!.route : current[si]!.route.slice(1),
       )
-      return withPoints(route, points)
+      return withPoints({ route, points, mutableBounds: input.bounds })
     }),
     pathSearchNodes,
     pathSearchCalls,

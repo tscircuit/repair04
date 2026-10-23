@@ -1,3 +1,4 @@
+import Flatbush from "flatbush"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
@@ -501,6 +502,42 @@ export const getRepairJunctionAnchors = (
     values.push(anchor)
     byNetLayer.set(key, values)
   }
+  const anchorIndexes = new Map<string, Flatbush>()
+  for (const [key, values] of byNetLayer) {
+    const index = new Flatbush(values.length)
+    for (const anchor of values) {
+      const radius = anchor.radius + REGION_EPSILON
+      index.add(
+        anchor.x - radius,
+        anchor.y - radius,
+        anchor.x + radius,
+        anchor.y + radius,
+      )
+    }
+    index.finish()
+    anchorIndexes.set(key, index)
+  }
+  const getNearbyAnchors = (
+    net: string,
+    z: number,
+    queryBounds: Bounds,
+  ): Anchor[] => {
+    const key = JSON.stringify([net, z])
+    const values = byNetLayer.get(key)
+    if (!values) return []
+    // Keep insertion order: epsilon-based junction deduplication retains the
+    // first matching anchor. Geometry still uses the exact checks below.
+    return anchorIndexes
+      .get(key)!
+      .search(
+        queryBounds.minX,
+        queryBounds.minY,
+        queryBounds.maxX,
+        queryBounds.maxY,
+      )
+      .sort((left, right) => left - right)
+      .map((index) => values[index]!)
+  }
   const lockVia = (routeIndex: number | undefined, point: Point): void => {
     if (routeIndex === undefined) return
     const positions = results[routeIndex]!.viaPositions
@@ -519,9 +556,13 @@ export const getRepairJunctionAnchors = (
     const dy = segment.end.y - segment.start.y
     const lengthSquared = dx * dx + dy * dy
     if (lengthSquared <= REGION_EPSILON * REGION_EPSILON) continue
-    for (const anchor of byNetLayer.get(
-      JSON.stringify([segment.net, segment.z]),
-    ) ?? []) {
+    const radius = segment.radius + REGION_EPSILON
+    for (const anchor of getNearbyAnchors(segment.net, segment.z, {
+      minX: Math.min(segment.start.x, segment.end.x) - radius,
+      minY: Math.min(segment.start.y, segment.end.y) - radius,
+      maxX: Math.max(segment.start.x, segment.end.x) + radius,
+      maxY: Math.max(segment.start.y, segment.end.y) + radius,
+    })) {
       if (
         anchor.source === segment.source ||
         sharesImmutableEndpointComponent(anchor.source, segment.source)
@@ -561,8 +602,14 @@ export const getRepairJunctionAnchors = (
     }
   }
   for (const via of vias) {
+    const radius = via.radius + REGION_EPSILON
     for (let z = via.minZ; z <= via.maxZ; z += 1) {
-      for (const anchor of byNetLayer.get(JSON.stringify([via.net, z])) ?? []) {
+      for (const anchor of getNearbyAnchors(via.net, z, {
+        minX: via.x - radius,
+        minY: via.y - radius,
+        maxX: via.x + radius,
+        maxY: via.y + radius,
+      })) {
         if (
           anchor.source === via.source ||
           sharesImmutableEndpointComponent(anchor.source, via.source) ||
