@@ -57,9 +57,16 @@ type SegmentPair = {
 type PadContact = {
   segment: Segment
   corners: Point[]
+  faces: PadFace[]
+  interiorContacts: [InteriorContactCache, InteriorContactCache]
   required: number
   revisions: [number, number]
   contact: Contact | null
+}
+type PadFace = Point & { start: Point }
+type InteriorContactCache = {
+  revision: number
+  contact: ReturnType<typeof getInteriorPadContact>
 }
 
 const MAX_SWEEPS = 256
@@ -100,22 +107,15 @@ function getContact(a: Point, b: Point, c: Point, d: Point): Contact {
 /** Signed distance to the nearest face of a containing convex pad. */
 function getInteriorPadContact(
   point: Point,
-  corners: Point[],
+  faces: PadFace[],
 ): {
   x: number
   y: number
   depth: number
 } | null {
   let contact = { x: 0, y: 0, depth: Infinity }
-  for (let i = 0; i < corners.length; i++) {
-    const a = corners[i]!,
-      b = corners[(i + 1) % corners.length]!
-    const dx = b.x - a.x,
-      dy = b.y - a.y
-    const length = getVectorLength(dx, dy)
-    const x = dy / length,
-      y = -dx / length
-    const depth = -((point.x - a.x) * x + (point.y - a.y) * y)
+  for (const { start, x, y } of faces) {
+    const depth = -((point.x - start.x) * x + (point.y - start.y) * y)
     if (depth < 0) return null
     if (depth < contact.depth) contact = { x, y, depth }
   }
@@ -372,6 +372,13 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         minY: Math.min(...corners.map((corner): number => corner.y)),
         maxY: Math.max(...corners.map((corner): number => corner.y)),
       }
+      const faces = corners.map((start, index): PadFace => {
+        const end = corners[(index + 1) % corners.length]!
+        const dx = end.x - start.x
+        const dy = end.y - start.y
+        const length = getVectorLength(dx, dy)
+        return { start, x: dy / length, y: -dx / length }
+      })
       for (const segment of segments) {
         if (
           (!segment.via && obstacleNets.has(segment.net)) ||
@@ -427,6 +434,11 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         padContacts.push({
           segment,
           corners,
+          faces,
+          interiorContacts: [
+            { revision: -1, contact: null },
+            { revision: -1, contact: null },
+          ],
           required,
           revisions: [-1, -1],
           contact: null,
@@ -797,7 +809,12 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
     const endpointCount = segment.a === segment.b ? 1 : 2
     for (let endpoint = 0; endpoint < endpointCount; endpoint++) {
       const vertex = endpoint === 0 ? segment.a : segment.b
-      const interior = getInteriorPadContact(vertex, corners)
+      const cached = pad.interiorContacts[endpoint]!
+      if (cached.revision !== vertex.revision) {
+        cached.contact = getInteriorPadContact(vertex, pad.faces)
+        cached.revision = vertex.revision
+      }
+      const interior = cached.contact
       if (interior) {
         this.project(
           [[vertex, 1]],
