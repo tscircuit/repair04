@@ -782,26 +782,38 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
 
   private projectPair(pair: SegmentPair): void {
     const { a, b, revisions } = pair
+    const required =
+      a.radius +
+      b.radius +
+      (a.via && b.via ? this.viaClearance : this.traceClearance)
     if (
       a.a.revision !== revisions[0] ||
       a.b.revision !== revisions[1] ||
       b.a.revision !== revisions[2] ||
       b.b.revision !== revisions[3]
     ) {
-      pair.contact = getContact(a.a, a.b, b.a, b.b)
       revisions[0] = a.a.revision
       revisions[1] = a.b.revision
       revisions[2] = b.a.revision
       revisions[3] = b.b.revision
+      // Preparation includes possible future displacement. Current axis gaps
+      // can reject distant pairs before solving their exact closest points.
+      const reach = required + REGION_EPSILON
+      if (
+        Math.min(a.a.x, a.b.x) > Math.max(b.a.x, b.b.x) + reach ||
+        Math.min(b.a.x, b.b.x) > Math.max(a.a.x, a.b.x) + reach ||
+        Math.min(a.a.y, a.b.y) > Math.max(b.a.y, b.b.y) + reach ||
+        Math.min(b.a.y, b.b.y) > Math.max(a.a.y, a.b.y) + reach
+      ) {
+        pair.contact = null
+        return
+      }
+      pair.contact = getContact(a.a, a.b, b.a, b.b)
     } else {
       // The previous projection could not move these unchanged inputs.
       return
     }
     const contact = pair.contact!
-    const required =
-      a.radius +
-      b.radius +
-      (a.via && b.via ? this.viaClearance : this.traceClearance)
     if (contact.distance >= required) return
     // Crossings require rerouting; this operation only opens existing gaps.
     if (contact.distance < 1e-10) return
