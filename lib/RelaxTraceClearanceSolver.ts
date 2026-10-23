@@ -59,6 +59,7 @@ type PadContact = {
   corners: Point[]
   faces: PadFace[]
   interiorContacts: [InteriorContactCache, InteriorContactCache]
+  inputRevisions: [number, number]
   required: number
   revisions: [number, number]
   contact: Contact | null
@@ -299,11 +300,20 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       processed++
       this.preparedPairCount++
       if (a.net === b.net || a.maxZ < b.minZ || b.maxZ < a.minZ) continue
+      const aLocked = a.a.locked && a.b.locked
+      const bLocked = b.a.locked && b.b.locked
+      if (aLocked && bLocked) continue
+      // Each free endpoint can move by MAX_DISPLACEMENT on each axis;
+      // locked segments contribute no motion to the distance bound.
+      const maxMotion =
+        (aLocked ? 0 : Math.SQRT2 * MAX_DISPLACEMENT) +
+        (bLocked ? 0 : Math.SQRT2 * MAX_DISPLACEMENT)
       const reach =
         a.radius +
         b.radius +
-        Math.max(this.traceClearance, this.viaClearance) +
-        2 * Math.SQRT2 * MAX_DISPLACEMENT
+        (a.via && b.via ? this.viaClearance : this.traceClearance) +
+        maxMotion +
+        REGION_EPSILON
       if (areExpandedBoundsSeparated(a.initialBounds, b.initialBounds, reach))
         continue
       if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach) {
@@ -380,6 +390,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         return { start, x: dy / length, y: -dx / length }
       })
       for (const segment of segments) {
+        if (segment.a.locked && segment.b.locked) continue
         if (
           (!segment.via && obstacleNets.has(segment.net)) ||
           !zs.some((z) => z >= segment.minZ && z <= segment.maxZ)
@@ -439,6 +450,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
             { revision: -1, contact: null },
             { revision: -1, contact: null },
           ],
+          inputRevisions: [-1, -1],
           required,
           revisions: [-1, -1],
           contact: null,
@@ -781,6 +793,9 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       revisions[1] = a.b.revision
       revisions[2] = b.a.revision
       revisions[3] = b.b.revision
+    } else {
+      // The previous projection could not move these unchanged inputs.
+      return
     }
     const contact = pair.contact!
     const required =
@@ -806,6 +821,16 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
 
   private projectPad(pad: PadContact): void {
     const { segment, corners, required } = pad
+    if (
+      segment.a.revision === pad.inputRevisions[0] &&
+      segment.b.revision === pad.inputRevisions[1]
+    ) {
+      return
+    }
+    // Capture the inputs before either endpoint is projected. Any movement
+    // during this call must make the constraint eligible on the next sweep.
+    pad.inputRevisions[0] = segment.a.revision
+    pad.inputRevisions[1] = segment.b.revision
     const endpointCount = segment.a === segment.b ? 1 : 2
     for (let endpoint = 0; endpoint < endpointCount; endpoint++) {
       const vertex = endpoint === 0 ? segment.a : segment.b
