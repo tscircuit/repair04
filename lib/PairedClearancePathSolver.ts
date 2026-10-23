@@ -1,4 +1,5 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
+import type { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import type { ClearancePathSearchStats } from "./findClearancePath"
 import {
   createNegotiatedClearanceSearch,
@@ -11,6 +12,7 @@ export type PairedClearancePathInput = {
   task: NegotiatedClearanceSearchInput
   /** Reserved independently of the forward search, without reducing its cap. */
   reverseMaxNodes?: number
+  connectivity?: ClearancePathConnectivity
 }
 
 /** Deterministic directional search, with one native step per active lane. */
@@ -41,7 +43,7 @@ export class PairedClearancePathSolver extends BaseSolver {
       throw new Error("repair04: reverse node budget must be positive")
     }
     this.input = input
-    this.forward = createNegotiatedClearanceSearch(input.task)
+    this.forward = createNegotiatedClearanceSearch(input.task, input.connectivity)
     this.activeSubSolver = this.forward
     const forwardNodes = input.task.pathInput.maxNodes ?? 30000
     const reverseMaximum =
@@ -165,7 +167,7 @@ export class PairedClearancePathSolver extends BaseSolver {
           existingPath: task.pathInput.existingPath?.slice().reverse(),
           maxNodes: this.input.reverseMaxNodes,
         },
-      })
+      }, this.input.connectivity)
       this.activeSubSolver = this.reverse
       this.phase = "prepare-reverse"
       return

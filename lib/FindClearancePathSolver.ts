@@ -1,3 +1,4 @@
+import { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import type {
   ClearancePathInput,
   ClearancePathSearchStats,
@@ -6,8 +7,8 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import {
   segmentToBoundsMinDistance,
-  segmentToSegmentMinDistance,
 } from "@tscircuit/math-utils"
+import { getSegmentToSegmentMinDistance as segmentToSegmentMinDistance } from "./getSegmentToSegmentMinDistance"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
@@ -70,7 +71,7 @@ export class FindClearancePathSolver extends BaseSolver {
   private seedSearch?: () => void
   private searchBatch?: () => void
 
-  constructor(input: ClearancePathInput) {
+  constructor(input: ClearancePathInput, private readonly connectivity?: ClearancePathConnectivity) {
     super()
     this.input = input
     this.stats = input.stats ?? { nodesPopped: 0, completionReason: "no-path" }
@@ -240,40 +241,7 @@ export class FindClearancePathSolver extends BaseSolver {
       }
       return true
     }
-    const parents = new Map<string, string>()
-    const net = (name: string): string => {
-      const parent = parents.get(name)
-      if (parent === undefined || parent === name) return name
-      const root = net(parent)
-      parents.set(name, root)
-      return root
-    }
-    const join = (names: Array<string | undefined>): void => {
-      const present = names.filter((n): n is string => Boolean(n))
-      if (!present.length) return
-      const root = net(present[0]!)
-      for (const name of present) parents.set(net(name), root)
-    }
-    for (const original of srj.connections) {
-      const connection = original as typeof original & {
-        __rootConnectionNames?: string[]
-        __netConnectionName?: string
-      }
-      join([
-        connection.name,
-        connection.rootConnectionName,
-        connection.netConnectionName,
-        connection.__netConnectionName,
-        ...(connection.mergedConnectionNames ?? []),
-        ...(connection.__rootConnectionNames ?? []),
-        ...connection.pointsToConnect.flatMap((p) => [
-          p.pcb_port_id,
-          p.pointId,
-        ]),
-      ])
-    }
-    for (const obstacle of srj.obstacles) join(obstacle.connectedTo)
-    for (const r of routes) join([r.connectionName, r.rootConnectionName])
+    const net = (this.connectivity ?? new ClearancePathConnectivity(srj)).createNetResolver(routes)
     const owner = net(route.connectionName)
     const layer = (name: string): number =>
       name === "top"
@@ -719,9 +687,20 @@ export class FindClearancePathSolver extends BaseSolver {
       const settled =
         !useDenseStorage && heuristicWeight > 1 ? new Set<number>() : undefined
       const edgeCache = new Map<number | string, boolean>()
+      // Four undirected planar edges start at each grid site. Two bits per
+      // direction encode unknown, blocked and clear without a Map entry for
+      // each examined edge. Narrow grids have overlapping linear offsets, so
+      // retain the general key representation for those grids.
+      const denseEdgePermissions =
+        useDenseStorage && nx >= 3
+          ? new Uint8Array(denseNodeCount)
+          : undefined
       // Ordinary vias have the same hard clearance on every electrical layer
       // pair. Reuse that result at each grid site; blind vias retain edge keys.
       const fullStackViaClearance = new Map<number, boolean>()
+      const denseViaPermissions = useDenseStorage
+        ? new Uint8Array(nx * ny)
+        : undefined
 
       let expanded = 0
       this.searchBatch = (): void => {
@@ -838,23 +817,42 @@ export class FindClearancePathSolver extends BaseSolver {
             // movable-copper congestion query for those edges.
             const low = Math.min(current.id, id),
               high = Math.max(current.id, id)
-            const key = useNumericEdgeKeys
-              ? low * gridNodeCount + high
-              : `${low},${high}`
             const fullStackViaKey =
               useNumericEdgeKeys &&
               a.z !== b.z &&
               srj.allowBlindAndBuriedVias !== true
                 ? current.id % (nx * ny)
                 : undefined
-            let permitted =
-              fullStackViaKey === undefined
-                ? edgeCache.get(key)
-                : fullStackViaClearance.get(fullStackViaKey)
-            if (permitted === undefined) {
-              permitted = clear(a, b)
-              if (fullStackViaKey === undefined) edgeCache.set(key, permitted)
-              else fullStackViaClearance.set(fullStackViaKey, permitted)
+            let permitted: boolean | undefined
+            if (denseEdgePermissions && a.z === b.z) {
+              const offset = high - low
+              const shift =
+                offset === 1 ? 0 : offset === nx - 1 ? 2 : offset === nx ? 4 : 6
+              const permission = (denseEdgePermissions[low]! >> shift) & 3
+              if (permission === 0) {
+                permitted = clear(a, b)
+                denseEdgePermissions[low] =
+                  denseEdgePermissions[low]! | ((permitted ? 2 : 1) << shift)
+              } else permitted = permission === 2
+            } else if (denseViaPermissions && fullStackViaKey !== undefined) {
+              const permission = denseViaPermissions[fullStackViaKey]!
+              if (permission === 0) {
+                permitted = clear(a, b)
+                denseViaPermissions[fullStackViaKey] = permitted ? 2 : 1
+              } else permitted = permission === 2
+            } else {
+              const key = useNumericEdgeKeys
+                ? low * gridNodeCount + high
+                : `${low},${high}`
+              permitted =
+                fullStackViaKey === undefined
+                  ? edgeCache.get(key)
+                  : fullStackViaClearance.get(fullStackViaKey)
+              if (permitted === undefined) {
+                permitted = clear(a, b)
+                if (fullStackViaKey === undefined) edgeCache.set(key, permitted)
+                else fullStackViaClearance.set(fullStackViaKey, permitted)
+              }
             }
             if (!permitted) continue
             const cost = baseCost + extraCost(a, b)
