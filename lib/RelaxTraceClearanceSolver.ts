@@ -57,9 +57,17 @@ type SegmentPair = {
 type PadContact = {
   segment: Segment
   corners: Point[]
+  faces: PadFace[]
+  interiorContacts: [InteriorContactCache, InteriorContactCache]
+  inputRevisions: [number, number]
   required: number
   revisions: [number, number]
   contact: Contact | null
+}
+type PadFace = Point & { start: Point }
+type InteriorContactCache = {
+  revision: number
+  contact: ReturnType<typeof getInteriorPadContact>
 }
 
 const MAX_SWEEPS = 256
@@ -100,22 +108,15 @@ function getContact(a: Point, b: Point, c: Point, d: Point): Contact {
 /** Signed distance to the nearest face of a containing convex pad. */
 function getInteriorPadContact(
   point: Point,
-  corners: Point[],
+  faces: PadFace[],
 ): {
   x: number
   y: number
   depth: number
 } | null {
   let contact = { x: 0, y: 0, depth: Infinity }
-  for (let i = 0; i < corners.length; i++) {
-    const a = corners[i]!,
-      b = corners[(i + 1) % corners.length]!
-    const dx = b.x - a.x,
-      dy = b.y - a.y
-    const length = getVectorLength(dx, dy)
-    const x = dy / length,
-      y = -dx / length
-    const depth = -((point.x - a.x) * x + (point.y - a.y) * y)
+  for (const { start, x, y } of faces) {
+    const depth = -((point.x - start.x) * x + (point.y - start.y) * y)
     if (depth < 0) return null
     if (depth < contact.depth) contact = { x, y, depth }
   }
@@ -299,11 +300,20 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       processed++
       this.preparedPairCount++
       if (a.net === b.net || a.maxZ < b.minZ || b.maxZ < a.minZ) continue
+      const aLocked = a.a.locked && a.b.locked
+      const bLocked = b.a.locked && b.b.locked
+      if (aLocked && bLocked) continue
+      // Each free endpoint can move by MAX_DISPLACEMENT on each axis;
+      // locked segments contribute no motion to the distance bound.
+      const maxMotion =
+        (aLocked ? 0 : Math.SQRT2 * MAX_DISPLACEMENT) +
+        (bLocked ? 0 : Math.SQRT2 * MAX_DISPLACEMENT)
       const reach =
         a.radius +
         b.radius +
-        Math.max(this.traceClearance, this.viaClearance) +
-        2 * Math.SQRT2 * MAX_DISPLACEMENT
+        (a.via && b.via ? this.viaClearance : this.traceClearance) +
+        maxMotion +
+        REGION_EPSILON
       if (areExpandedBoundsSeparated(a.initialBounds, b.initialBounds, reach))
         continue
       if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach) {
@@ -372,7 +382,15 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         minY: Math.min(...corners.map((corner): number => corner.y)),
         maxY: Math.max(...corners.map((corner): number => corner.y)),
       }
+      const faces = corners.map((start, index): PadFace => {
+        const end = corners[(index + 1) % corners.length]!
+        const dx = end.x - start.x
+        const dy = end.y - start.y
+        const length = getVectorLength(dx, dy)
+        return { start, x: dy / length, y: -dx / length }
+      })
       for (const segment of segments) {
+        if (segment.a.locked && segment.b.locked) continue
         if (
           (!segment.via && obstacleNets.has(segment.net)) ||
           !zs.some((z) => z >= segment.minZ && z <= segment.maxZ)
@@ -427,6 +445,12 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         padContacts.push({
           segment,
           corners,
+          faces,
+          interiorContacts: [
+            { revision: -1, contact: null },
+            { revision: -1, contact: null },
+          ],
+          inputRevisions: [-1, -1],
           required,
           revisions: [-1, -1],
           contact: null,
@@ -758,23 +782,38 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
 
   private projectPair(pair: SegmentPair): void {
     const { a, b, revisions } = pair
+    const required =
+      a.radius +
+      b.radius +
+      (a.via && b.via ? this.viaClearance : this.traceClearance)
     if (
       a.a.revision !== revisions[0] ||
       a.b.revision !== revisions[1] ||
       b.a.revision !== revisions[2] ||
       b.b.revision !== revisions[3]
     ) {
-      pair.contact = getContact(a.a, a.b, b.a, b.b)
       revisions[0] = a.a.revision
       revisions[1] = a.b.revision
       revisions[2] = b.a.revision
       revisions[3] = b.b.revision
+      // Preparation includes possible future displacement. Current axis gaps
+      // can reject distant pairs before solving their exact closest points.
+      const reach = required + REGION_EPSILON
+      if (
+        Math.min(a.a.x, a.b.x) > Math.max(b.a.x, b.b.x) + reach ||
+        Math.min(b.a.x, b.b.x) > Math.max(a.a.x, a.b.x) + reach ||
+        Math.min(a.a.y, a.b.y) > Math.max(b.a.y, b.b.y) + reach ||
+        Math.min(b.a.y, b.b.y) > Math.max(a.a.y, a.b.y) + reach
+      ) {
+        pair.contact = null
+        return
+      }
+      pair.contact = getContact(a.a, a.b, b.a, b.b)
+    } else {
+      // The previous projection could not move these unchanged inputs.
+      return
     }
     const contact = pair.contact!
-    const required =
-      a.radius +
-      b.radius +
-      (a.via && b.via ? this.viaClearance : this.traceClearance)
     if (contact.distance >= required) return
     // Crossings require rerouting; this operation only opens existing gaps.
     if (contact.distance < 1e-10) return
@@ -794,10 +833,25 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
 
   private projectPad(pad: PadContact): void {
     const { segment, corners, required } = pad
+    if (
+      segment.a.revision === pad.inputRevisions[0] &&
+      segment.b.revision === pad.inputRevisions[1]
+    ) {
+      return
+    }
+    // Capture the inputs before either endpoint is projected. Any movement
+    // during this call must make the constraint eligible on the next sweep.
+    pad.inputRevisions[0] = segment.a.revision
+    pad.inputRevisions[1] = segment.b.revision
     const endpointCount = segment.a === segment.b ? 1 : 2
     for (let endpoint = 0; endpoint < endpointCount; endpoint++) {
       const vertex = endpoint === 0 ? segment.a : segment.b
-      const interior = getInteriorPadContact(vertex, corners)
+      const cached = pad.interiorContacts[endpoint]!
+      if (cached.revision !== vertex.revision) {
+        cached.contact = getInteriorPadContact(vertex, pad.faces)
+        cached.revision = vertex.revision
+      }
+      const interior = cached.contact
       if (interior) {
         this.project(
           [[vertex, 1]],
