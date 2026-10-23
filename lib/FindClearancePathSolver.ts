@@ -4,7 +4,6 @@ import type {
 } from "./findClearancePath"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
-import { segmentToBoundsMinDistance } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
@@ -18,8 +17,11 @@ import { REGION_EPSILON } from "./repairRegionGeometry"
 
 import {
   getPreparedSegmentDistance,
+  getPreparedSegmentToBoundsDistance,
+  prepareDistanceBounds,
+  type PreparedDistanceBounds,
   type PreparedSegment,
-} from "./getPreparedSegmentDistance"
+} from "./preparedDistanceGeometry"
 
 type Point = RepairRoutePoint
 type Barrier = PreparedSegment & {
@@ -38,7 +40,7 @@ type Barrier = PreparedSegment & {
   rect?: { width: number; height: number; rotation: number }
   rectCos: number
   rectSin: number
-  rectBounds?: Bounds
+  rectBounds?: PreparedDistanceBounds
   visitedQuery: number
 }
 type ViaPath = { x: number; y: number; previous?: ViaPath }
@@ -347,12 +349,12 @@ export class FindClearancePathSolver extends BaseSolver {
         rectCos,
         rectSin,
         rectBounds: rect
-          ? {
+          ? prepareDistanceBounds({
               minX: -rect.width / 2,
               maxX: rect.width / 2,
               minY: -rect.height / 2,
               maxY: rect.height / 2,
-            }
+            })
           : undefined,
         visitedQuery: 0,
         ...barrierBounds,
@@ -483,6 +485,13 @@ export class FindClearancePathSolver extends BaseSolver {
     // Distance queries are synchronous; reuse one prepared edge per search.
     const localA = { x: 0, y: 0 }
     const localB = { x: 0, y: 0 }
+    const rectQuerySegment: PreparedSegment = {
+      a: localA,
+      b: localB,
+      deltaX: 0,
+      deltaY: 0,
+      lengthSquared: 0,
+    }
     const querySegment: PreparedSegment = {
       a: start,
       b: start,
@@ -567,9 +576,12 @@ export class FindClearancePathSolver extends BaseSolver {
               localB.y =
                 -(b.x - barrier.a.x) * barrier.rectSin +
                 (b.y - barrier.a.y) * barrier.rectCos
-              distance = segmentToBoundsMinDistance(
-                localA,
-                localB,
+              rectQuerySegment.deltaX = localB.x - localA.x
+              rectQuerySegment.deltaY = localB.y - localA.y
+              rectQuerySegment.lengthSquared =
+                (localB.x - localA.x) ** 2 + (localB.y - localA.y) ** 2
+              distance = getPreparedSegmentToBoundsDistance(
+                rectQuerySegment,
                 barrier.rectBounds!,
               )
             } else {

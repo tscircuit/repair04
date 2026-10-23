@@ -3,27 +3,11 @@ import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import {
   getPreparedSegmentDistance,
   type PreparedSegment,
-} from "../lib/getPreparedSegmentDistance"
+} from "../lib/preparedDistanceGeometry"
+
+import { prepareDistanceSegment } from "./fixtures/prepareDistanceSegment"
 
 type Point = PreparedSegment["a"]
-
-function prepareDistanceSegment({
-  a,
-  b,
-}: {
-  a: Point
-  b: Point
-}): PreparedSegment {
-  const deltaX = b.x - a.x
-  const deltaY = b.y - a.y
-  return {
-    a,
-    b,
-    deltaX,
-    deltaY,
-    lengthSquared: deltaX ** 2 + deltaY ** 2,
-  }
-}
 
 test("prepared distances exactly match degenerate, crossing and separated segments", (): void => {
   let seed = 17

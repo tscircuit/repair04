@@ -8,7 +8,7 @@ import { FindClearancePathSolver } from "./FindClearancePathSolver"
 import {
   getPreparedSegmentDistance,
   type PreparedSegment,
-} from "./getPreparedSegmentDistance"
+} from "./preparedDistanceGeometry"
 import Flatbush from "flatbush"
 import type {
   HighDensityRoute,
