@@ -1,4 +1,5 @@
 import Flatbush from "flatbush"
+import type { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import { getSegmentToSegmentMinDistance as segmentToSegmentMinDistance } from "./getSegmentToSegmentMinDistance"
 import { FindClearancePathSolver } from "./FindClearancePathSolver"
 import type { ClearancePathInput } from "./findClearancePath"
@@ -298,6 +299,7 @@ function createPathInput(
 /** Each directional lane owns an ordinary Find and its pure cost kernel. */
 export function createNegotiatedClearanceSearch(
   input: NegotiatedClearanceSearchInput,
+  connectivity?: ClearancePathConnectivity,
 ): FindClearancePathSolver {
-  return new FindClearancePathSolver(createPathInput(input))
+  return new FindClearancePathSolver(createPathInput(input), connectivity)
 }

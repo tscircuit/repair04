@@ -1,4 +1,5 @@
 import { getRepairRouteVias } from "./getRepairRouteVias"
+import { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import type {
   NegotiatedClearanceInput,
   NegotiatedClearanceResult,
@@ -171,6 +172,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
 
   private initialize(): void {
     const input = this.input
+    const connectivity = new ClearancePathConnectivity(input.srj)
     if (
       input.searchDirectionCount !== undefined &&
       input.searchDirectionCount !== 1 && input.searchDirectionCount !== 2
@@ -714,6 +716,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
           const solver = input.searchDirectionCount === 2
             ? new PairedClearancePathSolver({
                 task: { pathInput, coppers, selectedOwner, weights },
+                connectivity,
                 reverseMaxNodes:
                   input.maxPathSearchCalls - pathSearchCalls >= 2 &&
                   reverseNodes > 0
@@ -724,7 +727,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
                 ...pathInput,
                 stats,
                 getAdditionalEdgeCost,
-              })
+              }, connectivity)
 
           this.pathSolver = solver
           this.activeSubSolver = solver
