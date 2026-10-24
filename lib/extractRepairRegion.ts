@@ -13,6 +13,7 @@ import {
   interpolateRepairPoint,
   isPointInBounds,
   REGION_EPSILON,
+  repairValueKey,
   sameRepairPoint,
 } from "./repairRegionGeometry"
 import type {
@@ -209,7 +210,8 @@ const getFragments = (
         lastPoint &&
         lastPoint.x === point.x &&
         lastPoint.y === point.y &&
-        lastPoint.z === point.z
+        lastPoint.z === point.z &&
+        repairValueKey(lastPoint) === repairValueKey(point)
       ) {
         active.locks[active.locks.length - 1] =
           active.locks[active.locks.length - 1]! || fixed
@@ -411,13 +413,22 @@ export const extractRepairRegion = ({
         traceThickness: route.traceThickness,
         viaDiameter: route.viaDiameter,
         route: fragment.points,
+        // A planar revisit can share the drill's XY with a later reentry.
+        // Only the fragment carrying the layer transition owns that via.
         vias: route.vias
           .filter((via) =>
-            fragment.points.some(
-              (point) =>
+            fragment.points.some((point, pointIndex): boolean => {
+              const next = fragment.points[pointIndex + 1]
+              return (
+                next !== undefined &&
+                point.z !== next.z &&
+                point.toNextSegmentType !== "through_obstacle" &&
                 Math.abs(point.x - via.x) <= REGION_EPSILON &&
-                Math.abs(point.y - via.y) <= REGION_EPSILON,
-            ),
+                Math.abs(point.y - via.y) <= REGION_EPSILON &&
+                Math.abs(next.x - via.x) <= REGION_EPSILON &&
+                Math.abs(next.y - via.y) <= REGION_EPSILON
+              )
+            }),
           )
           .map((via) => structuredClone(via)),
         ...(route.jumpers !== undefined
