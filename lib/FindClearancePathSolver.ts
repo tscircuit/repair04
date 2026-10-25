@@ -698,6 +698,7 @@ export class FindClearancePathSolver extends BaseSolver {
       const denseViaPermissions = useDenseStorage
         ? new Uint8Array(nx * ny)
         : undefined
+      const neighbors: number[] = []
 
       let expanded = 0
       this.searchBatch = (): void => {
@@ -780,7 +781,7 @@ export class FindClearancePathSolver extends BaseSolver {
           }
           const x = current.id % nx,
             y = Math.floor(current.id / nx) % ny
-          const neighbors: number[] = []
+          neighbors.length = 0
           for (let dx = -1; dx <= 1; dx++)
             for (let dy = -1; dy <= 1; dy++) {
               if (
@@ -800,16 +801,25 @@ export class FindClearancePathSolver extends BaseSolver {
           for (const id of neighbors) {
             if (denseSettled ? denseSettled[id] === 1 : settled?.has(id))
               continue
-            const b = point(id),
+            const nextX = bounds.minX + ((id % nx) + 0.5) * grid,
+              nextY =
+                bounds.minY + ((Math.floor(id / nx) % ny) + 0.5) * grid,
+              nextZ = Math.floor(id / (nx * ny)),
               baseCost =
                 current.cost +
-                (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
+                (a.z === nextZ ? Math.hypot(a.x - nextX, a.y - nextY) : 1),
               previousCost = denseCosts
                 ? denseCosts[id]!
                 : (costs.get(id) ?? Infinity)
             // Congestion costs are nonnegative, so an edge that cannot improve the
             // geometric cost cannot improve the complete cost either.
             if (baseCost >= previousCost) continue
+            const b: Point = {
+              x: nextX,
+              y: nextY,
+              z: nextZ,
+              traceThickness,
+            }
             // Hard-blocked edges cannot enter the queue. Avoid the more expensive
             // movable-copper congestion query for those edges.
             const low = Math.min(current.id, id),

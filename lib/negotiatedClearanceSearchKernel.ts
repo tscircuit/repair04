@@ -207,16 +207,18 @@ export function createNegotiatedClearanceSearchKernel(
     // point accumulation and the order in which displaced spans are queued.
     const firstCellX = Math.floor(minX - reach)
     const firstCellY = Math.floor(minY - reach)
-    hits.sort((left, right): number => {
-      const x =
-        Math.max(firstCellX, left.copper.cellX) -
-        Math.max(firstCellX, right.copper.cellX)
-      if (x !== 0) return x
-      const y =
-        Math.max(firstCellY, left.copper.cellY) -
-        Math.max(firstCellY, right.copper.cellY)
-      return y || left.copper.index - right.copper.index
-    })
+    if (hits.length > 1) {
+      hits.sort((left, right): number => {
+        const x =
+          Math.max(firstCellX, left.copper.cellX) -
+          Math.max(firstCellX, right.copper.cellX)
+        if (x !== 0) return x
+        const y =
+          Math.max(firstCellY, left.copper.cellY) -
+          Math.max(firstCellY, right.copper.cellY)
+        return y || left.copper.index - right.copper.index
+      })
+    }
     return hits
   }
   const calculateAdditionalEdgeCost = (
@@ -232,8 +234,16 @@ export function createNegotiatedClearanceSearchKernel(
       y >= input.bounds.maxY - REGION_EPSILON * 4
     )
       return Infinity
+    const hits = query(a, b)
+    const length = a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1
+    if (hits.length === 0) return length * 0
+    if (hits.length === 1) {
+      const { copper, ratio } = hits[0]!
+      if (copper.owner === selectedOwner || copper.immutable) return Infinity
+      return length * Math.max(0, ratio * weights[copper.spanIndex]!)
+    }
     const costs = new Map<string, number>()
-    for (const { copper, ratio } of query(a, b)) {
+    for (const { copper, ratio } of hits) {
       if (copper.owner === selectedOwner || copper.immutable) return Infinity
       costs.set(
         copper.owner,
@@ -245,7 +255,7 @@ export function createNegotiatedClearanceSearchKernel(
     }
     let total = 0
     for (const cost of costs.values()) total += cost
-    return (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) * total
+    return length * total
   }
   // Ordinary drill sites occupy the full stack regardless of which two
   // electrical layers the search connects. Copper and weights are fixed
@@ -293,7 +303,7 @@ function createPathInput(
   }
 }
 
-/** Each directional lane owns an ordinary Find and its pure cost kernel. */
+/** Create a native directional search with a lazily prepared pure cost kernel. */
 export function createNegotiatedClearanceSearch(
   input: NegotiatedClearanceSearchInput,
   connectivity?: ClearancePathConnectivity,

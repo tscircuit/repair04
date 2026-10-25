@@ -158,16 +158,17 @@ export class PairedClearancePathSolver extends BaseSolver {
       // another geometry/index preparation and a second constructed search.
       if (this.forward.stats.nodesPopped < 1024) return
       const { task } = this.input
-      this.reverse = createNegotiatedClearanceSearch(
+      // Reversing the terminals leaves copper, weights, bounds and clearances
+      // fixed. Share that pure congestion query, keeping native path state local.
+      this.reverse = new FindClearancePathSolver(
         {
-          ...task,
-          pathInput: {
-            ...task.pathInput,
-            start: task.pathInput.end,
-            end: task.pathInput.start,
-            existingPath: task.pathInput.existingPath?.slice().reverse(),
-            maxNodes: this.input.reverseMaxNodes,
-          },
+          ...task.pathInput,
+          start: task.pathInput.end,
+          end: task.pathInput.start,
+          existingPath: task.pathInput.existingPath?.slice().reverse(),
+          maxNodes: this.input.reverseMaxNodes,
+          stats: { nodesPopped: 0, completionReason: "no-path" },
+          getAdditionalEdgeCost: this.forward.input.getAdditionalEdgeCost,
         },
         this.input.connectivity,
       )
