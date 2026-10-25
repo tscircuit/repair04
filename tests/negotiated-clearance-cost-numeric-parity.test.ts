@@ -9,16 +9,34 @@ import type { RepairRoutePoint } from "../lib/repairRegionTypes"
 
 test("congestion costs retain frozen zero, single-owner and non-finite numeric behavior", (): void => {
   const edges: Array<[RepairRoutePoint, RepairRoutePoint]> = [
-    [{ x: -1, y: 3, z: 0 }, { x: 1, y: 3, z: 0 }],
-    [{ x: -1, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }],
-    [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }],
-    [{ x: NaN, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }],
-    [{ x: Infinity, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }],
+    [
+      { x: -1, y: 3, z: 0 },
+      { x: 1, y: 3, z: 0 },
+    ],
+    [
+      { x: -1, y: 0, z: 0 },
+      { x: 1, y: 0, z: 0 },
+    ],
+    [
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 0, z: 0 },
+    ],
+    [
+      { x: NaN, y: 0, z: 0 },
+      { x: 1, y: 0, z: 0 },
+    ],
+    [
+      { x: Infinity, y: 0, z: 0 },
+      { x: 1, y: 0, z: 0 },
+    ],
     [
       { x: -Number.MAX_VALUE, y: 0, z: 0 },
       { x: Number.MAX_VALUE, y: 0, z: 0 },
     ],
-    [{ x: -0, y: -0, z: 0 }, { x: 0, y: 0, z: 1 }],
+    [
+      { x: -0, y: -0, z: 0 },
+      { x: 0, y: 0, z: 1 },
+    ],
   ]
   for (const copperCount of [0, 1, 2]) {
     for (const immutable of [false, true]) {
@@ -55,7 +73,10 @@ test("congestion costs retain frozen zero, single-owner and non-finite numeric b
               immutable,
             }),
           )
-          task.weights = Array.from({ length: copperCount }, (): number => weight)
+          task.weights = Array.from(
+            { length: copperCount },
+            (): number => weight,
+          )
           const before = structuredClone(task)
           const actual = createNegotiatedClearanceSearchKernel(task)
           const expected = createReference(task)

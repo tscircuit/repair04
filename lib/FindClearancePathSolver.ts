@@ -802,8 +802,7 @@ export class FindClearancePathSolver extends BaseSolver {
             if (denseSettled ? denseSettled[id] === 1 : settled?.has(id))
               continue
             const nextX = bounds.minX + ((id % nx) + 0.5) * grid,
-              nextY =
-                bounds.minY + ((Math.floor(id / nx) % ny) + 0.5) * grid,
+              nextY = bounds.minY + ((Math.floor(id / nx) % ny) + 0.5) * grid,
               nextZ = Math.floor(id / (nx * ny)),
               baseCost =
                 current.cost +
