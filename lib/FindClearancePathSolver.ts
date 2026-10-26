@@ -633,10 +633,10 @@ export class FindClearancePathSolver extends BaseSolver {
         useDenseStorage ? denseNodeCount : undefined,
       )
       // The queue's bounded integer grid also admits exact numeric state arrays.
-      // Costs are finite when queued, so Infinity retains the meaning of an
-      // undiscovered state without storing a Map entry for each visited node.
+      // Predecessor + 2 encodes unseen as zero and a seed as one, so costs
+      // need no full-grid Infinity fill before the first state is discovered.
       const denseCosts = useDenseStorage
-        ? new Float64Array(denseNodeCount).fill(Infinity)
+        ? new Float64Array(denseNodeCount)
         : undefined
       const densePrevious = useDenseStorage
         ? new Int32Array(denseNodeCount)
@@ -660,7 +660,7 @@ export class FindClearancePathSolver extends BaseSolver {
           if (!Number.isFinite(cost)) continue
           if (denseCosts) denseCosts[id] = cost
           else costs.set(id, cost)
-          if (densePrevious) densePrevious[id] = -1
+          if (densePrevious) densePrevious[id] = 1
           else previous.set(id, -1)
           heap.pushValues(id, cost, cost + heuristicWeight * heuristic(p))
         }
@@ -685,13 +685,17 @@ export class FindClearancePathSolver extends BaseSolver {
           : undefined
       const settled =
         !useDenseStorage && heuristicWeight > 1 ? new Set<number>() : undefined
-      const edgeCache = new Map<number | string, boolean>()
+      // Settled weighted states examine each undirected edge only once.
+      const edgeCache =
+        heuristicWeight === 1 ? new Map<number | string, boolean>() : undefined
       // Four undirected planar edges start at each grid site. Two bits per
       // direction encode unknown, blocked and clear without a Map entry for
       // each examined edge. Narrow grids have overlapping linear offsets, so
       // retain the general key representation for those grids.
       const denseEdgePermissions =
-        useDenseStorage && nx >= 3 ? new Uint8Array(denseNodeCount) : undefined
+        useDenseStorage && nx >= 3 && heuristicWeight === 1
+          ? new Uint8Array(denseNodeCount)
+          : undefined
       // Ordinary vias have the same hard clearance on every electrical layer
       // pair. Reuse that result at each grid site; blind vias retain edge keys.
       const fullStackViaClearance = new Map<number, boolean>()
@@ -725,7 +729,7 @@ export class FindClearancePathSolver extends BaseSolver {
             for (
               let id = current.id;
               id !== -1;
-              id = densePrevious ? densePrevious[id]! : previous.get(id)!
+              id = densePrevious ? densePrevious[id]! - 2 : previous.get(id)!
             )
               reversed.push(point(id))
             reversed.push(start)
@@ -805,7 +809,9 @@ export class FindClearancePathSolver extends BaseSolver {
                 current.cost +
                 (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
               previousCost = denseCosts
-                ? denseCosts[id]!
+                ? densePrevious![id] === 0
+                  ? Infinity
+                  : denseCosts[id]!
                 : (costs.get(id) ?? Infinity)
             // Congestion costs are nonnegative, so an edge that cannot improve the
             // geometric cost cannot improve the complete cost either.
@@ -821,7 +827,9 @@ export class FindClearancePathSolver extends BaseSolver {
                 ? current.id % (nx * ny)
                 : undefined
             let permitted: boolean | undefined
-            if (denseEdgePermissions && a.z === b.z) {
+            if (heuristicWeight > 1 && a.z === b.z) {
+              permitted = clear(a, b)
+            } else if (denseEdgePermissions && a.z === b.z) {
               const offset = high - low
               const shift =
                 offset === 1 ? 0 : offset === nx - 1 ? 2 : offset === nx ? 4 : 6
@@ -843,11 +851,11 @@ export class FindClearancePathSolver extends BaseSolver {
                 : `${low},${high}`
               permitted =
                 fullStackViaKey === undefined
-                  ? edgeCache.get(key)
+                  ? edgeCache?.get(key)
                   : fullStackViaClearance.get(fullStackViaKey)
               if (permitted === undefined) {
                 permitted = clear(a, b)
-                if (fullStackViaKey === undefined) edgeCache.set(key, permitted)
+                if (fullStackViaKey === undefined) edgeCache?.set(key, permitted)
                 else fullStackViaClearance.set(fullStackViaKey, permitted)
               }
             }
@@ -860,7 +868,7 @@ export class FindClearancePathSolver extends BaseSolver {
             else viaPaths.delete(id)
             if (denseCosts) denseCosts[id] = cost
             else costs.set(id, cost)
-            if (densePrevious) densePrevious[id] = current.id
+            if (densePrevious) densePrevious[id] = current.id + 2
             else previous.set(id, current.id)
             heap.pushValues(id, cost, cost + heuristicWeight * heuristic(b))
           }
