@@ -685,15 +685,17 @@ export class FindClearancePathSolver extends BaseSolver {
           : undefined
       const settled =
         !useDenseStorage && heuristicWeight > 1 ? new Set<number>() : undefined
-      // Settled weighted states examine each undirected edge only once.
-      const edgeCache =
-        heuristicWeight === 1 ? new Map<number | string, boolean>() : undefined
+      // Exact grid IDs let settled weighted states examine each edge only once.
+      const skipEdgeCache = heuristicWeight > 1 && useNumericEdgeKeys
+      const edgeCache = skipEdgeCache
+        ? undefined
+        : new Map<number | string, boolean>()
       // Four undirected planar edges start at each grid site. Two bits per
       // direction encode unknown, blocked and clear without a Map entry for
       // each examined edge. Narrow grids have overlapping linear offsets, so
       // retain the general key representation for those grids.
       const denseEdgePermissions =
-        useDenseStorage && nx >= 3 && heuristicWeight === 1
+        useDenseStorage && nx >= 3 && !skipEdgeCache
           ? new Uint8Array(denseNodeCount)
           : undefined
       // Ordinary vias have the same hard clearance on every electrical layer
@@ -827,7 +829,7 @@ export class FindClearancePathSolver extends BaseSolver {
                 ? current.id % (nx * ny)
                 : undefined
             let permitted: boolean | undefined
-            if (heuristicWeight > 1 && a.z === b.z) {
+            if (skipEdgeCache && a.z === b.z) {
               permitted = clear(a, b)
             } else if (denseEdgePermissions && a.z === b.z) {
               const offset = high - low
@@ -855,7 +857,8 @@ export class FindClearancePathSolver extends BaseSolver {
                   : fullStackViaClearance.get(fullStackViaKey)
               if (permitted === undefined) {
                 permitted = clear(a, b)
-                if (fullStackViaKey === undefined) edgeCache?.set(key, permitted)
+                if (fullStackViaKey === undefined)
+                  edgeCache?.set(key, permitted)
                 else fullStackViaClearance.set(fullStackViaKey, permitted)
               }
             }
