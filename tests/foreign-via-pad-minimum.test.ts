@@ -69,8 +69,10 @@ const original = structuredClone(input)
 const solver = new RelaxTraceClearanceSolver(input)
 const fixture: ClearanceVisualReproFixture = {
   name: "foreign-via-pad-minimum",
-  title: "Foreign pad needs 0.15 mm; connected pads and via pairs keep their rules",
-  provenance: "Policy-focused repro; real Board1726 checkpoint is tested separately",
+  title:
+    "Foreign pad needs 0.15 mm; connected pads and via pairs keep their rules",
+  provenance:
+    "Policy-focused repro; real Board1726 checkpoint is tested separately",
   viewport: { minX: -0.8, maxX: 1.2, minY: -0.8, maxY: 0.8 },
   viaToPadClearance: 0.15,
   input: {

@@ -35,7 +35,10 @@ const fixture: RealPathFixture = JSON.parse(
   gunzipSync(
     new Uint8Array(
       readFileSync(
-        new URL("./fixtures/board1726/foreign-via-pad-path.json.gz", import.meta.url),
+        new URL(
+          "./fixtures/board1726/foreign-via-pad-path.json.gz",
+          import.meta.url,
+        ),
       ),
     ),
   ).toString("utf8"),
@@ -50,7 +53,8 @@ let candidate: HighDensityRoute
 const visual: ClearanceVisualReproFixture = {
   name: "board1726-foreign-via-pad-path",
   title: "Board1726: route the real branch with 0.15 mm foreign-pad clearance",
-  provenance: "Original 14-point path · 14 pads · 47 fixed route pieces · 69 copper pieces",
+  provenance:
+    "Original 14-point path · 14 pads · 47 fixed route pieces · 69 copper pieces",
   viewport: input.bounds,
   viaToPadClearance: input.srj.minPadEdgeToPadEdgeClearance,
   input: {
@@ -59,7 +63,9 @@ const visual: ClearanceVisualReproFixture = {
     bounds: input.bounds,
     boundaryMargin: 0,
     lockedPointIndices: input.routes.map((route) =>
-      route.route.map((_, index) => index === 0 || index === route.route.length - 1),
+      route.route.map(
+        (_, index) => index === 0 || index === route.route.length - 1,
+      ),
     ),
     traceClearance: input.traceClearance,
     viaClearance: input.viaClearance,
@@ -68,9 +74,9 @@ const visual: ClearanceVisualReproFixture = {
 }
 
 beforeAll(async (): Promise<void> => {
-  expect(
-    createHash("sha256").update(JSON.stringify(task)).digest("hex"),
-  ).toBe(fixture.source.taskSha256)
+  expect(createHash("sha256").update(JSON.stringify(task)).digest("hex")).toBe(
+    fixture.source.taskSha256,
+  )
   expect(fixture.source.sourceFixtureSha256).toBe(
     "273bab3643a859a0ac394677f0fe95ea5b0f8e2a7b4b4ac37ae700201f0a3fb7",
   )
@@ -88,7 +94,10 @@ beforeAll(async (): Promise<void> => {
   const route = solver.getOutput()
   if (!route) throw new Error("Board1726 path search returned no route")
   candidate = { ...selected, route, vias: [] }
-  candidate.vias = getRepairRouteVias({ route: candidate, mutableBounds: input.bounds })
+  candidate.vias = getRepairRouteVias({
+    route: candidate,
+    mutableBounds: input.bounds,
+  })
   const renderedRoutes = input.routes.map((route, index) =>
     index === input.routeIndex ? candidate : route,
   )
@@ -102,7 +111,11 @@ test.failing("Board1726 replaces the original path that crowds two foreign pads"
   expect(candidate.route[0]).toEqual(input.start)
   expect(candidate.route.at(-1)).toEqual(input.end)
   expect(candidate.vias).toHaveLength(1)
-  const originalBranch = { ...selected, route: input.existingPath!, vias: selected.vias }
+  const originalBranch = {
+    ...selected,
+    route: input.existingPath!,
+    vias: selected.vias,
+  }
   expect(measureClearanceRepro(visual, [originalBranch]).drcErrorCount).toBe(2)
   expect(measureClearanceRepro(visual, [candidate]).drcErrorCount).toBe(0)
   expect(candidate.route).not.toEqual(input.existingPath)
