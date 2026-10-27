@@ -6,8 +6,8 @@ import type { RelaxTraceClearanceInput } from "../lib/relaxTraceClearance"
 import golden from "./fixtures/clearance-projection-revisions.json"
 
 test("revision-cached projections retain exact clearance repro geometry and work budgets", (): void => {
-  // Captured from the pre-optimization stepped solver, including blocked vias,
-  // moving interior pad contacts, shared vertices and coupled route constraints.
+  // Captured with source foreign-pad clearance, including blocked vias, moving
+  // interior pad contacts, shared vertices and coupled route constraints.
   const directory = new URL("./fixtures/clearance-repros/", import.meta.url)
   for (const [name, expected] of Object.entries(golden)) {
     const input: RelaxTraceClearanceInput = JSON.parse(

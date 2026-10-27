@@ -1,122 +1,122 @@
 {
   "board1726-central-fanout-spacing-parity.json": {
-    "sha256": "ec63f172ddb66029f79f0a30466e306ffee8a4eb45c3a152862210f33e8a4071",
+    "sha256": "01817f05ec00dc97a4262ca8083bc6ca3712dd2cd5d7b77a713396fb4d076261",
     "iterations": 1379,
     "stats": {
       "preparedPairCount": 1403650,
       "pairCount": 13001,
       "lastPreparedPairBatchCount": 2818,
       "preparedObstacleCount": 150,
-      "padContactCount": 1153,
+      "padContactCount": 1316,
       "lastPreparedObstacleBatchCount": 6,
       "sweepCount": 256,
-      "projectedConstraintCount": 3623424,
-      "lastProjectedConstraintBatchCount": 1866
+      "projectedConstraintCount": 3665152,
+      "lastProjectedConstraintBatchCount": 2029
     }
   },
   "board1726-connector-pad-tangents.json": {
-    "sha256": "1ed58a4586dca2fa5dcd078622bf02f07181e1d8be8b64e7f598f28dfc32bc18",
+    "sha256": "9a172a3fbc1e8feb9f002a814717755bc3fab28f3bafcdf73846a3df23f5f267",
     "iterations": 598,
     "stats": {
       "preparedPairCount": 314028,
       "pairCount": 3601,
       "lastPreparedPairBatchCount": 2732,
       "preparedObstacleCount": 98,
-      "padContactCount": 622,
+      "padContactCount": 699,
       "lastPreparedObstacleBatchCount": 2,
       "sweepCount": 256,
-      "projectedConstraintCount": 1081088,
-      "lastProjectedConstraintBatchCount": 127
+      "projectedConstraintCount": 1100800,
+      "lastProjectedConstraintBatchCount": 204
     }
   },
   "board1726-connector-side-spacing-parity.json": {
-    "sha256": "901559ce444cd48187e92f6fc6951b4b01d6fbc04935dd35b0828e3fda5716fa",
+    "sha256": "d7132e18b35b4f08e3a7c523d4992d84ddd39f8a90bf44bac3729d3f39955dee",
     "iterations": 676,
     "stats": {
       "preparedPairCount": 622170,
       "pairCount": 5237,
       "lastPreparedPairBatchCount": 3674,
       "preparedObstacleCount": 147,
-      "padContactCount": 890,
+      "padContactCount": 997,
       "lastPreparedObstacleBatchCount": 3,
       "sweepCount": 256,
-      "projectedConstraintCount": 1568512,
-      "lastProjectedConstraintBatchCount": 2031
+      "projectedConstraintCount": 1595904,
+      "lastProjectedConstraintBatchCount": 2138
     }
   },
   "board1726-coupled-via-row.json": {
-    "sha256": "c66ef3445204103c75040c2f78cd1ff9633700faa16c29df2d6d851d9125991a",
+    "sha256": "7145c6226839b893cbe5386891650f4d60aa2ec768255d9475a3f037d95affb5",
     "iterations": 1081,
     "stats": {
       "preparedPairCount": 1234806,
       "pairCount": 9511,
       "lastPreparedPairBatchCount": 1910,
       "preparedObstacleCount": 133,
-      "padContactCount": 927,
+      "padContactCount": 1051,
       "lastPreparedObstacleBatchCount": 5,
       "sweepCount": 256,
-      "projectedConstraintCount": 2672128,
-      "lastProjectedConstraintBatchCount": 2246
+      "projectedConstraintCount": 2703872,
+      "lastProjectedConstraintBatchCount": 2370
     }
   },
   "board1726-left-pad-via-tangent.json": {
-    "sha256": "decf0f2a7fd583f80de17cc1cb4fad16ca87524d8871e57f075277a567ff2e50",
+    "sha256": "36163616dfc971451c0608daa8929a64ba611f7760b97f819cf9a8996cf88f48",
     "iterations": 620,
     "stats": {
       "preparedPairCount": 406351,
       "pairCount": 5671,
       "lastPreparedPairBatchCount": 847,
       "preparedObstacleCount": 96,
-      "padContactCount": 864,
+      "padContactCount": 950,
       "lastPreparedObstacleBatchCount": 16,
       "sweepCount": 256,
-      "projectedConstraintCount": 1672960,
-      "lastProjectedConstraintBatchCount": 2439
+      "projectedConstraintCount": 1694976,
+      "lastProjectedConstraintBatchCount": 2525
     }
   },
   "board1726-power-via-trace-gap.json": {
-    "sha256": "317209c9fbcb45dd5ef0850208aad1d6a441822309e7679ae2896ddfe8b58893",
+    "sha256": "0de728d744fb4b4292da66c402d4ee9ec1da5e0d8c5874f401fe467ebefd6e56",
     "iterations": 1403,
     "stats": {
       "preparedPairCount": 1495585,
       "pairCount": 13206,
       "lastPreparedPairBatchCount": 545,
       "preparedObstacleCount": 172,
-      "padContactCount": 1202,
+      "padContactCount": 1363,
       "lastPreparedObstacleBatchCount": 12,
       "sweepCount": 256,
-      "projectedConstraintCount": 3688448,
-      "lastProjectedConstraintBatchCount": 2120
+      "projectedConstraintCount": 3729664,
+      "lastProjectedConstraintBatchCount": 2281
     }
   },
   "board1726-right-via-strip.json": {
-    "sha256": "fed0c46ce37231d990ee178f3c2cebabe19d1f33beffe83cd39c07db4687b3cb",
+    "sha256": "74cabfc4ee2c502e1295c519669ef94e617505a9c7b8e2d3d008c97127efd0b4",
     "iterations": 960,
     "stats": {
       "preparedPairCount": 741153,
       "pairCount": 7677,
       "lastPreparedPairBatchCount": 3873,
       "preparedObstacleCount": 142,
-      "padContactCount": 793,
+      "padContactCount": 910,
       "lastPreparedObstacleBatchCount": 14,
       "sweepCount": 256,
-      "projectedConstraintCount": 2168320,
-      "lastProjectedConstraintBatchCount": 278
+      "projectedConstraintCount": 2198272,
+      "lastProjectedConstraintBatchCount": 395
     }
   },
   "board1726-upper-layer-spacing-parity.json": {
-    "sha256": "2a5341afe524d0c448c7d6e3472a5cc936a1ac3a83bd5ec9d00a60d62e540fa3",
+    "sha256": "65ac2596f8a4e76433dadd8b8acf7928e037186819ba092b658e259b1388f568",
     "iterations": 1460,
     "stats": {
       "preparedPairCount": 1725153,
       "pairCount": 12969,
       "lastPreparedPairBatchCount": 737,
       "preparedObstacleCount": 177,
-      "padContactCount": 1667,
+      "padContactCount": 1852,
       "lastPreparedObstacleBatchCount": 1,
       "sweepCount": 256,
-      "projectedConstraintCount": 3746816,
-      "lastProjectedConstraintBatchCount": 2348
+      "projectedConstraintCount": 3794176,
+      "lastProjectedConstraintBatchCount": 2533
     }
   },
   "srj18-sample14-left-upper-pad-escape.json": {

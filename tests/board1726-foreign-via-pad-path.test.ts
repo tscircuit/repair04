@@ -106,7 +106,7 @@ beforeAll(async (): Promise<void> => {
   )
 })
 
-test.failing("Board1726 replaces the original path that crowds two foreign pads", (): void => {
+test("Board1726 replaces the original path that crowds two foreign pads", (): void => {
   expect(task).toEqual(original)
   expect(candidate.route[0]).toEqual(input.start)
   expect(candidate.route.at(-1)).toEqual(input.end)

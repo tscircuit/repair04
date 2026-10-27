@@ -12,6 +12,7 @@ import {
 } from "./findClearancePath"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
+import type { ViaPadClearanceRules } from "./getViaPadClearance"
 import { REGION_EPSILON } from "./repairRegionGeometry"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 
@@ -38,7 +39,7 @@ type Copper = {
   immutable: boolean
 }
 export type NegotiatedClearanceInput = {
-  srj: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean }
+  srj: SimpleRouteJson & ViaPadClearanceRules & { allowBlindAndBuriedVias?: boolean }
   routes: HighDensityRoute[]
   bounds: Bounds
   dirtyRouteIndices: readonly number[]
