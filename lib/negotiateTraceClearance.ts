@@ -37,6 +37,25 @@ type Copper = {
   cellY: number
   immutable: boolean
 }
+export type NegotiatedClearanceTask = {
+  spanIndex: number
+  revision: number
+  kind: "reroute" | "recheck"
+  fixedRevision: number
+  cause?: { spanIndex: number; revision: number }
+}
+export type NegotiatedClearanceTaskEvent = {
+  action:
+    | "queued"
+    | "stale"
+    | "recheck-clear"
+    | "recheck-conflict"
+    | "reroute"
+    | "freeze"
+  task: NegotiatedClearanceTask
+  currentRevision: number
+  currentFixedRevision: number
+}
 export type NegotiatedClearanceInput = {
   srj: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean }
   routes: HighDensityRoute[]
@@ -58,6 +77,9 @@ export type NegotiatedClearanceInput = {
   /** Search both anchor directions with deterministic logical generations. */
   searchDirectionCount?: 1 | 2
   maxPathSearchCalls: number
+  /** Recheck a displaced victim after its blockers move, before searching again. */
+  useCausalWorklist?: boolean
+  onWorklistTask?: (event: NegotiatedClearanceTaskEvent) => void
   onSearch?: (stats: ClearancePathSearchStats) => void
 }
 export type NegotiatedClearanceResult = {
@@ -98,7 +120,7 @@ export function negotiateTraceClearance(
   ) {
     throw new Error("repair04: search direction count must be one or two")
   }
-  if (input.searchDirectionCount === 2) {
+  if (input.searchDirectionCount === 2 || input.useCausalWorklist) {
     const solver = new NegotiateTraceClearanceSolver(input)
     solver.solve()
     return solver.getOutput()
