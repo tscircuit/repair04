@@ -39,9 +39,6 @@ type Segment = {
   a: Vertex
   b: Vertex
   initialBounds: Bounds
-  currentBounds?: Bounds
-  boundsRevisionA?: number
-  boundsRevisionB?: number
   minZ: number
   maxZ: number
   radius: number
@@ -364,25 +361,8 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
     await this.preparingPairs
   }
 
-  /** A segment's endpoints are shared by many pair and pad constraints. */
-  private getSegmentBounds(segment: Segment): Bounds {
-    if (
-      segment.currentBounds &&
-      segment.boundsRevisionA === segment.a.revision &&
-      segment.boundsRevisionB === segment.b.revision
-    )
-      return segment.currentBounds
-    const bounds = (segment.currentBounds ??= { ...segment.initialBounds })
-    bounds.minX = Math.min(segment.a.x, segment.b.x)
-    bounds.maxX = Math.max(segment.a.x, segment.b.x)
-    bounds.minY = Math.min(segment.a.y, segment.b.y)
-    bounds.maxY = Math.max(segment.a.y, segment.b.y)
-    segment.boundsRevisionA = segment.a.revision
-    segment.boundsRevisionB = segment.b.revision
-    return bounds
-  }
-
-  private preparePairs(): void {
+  private prepareParallelPairBatch(): number {
+    const chunks = this.parallelPairs!
     let processed = 0
     while (processed < 4096 && this.pairOuterIndex < this.segments.length) {
       if (this.pairInnerIndex >= this.segments.length) {
@@ -390,50 +370,61 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         this.pairInnerIndex = this.pairOuterIndex + 1
         continue
       }
-      if (this.parallelPairs) {
-        const batchCount = Math.min(
-          4096 - processed,
-          this.segments.length - this.pairInnerIndex,
-        )
-        const endOrdinal = this.preparedPairCount + batchCount
-        while (this.parallelPairChunk < this.parallelPairs.length) {
-          const chunk = this.parallelPairs[this.parallelPairChunk]!
-          if (this.parallelPairCursor === chunk.length) {
-            this.parallelPairChunk++
-            this.parallelPairCursor = 0
-            continue
-          }
-          const cursor = this.parallelPairCursor
-          if (chunk[cursor]! >= endOrdinal) break
-          this.pairs.push({
-            a: this.segments[chunk[cursor + 1]!]!,
-            b: this.segments[chunk[cursor + 2]!]!,
-            revisions: [-1, -1, -1, -1],
-            contact: null,
-          })
-          this.parallelPairCursor += 3
+      const batchCount = Math.min(
+        4096 - processed,
+        this.segments.length - this.pairInnerIndex,
+      )
+      const endOrdinal = this.preparedPairCount + batchCount
+      while (this.parallelPairChunk < chunks.length) {
+        const chunk = chunks[this.parallelPairChunk]!
+        if (this.parallelPairCursor === chunk.length) {
+          this.parallelPairChunk++
+          this.parallelPairCursor = 0
+          continue
         }
-        this.pairInnerIndex += batchCount
-        this.preparedPairCount = endOrdinal
-        processed += batchCount
-        continue
+        const cursor = this.parallelPairCursor
+        if (chunk[cursor]! >= endOrdinal) break
+        this.pairs.push({
+          a: this.segments[chunk[cursor + 1]!]!,
+          b: this.segments[chunk[cursor + 2]!]!,
+          revisions: [-1, -1, -1, -1],
+          contact: null,
+        })
+        this.parallelPairCursor += 3
       }
-      const a = this.segments[this.pairOuterIndex]!
-      const b = this.segments[this.pairInnerIndex++]!
-      processed++
-      this.preparedPairCount++
-      if (a.net === b.net || a.maxZ < b.minZ || b.maxZ < a.minZ) continue
-      const reach =
-        a.radius +
-        b.radius +
-        Math.max(this.traceClearance, this.viaClearance) +
-        2 * Math.SQRT2 * MAX_DISPLACEMENT
-      if (areExpandedBoundsSeparated(a.initialBounds, b.initialBounds, reach))
-        continue
-      if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach) {
-        this.pairs.push({ a, b, revisions: [-1, -1, -1, -1], contact: null })
-      }
+      this.pairInnerIndex += batchCount
+      this.preparedPairCount = endOrdinal
+      processed += batchCount
     }
+    return processed
+  }
+
+  private preparePairs(): void {
+    let processed = 0
+    if (this.parallelPairs) processed = this.prepareParallelPairBatch()
+    else
+      while (processed < 4096 && this.pairOuterIndex < this.segments.length) {
+        if (this.pairInnerIndex >= this.segments.length) {
+          this.pairOuterIndex++
+          this.pairInnerIndex = this.pairOuterIndex + 1
+          continue
+        }
+        const a = this.segments[this.pairOuterIndex]!
+        const b = this.segments[this.pairInnerIndex++]!
+        processed++
+        this.preparedPairCount++
+        if (a.net === b.net || a.maxZ < b.minZ || b.maxZ < a.minZ) continue
+        const reach =
+          a.radius +
+          b.radius +
+          Math.max(this.traceClearance, this.viaClearance) +
+          2 * Math.SQRT2 * MAX_DISPLACEMENT
+        if (areExpandedBoundsSeparated(a.initialBounds, b.initialBounds, reach))
+          continue
+        if (segmentToSegmentMinDistance(a.a, a.b, b.a, b.b) <= reach) {
+          this.pairs.push({ a, b, revisions: [-1, -1, -1, -1], contact: null })
+        }
+      }
     if (this.pairOuterIndex >= this.segments.length) {
       this.parallelPairs = undefined
       this.preparingPairs = undefined
@@ -913,8 +904,18 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       a.radius +
       b.radius +
       (a.via && b.via ? this.viaClearance : this.traceClearance)
-    const boundsA = this.getSegmentBounds(a)
-    const boundsB = this.getSegmentBounds(b)
+    const boundsA = {
+      minX: Math.min(a.a.x, a.b.x),
+      maxX: Math.max(a.a.x, a.b.x),
+      minY: Math.min(a.a.y, a.b.y),
+      maxY: Math.max(a.a.y, a.b.y),
+    }
+    const boundsB = {
+      minX: Math.min(b.a.x, b.b.x),
+      maxX: Math.max(b.a.x, b.b.x),
+      minY: Math.min(b.a.y, b.b.y),
+      maxY: Math.max(b.a.y, b.b.y),
+    }
     if (areExpandedBoundsSeparated(boundsA, boundsB, required)) {
       pair.contact = null
       return
@@ -949,7 +950,12 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       return
     pad.projectionRevisions[0] = segment.a.revision
     pad.projectionRevisions[1] = segment.b.revision
-    const bounds = this.getSegmentBounds(segment)
+    const bounds = {
+      minX: Math.min(segment.a.x, segment.b.x),
+      maxX: Math.max(segment.a.x, segment.b.x),
+      minY: Math.min(segment.a.y, segment.b.y),
+      maxY: Math.max(segment.a.y, segment.b.y),
+    }
     if (areExpandedBoundsSeparated(bounds, pad.bounds, required)) return
     const endpointCount = segment.a === segment.b ? 1 : 2
     for (let endpoint = 0; endpoint < endpointCount; endpoint++) {
