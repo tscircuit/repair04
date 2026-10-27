@@ -22,7 +22,6 @@ const input: PadRuleInput = {
   srj: {
     layerCount: 2,
     minTraceWidth: 0.1,
-    minViaEdgeToPadEdgeClearance: 0.05,
     minPadEdgeToPadEdgeClearance: 0.15,
     bounds: { minX: -3, maxX: 3, minY: -3, maxY: 3 },
     obstacles: [
@@ -83,7 +82,21 @@ const fixture: ClearanceVisualReproFixture = {
 }
 
 beforeAll(async (): Promise<void> => {
+  const dedicated = structuredClone(input)
+  dedicated.srj.minViaEdgeToPadEdgeClearance = 0.05
+  const dedicatedSolver = new RelaxTraceClearanceSolver(dedicated)
+  dedicatedSolver.solve()
+  expect(dedicatedSolver.getOutput()[0]!.vias).toEqual(input.routes[0]!.vias)
+  expect(
+    getNewViaPadViolations({
+      srj: dedicated.srj,
+      previousRoutes: dedicated.routes,
+      routes: dedicated.routes,
+      includeExistingVias: [{ routeIndex: 0, viaIndex: 0 }],
+    }),
+  ).toEqual([])
   const own = structuredClone(input)
+  own.srj.minViaEdgeToPadEdgeClearance = 0.05
   own.srj.obstacles[0]!.connectedTo = ["target", "pcb_smtpad_foreign"]
   const ownSolver = new RelaxTraceClearanceSolver(own)
   ownSolver.solve()
