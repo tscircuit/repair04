@@ -135,7 +135,7 @@ beforeAll(async (): Promise<void> => {
   ).toMatchSvgSnapshot(import.meta.path)
 })
 
-test.failing("opens the authored foreign pad minimum without changing other copper rules", (): void => {
+test("opens the authored foreign pad minimum without changing other copper rules", (): void => {
   const output = solver.getOutput()
   expect(input).toEqual(original)
   expect(output[0]!.route[0]).toEqual(input.routes[0]!.route[0])

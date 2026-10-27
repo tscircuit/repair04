@@ -333,7 +333,7 @@ export function relaxTraceClearance(
           input.srj.defaultObstacleMargin ?? 0,
           input.srj.minTraceToPadEdgeClearance ?? 0,
           input.srj.minTraceToHoleEdgeClearance ?? 0,
-          input.srj.minViaEdgeToPadEdgeClearance ?? 0,
+          getViaPadClearance(input.srj, viaClearance, false),
         ) +
         Math.SQRT2 * MAX_DISPLACEMENT
       // Enclose all four transformed corners, including rotated pads. Keep

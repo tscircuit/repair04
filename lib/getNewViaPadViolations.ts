@@ -13,7 +13,10 @@ import type {
   SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { getNetRepresentatives } from "./getFixedObstacleViolations"
-import { getViaPadClearance } from "./getViaPadClearance"
+import {
+  getViaPadClearance,
+  type ViaPadClearanceRules,
+} from "./getViaPadClearance"
 
 export type NewViaPadViolation = {
   key: string
@@ -26,7 +29,7 @@ export type NewViaPadViolation = {
 }
 
 export type NewViaPadViolationInput = {
-  srj: SimpleRouteJson
+  srj: SimpleRouteJson & ViaPadClearanceRules
   /** Same route ordering as routes, before this repair stage changed geometry. */
   previousRoutes: readonly HighDensityRoute[]
   routes: readonly HighDensityRoute[]
@@ -42,7 +45,7 @@ type StaticContext = Pick<
   | "connections"
   | "defaultObstacleMargin"
   | "minViaEdgeToPadEdgeClearance"
-> & { allowBlindAndBuriedVias?: boolean }
+> & ViaPadClearanceRules & { allowBlindAndBuriedVias?: boolean }
 type RouteInput = Omit<NewViaPadViolationInput, "srj" | "viaClearance">
 type Contact = { obstacleIndex: number; severity: number }
 type PreparedObstacle = {
@@ -70,8 +73,9 @@ const createEvaluator = ({
     viaClearance,
     srj.defaultObstacleMargin ?? 0,
     srj.minViaEdgeToPadEdgeClearance ?? 0,
+    srj.minPadEdgeToPadEdgeClearance ?? 0,
   ]
-  const clearance = Math.max(...margins)
+  const clearance = getViaPadClearance(srj, viaClearance, false)
   const sameNetClearance = getViaPadClearance(srj, viaClearance, true)
   let ownershipRoutes: Pick<
     HighDensityRoute,
@@ -335,6 +339,7 @@ export const createNewViaPadViolationEvaluator = ({
       connections: structuredClone(srj.connections),
       defaultObstacleMargin: srj.defaultObstacleMargin,
       minViaEdgeToPadEdgeClearance: srj.minViaEdgeToPadEdgeClearance,
+      minPadEdgeToPadEdgeClearance: srj.minPadEdgeToPadEdgeClearance,
     },
     viaClearance,
   })

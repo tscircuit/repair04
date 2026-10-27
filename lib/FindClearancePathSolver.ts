@@ -270,7 +270,7 @@ export class FindClearancePathSolver extends BaseSolver {
       srj.defaultObstacleMargin ?? 0,
       srj.minTraceToPadEdgeClearance ?? 0,
       srj.minTraceToHoleEdgeClearance ?? 0,
-      srj.minViaEdgeToPadEdgeClearance ?? 0,
+      getViaPadClearance(srj, input.viaClearance, false),
     ].every((value) => Number.isFinite(value) && Math.abs(value) <= 10_000)
     const barriers: Barrier[] = []
     const add = (
@@ -417,7 +417,7 @@ export class FindClearancePathSolver extends BaseSolver {
         srj.defaultObstacleMargin ?? 0,
         srj.minTraceToPadEdgeClearance ?? 0,
         srj.minTraceToHoleEdgeClearance ?? 0,
-        srj.minViaEdgeToPadEdgeClearance ?? 0,
+        getViaPadClearance(srj, input.viaClearance, false),
       ) +
       1e-5
 
@@ -452,13 +452,13 @@ export class FindClearancePathSolver extends BaseSolver {
     const clear = (a: Point, b: Point): boolean => {
       const isVia = a.z !== b.z
       const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
-      const margin = Math.max(
-        isVia ? input.viaClearance : input.traceClearance,
-        srj.defaultObstacleMargin ?? 0,
-        isVia
-          ? (srj.minViaEdgeToPadEdgeClearance ?? 0)
-          : (srj.minTraceToPadEdgeClearance ?? 0),
-      )
+      const margin = isVia
+        ? getViaPadClearance(srj, input.viaClearance, false)
+        : Math.max(
+            input.traceClearance,
+            srj.defaultObstacleMargin ?? 0,
+            srj.minTraceToPadEdgeClearance ?? 0,
+          )
       const reach =
         radius + Math.max(margin, srj.minTraceToHoleEdgeClearance ?? 0) + 1e-5
       // Barriers belong to this synchronous search only. A visit stamp preserves

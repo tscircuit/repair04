@@ -9,7 +9,10 @@ import type {
 } from "high-density-repair03/lib"
 import { ClearancePathHeap } from "./ClearancePathHeap"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
-import { getViaPadClearance } from "./getViaPadClearance"
+import {
+  getViaPadClearance,
+  type ViaPadClearanceRules,
+} from "./getViaPadClearance"
 import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
 import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 import { REGION_EPSILON } from "./repairRegionGeometry"
@@ -45,7 +48,7 @@ export type ClearancePathInput = Parameters<typeof findClearancePath>[0]
 
 /** Clearance-aware routing between fixed anchors, using only cropped context. */
 export function findClearancePath(input: {
-  srj: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean }
+  srj: SimpleRouteJson & ViaPadClearanceRules & { allowBlindAndBuriedVias?: boolean }
   routes: HighDensityRoute[]
   routeIndex: number
   start: Point
@@ -185,7 +188,7 @@ export function findClearancePath(input: {
     srj.defaultObstacleMargin ?? 0,
     srj.minTraceToPadEdgeClearance ?? 0,
     srj.minTraceToHoleEdgeClearance ?? 0,
-    srj.minViaEdgeToPadEdgeClearance ?? 0,
+    getViaPadClearance(srj, input.viaClearance, false),
   ].every((value) => Number.isFinite(value) && Math.abs(value) <= 10_000)
   const barriers: Barrier[] = []
   const add = (
@@ -325,7 +328,7 @@ export function findClearancePath(input: {
       srj.defaultObstacleMargin ?? 0,
       srj.minTraceToPadEdgeClearance ?? 0,
       srj.minTraceToHoleEdgeClearance ?? 0,
-      srj.minViaEdgeToPadEdgeClearance ?? 0,
+      getViaPadClearance(srj, input.viaClearance, false),
     ) +
     1e-5
   for (const barrier of barriers) {
@@ -357,13 +360,13 @@ export function findClearancePath(input: {
   const clear = (a: Point, b: Point): boolean => {
     const isVia = a.z !== b.z
     const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
-    const margin = Math.max(
-      isVia ? input.viaClearance : input.traceClearance,
-      srj.defaultObstacleMargin ?? 0,
-      isVia
-        ? (srj.minViaEdgeToPadEdgeClearance ?? 0)
-        : (srj.minTraceToPadEdgeClearance ?? 0),
-    )
+    const margin = isVia
+      ? getViaPadClearance(srj, input.viaClearance, false)
+      : Math.max(
+          input.traceClearance,
+          srj.defaultObstacleMargin ?? 0,
+          srj.minTraceToPadEdgeClearance ?? 0,
+        )
     const reach =
       radius + Math.max(margin, srj.minTraceToHoleEdgeClearance ?? 0) + 1e-5
     // Barriers belong to this synchronous search only. A visit stamp preserves
