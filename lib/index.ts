@@ -44,3 +44,5 @@ export {
   findPairedClearancePath,
 } from "./PairedClearancePathSolver"
 export type { PairedClearancePathInput } from "./PairedClearancePathSolver"
+
+export { ClearancePairPreparationSolver } from "./ClearancePairPreparationSolver"
