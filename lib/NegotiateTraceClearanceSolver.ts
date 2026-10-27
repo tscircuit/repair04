@@ -3,6 +3,8 @@ import { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import type {
   NegotiatedClearanceInput,
   NegotiatedClearanceResult,
+  NegotiatedClearanceTask,
+  NegotiatedClearanceTaskEvent,
 } from "./negotiateTraceClearance"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { FindClearancePathSolver } from "./FindClearancePathSolver"
@@ -355,16 +357,58 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
       })
       const frozen = new Set<number>()
       const dirty = new Set(input.dirtyRouteIndices)
-      const queue: number[] = []
-      const queued = new Set<number>()
-      const enqueue = (index: number): void => {
-        if (queued.has(index) || frozen.has(index) || !spans[index]!.mutable)
+      const queue: NegotiatedClearanceTask[] = []
+      const queued = new Map<number, NegotiatedClearanceTask>()
+      const revisions = spans.map((): number => 0)
+      let fixedRevision = 0
+      let staleTasks = 0
+      let recheckTasks = 0
+      let cleanRechecks = 0
+      const reportTask = (
+        action: NegotiatedClearanceTaskEvent["action"],
+        task: NegotiatedClearanceTask,
+      ): void => {
+        if (!input.useCausalWorklist) return
+        input.onWorklistTask?.({
+          action,
+          task: { ...task, cause: task.cause ? { ...task.cause } : undefined },
+          currentRevision: revisions[task.spanIndex]!,
+          currentFixedRevision: fixedRevision,
+        })
+      }
+      const enqueue = ({
+        index,
+        kind = "reroute",
+        cause,
+      }: {
+        index: number
+        kind?: NegotiatedClearanceTask["kind"]
+        cause?: NegotiatedClearanceTask["cause"]
+      }): void => {
+        if (frozen.has(index) || !spans[index]!.mutable) return
+        const previous = queued.get(index)
+        // A new aggressor can invalidate a waiting victim's recheck. Replace
+        // that task with a reroute; its old FIFO entry becomes explicitly stale.
+        if (
+          previous &&
+          (!input.useCausalWorklist ||
+            previous.kind === "reroute" ||
+            kind === "recheck")
+        )
           return
-        queued.add(index)
-        queue.push(index)
+        const task: NegotiatedClearanceTask = {
+          spanIndex: index,
+          revision: revisions[index]!,
+          fixedRevision,
+          kind: input.useCausalWorklist ? kind : "reroute",
+          cause,
+        }
+        queued.set(index, task)
+        queue.push(task)
+        reportTask("queued", task)
       }
       spans.forEach((span, index): void => {
-        if (dirty.has(span.routeIndex)) enqueue(index)
+        if (dirty.has(span.routeIndex)) enqueue({ index })
       })
       let pathSearchNodes = 0,
         pathSearchCalls = 0,
@@ -377,6 +421,9 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             pathSearchNodes + (this.pathSolver?.stats.nodesPopped ?? 0),
           pathSearchCalls,
           unresolvedSpanCount: queued.size + frozen.size,
+          ...(input.useCausalWorklist
+            ? { staleTasks, recheckTasks, cleanRechecks, fixedRevision }
+            : {}),
         }
         this.progress = this.solved
           ? 1
@@ -417,7 +464,13 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
           this.phase = "finished"
           return
         }
-        const index = queue[cursor++]!
+        const task = queue[cursor++]!
+        const index = task.spanIndex
+        if (queued.get(index) !== task || task.revision !== revisions[index]) {
+          staleTasks++
+          reportTask("stale", task)
+          return
+        }
         queued.delete(index)
         const route = current[index]!
         const selectedOwner = owner(route)
@@ -638,6 +691,28 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             })
             return hits
           }
+          if (task.kind === "recheck") {
+            recheckTasks++
+            // The route was hard-valid when searched. A failed blocker search
+            // adds hard copper, which the soft query deliberately omits, so a
+            // changed fixed world always requires the original path kernel.
+            let clear = task.fixedRevision === fixedRevision
+            if (clear) {
+              for (let pi = 1; pi < route.route.length; pi++) {
+                if (query(route.route[pi - 1]!, route.route[pi]!).length) {
+                  clear = false
+                  break
+                }
+              }
+            }
+            reportTask(clear ? "recheck-clear" : "recheck-conflict", task)
+            if (clear) {
+              cleanRechecks++
+              this.phase = "select"
+              return
+            }
+          }
+          reportTask("reroute", task)
           const calculateAdditionalEdgeCost = (
             a: RepairRoutePoint,
             b: RepairRoutePoint,
@@ -767,6 +842,8 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             if (!path) {
               frozen.add(index)
               fixed.push(route)
+              fixedRevision++
+              reportTask("freeze", task)
               this.phase = "select"
               this.pathSolver = undefined
               return
@@ -776,17 +853,19 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               points: path,
               mutableBounds: input.bounds,
             })
+            revisions[index]!++
+            const cause = { spanIndex: index, revision: revisions[index]! }
             const conflicts = new Set<number>()
             for (let pi = 1; pi < path.length; pi++)
               for (const { copper } of query(path[pi - 1]!, path[pi]!))
                 conflicts.add(copper.spanIndex)
             for (const other of [...conflicts].sort((a, b): number => a - b)) {
               weights[other]!++
-              enqueue(other)
+              enqueue({ index: other, cause })
             }
             if (conflicts.size) {
               weights[index]!++
-              enqueue(index)
+              enqueue({ index, kind: "recheck", cause })
             }
             this.phase = "select"
             this.pathSolver = undefined
