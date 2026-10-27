@@ -3,6 +3,11 @@ name: Bun Test
 
 on:
   workflow_dispatch:
+    inputs:
+      benchmark_preparation:
+        description: Benchmark clearance preparation on the production ARM runner
+        type: boolean
+        default: false
   pull_request:
   push:
     branches:
@@ -10,8 +15,32 @@ on:
       - '!version-bumps/**'
 
 jobs:
+  pair-preparation-benchmark:
+    if: github.event_name == 'workflow_dispatch' && inputs.benchmark_preparation
+    runs-on: blacksmith-8vcpu-ubuntu-2404-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --network-concurrency 8
+      - name: Compare original, serial cache, and four-worker preparation
+        run: |
+          mkdir -p result
+          git show 88504e8908a3f2e35ad9805162757ef94357d717:lib/RelaxTraceClearanceSolver.ts > lib/RelaxTraceClearanceSolver.baseline.ts
+          bun -e 'import { readdirSync, readFileSync, writeFileSync } from "node:fs"; const directory = "tests/fixtures/clearance-repros"; writeFileSync("result/inputs.json", JSON.stringify(readdirSync(directory).filter(name => name.endsWith(".json")).map(name => JSON.parse(readFileSync(`${directory}/${name}`, "utf8")).input)))'
+          bun scripts/benchmark-clearance-preparation.ts result/inputs.json lib/RelaxTraceClearanceSolver.baseline.ts 9 > result/comparison.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clearance-preparation-arm
+          path: result/
+
   projection:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && !inputs.benchmark_preparation
     strategy:
       fail-fast: false
       matrix:
@@ -31,7 +60,7 @@ jobs:
           path: result/
 
   compare-projection:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && !inputs.benchmark_preparation
     needs: projection
     runs-on: ubuntu-latest
     steps:
