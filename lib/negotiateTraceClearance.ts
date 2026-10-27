@@ -45,7 +45,13 @@ export type NegotiatedClearanceTask = {
   cause?: { spanIndex: number; revision: number }
 }
 export type NegotiatedClearanceTaskEvent = {
-  action: "queued" | "stale" | "recheck-clear" | "recheck-conflict" | "reroute" | "freeze"
+  action:
+    | "queued"
+    | "stale"
+    | "recheck-clear"
+    | "recheck-conflict"
+    | "reroute"
+    | "freeze"
   task: NegotiatedClearanceTask
   currentRevision: number
   currentFixedRevision: number
