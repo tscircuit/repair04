@@ -71,7 +71,7 @@ const createEvaluator = ({
     srj.defaultObstacleMargin ?? 0,
     srj.minViaEdgeToPadEdgeClearance ?? 0,
   ]
-  const clearance = Math.max(...margins)
+  const clearance = getViaPadClearance(srj, viaClearance, false)
   const sameNetClearance = getViaPadClearance(srj, viaClearance, true)
   let ownershipRoutes: Pick<
     HighDensityRoute,

@@ -55,6 +55,7 @@ type SegmentPair = {
 type PadContact = {
   segment: Segment
   corners: Point[]
+  circle?: { center: Point; radius: number }
   required: number
   revisions: [number, number]
   contact: Contact | null
@@ -353,8 +354,8 @@ export function relaxTraceClearance(
         ) > reach
       )
         continue
-      // Use the enclosing rectangle as a conservative routing constraint for
-      // every pad shape. Physical via guards retain the exact obstacle shape.
+      // Rectangles enclose the broad phase; declared circles keep their
+      // physical outline in the projection and via-distance constraints.
       const required =
         segment.radius +
         (segment.via
@@ -374,6 +375,9 @@ export function relaxTraceClearance(
       padContacts.push({
         segment,
         corners,
+        ...(obstacle.shape === "circle"
+          ? { circle: { center: obstacle.center, radius: obstacle.width / 2 } }
+          : {}),
         required,
         revisions: [-1, -1],
         contact: null,
@@ -499,6 +503,34 @@ export function relaxTraceClearance(
     }
     for (const pad of padContacts) {
       const { segment, corners, required } = pad
+      if (pad.circle) {
+        const { center, radius } = pad.circle
+        const contact = getContact(segment.a, segment.b, center, center)
+        const requiredDistance = required + radius
+        if (contact.distance >= requiredDistance) continue
+        const dx = segment.b.x - segment.a.x
+        const dy = segment.b.y - segment.a.y
+        const length = getVectorLength(dx, dy)
+        const normal =
+          contact.distance > 1e-10
+            ? {
+                x: contact.x / contact.distance,
+                y: contact.y / contact.distance,
+              }
+            : length > 1e-10
+              ? { x: -dy / length, y: dx / length }
+              : { x: 1, y: 0 }
+        project(
+          [
+            [segment.a, 1 - contact.s],
+            [segment.b, contact.s],
+          ],
+          normal.x,
+          normal.y,
+          requiredDistance - contact.distance,
+        )
+        continue
+      }
       const endpointCount = segment.a === segment.b ? 1 : 2
       for (let endpoint = 0; endpoint < endpointCount; endpoint++) {
         const vertex = endpoint === 0 ? segment.a : segment.b
