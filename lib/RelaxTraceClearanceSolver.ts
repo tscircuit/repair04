@@ -261,31 +261,19 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         vertex.bounds = {
           minX: Math.max(
             mutable.minX,
-            Math.min(
-              vertex.original.x + MAX_DISPLACEMENT,
-              board.minX + margin,
-            ),
+            Math.min(vertex.original.x + MAX_DISPLACEMENT, board.minX + margin),
           ),
           maxX: Math.min(
             mutable.maxX,
-            Math.max(
-              vertex.original.x - MAX_DISPLACEMENT,
-              board.maxX - margin,
-            ),
+            Math.max(vertex.original.x - MAX_DISPLACEMENT, board.maxX - margin),
           ),
           minY: Math.max(
             mutable.minY,
-            Math.min(
-              vertex.original.y + MAX_DISPLACEMENT,
-              board.minY + margin,
-            ),
+            Math.min(vertex.original.y + MAX_DISPLACEMENT, board.minY + margin),
           ),
           maxY: Math.min(
             mutable.maxY,
-            Math.max(
-              vertex.original.y - MAX_DISPLACEMENT,
-              board.maxY - margin,
-            ),
+            Math.max(vertex.original.y - MAX_DISPLACEMENT, board.maxY - margin),
           ),
         }
       }

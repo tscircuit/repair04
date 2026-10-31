@@ -49,9 +49,7 @@ test("projection repairs existing copper intrusion using the outline extent", ()
   for (const output of [solver.getOutput(), relaxTraceClearance(input)]) {
     const route = output[0]!
     const gap = route.route[1]!.y - -1 - route.traceThickness / 2
-    const displacement = Math.abs(
-      route.route[1]!.y - original[0]!.route[1]!.y,
-    )
+    const displacement = Math.abs(route.route[1]!.y - original[0]!.route[1]!.y)
     expect(gap).toBeGreaterThanOrEqual(0.1 - 1e-9)
     expect(displacement).toBeLessThanOrEqual(0.25)
     expect(route.route[0]).toEqual(original[0]!.route[0])
