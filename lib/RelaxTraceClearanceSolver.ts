@@ -247,25 +247,45 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       segment.b.radius = Math.max(segment.b.radius, segment.radius)
     }
     if (input.boardEdgeClearance !== undefined) {
-      const board = input.srj.bounds
+      const outline = input.srj.outline
+      const board = outline?.length
+        ? {
+            minX: Math.min(...outline.map((point): number => point.x)),
+            maxX: Math.max(...outline.map((point): number => point.x)),
+            minY: Math.min(...outline.map((point): number => point.y)),
+            maxY: Math.max(...outline.map((point): number => point.y)),
+          }
+        : input.srj.bounds
       for (const vertex of vertices.values()) {
         const margin = vertex.radius + input.boardEdgeClearance
         vertex.bounds = {
           minX: Math.max(
             mutable.minX,
-            Math.min(vertex.original.x, board.minX + margin),
+            Math.min(
+              vertex.original.x + MAX_DISPLACEMENT,
+              board.minX + margin,
+            ),
           ),
           maxX: Math.min(
             mutable.maxX,
-            Math.max(vertex.original.x, board.maxX - margin),
+            Math.max(
+              vertex.original.x - MAX_DISPLACEMENT,
+              board.maxX - margin,
+            ),
           ),
           minY: Math.max(
             mutable.minY,
-            Math.min(vertex.original.y, board.minY + margin),
+            Math.min(
+              vertex.original.y + MAX_DISPLACEMENT,
+              board.minY + margin,
+            ),
           ),
           maxY: Math.min(
             mutable.maxY,
-            Math.max(vertex.original.y, board.maxY - margin),
+            Math.max(
+              vertex.original.y - MAX_DISPLACEMENT,
+              board.maxY - margin,
+            ),
           ),
         }
       }
@@ -479,6 +499,31 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
             Math.ceil((this.pairs.length + this.padContacts.length) / 4096),
           ) +
         2
+      // Project existing board-edge violations before pairwise relaxation.
+      // Subsequent projections retain these bounds and the displacement cap.
+      if (input.boardEdgeClearance !== undefined) {
+        for (const vertex of this.vertices.values()) {
+          const x = Math.max(
+            vertex.bounds.minX,
+            Math.min(vertex.bounds.maxX, vertex.x),
+          )
+          const y = Math.max(
+            vertex.bounds.minY,
+            Math.min(vertex.bounds.maxY, vertex.y),
+          )
+          const dx = x - vertex.x
+          const dy = y - vertex.y
+          const distance = Math.hypot(dx, dy)
+          if (distance > REGION_EPSILON)
+            this.project(
+              [[vertex, 1]],
+              dx / distance,
+              dy / distance,
+              distance,
+              false,
+            )
+        }
+      }
       this.phase = "sweeps"
     }
   }
