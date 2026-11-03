@@ -122,6 +122,8 @@ function getInteriorPadContact(
 
 export type RelaxTraceClearanceInput = RepairRegionInput & {
   traceClearance?: number
+  /** Wire-to-wire copper gap; other trace clearances retain traceClearance. */
+  differentNetTraceClearance?: number
   viaClearance?: number
   allowViaMovement?: boolean
   boardEdgeClearance?: number
@@ -135,17 +137,12 @@ export type RelaxTraceClearanceInput = RepairRegionInput & {
  * narrow corridor that fits the copper and its clearances infeasible.
  */
 export function relaxTraceClearance(
-  input: RepairRegionInput & {
-    traceClearance?: number
-    viaClearance?: number
-    allowViaMovement?: boolean
-    /** Minimum board-edge clearance, preserving existing boundary intrusion. */
-    boardEdgeClearance?: number
-  },
+  input: RelaxTraceClearanceInput,
 ): HighDensityRoute[] {
   const routes = structuredClone(input.routes)
   const nets = getNetRepresentatives(input.srj, routes)
   const traceClearance = input.traceClearance ?? 0.1
+  const differentNetTraceClearance = input.differentNetTraceClearance ?? traceClearance
   const viaClearance = input.viaClearance ?? 0.1
   const mutable: Bounds = {
     minX: input.bounds.minX + input.boundaryMargin,
@@ -267,7 +264,7 @@ export function relaxTraceClearance(
       const reach =
         a.radius +
         b.radius +
-        Math.max(traceClearance, viaClearance) +
+        Math.max(traceClearance, differentNetTraceClearance, viaClearance) +
         2 * Math.SQRT2 * MAX_DISPLACEMENT
       // These bounds describe the initial geometry only. Reach already
       // includes the maximum motion of both segments during all sweeps.
@@ -481,7 +478,9 @@ export function relaxTraceClearance(
       }
       const contact = pair.contact!
       const required =
-        a.radius + b.radius + (a.via && b.via ? viaClearance : traceClearance)
+        a.radius + b.radius + (a.via && b.via
+          ? viaClearance
+          : a.via || b.via ? traceClearance : differentNetTraceClearance)
       if (contact.distance >= required) continue
       // Crossings require rerouting; this operation only opens existing gaps.
       if (contact.distance < 1e-10) continue
