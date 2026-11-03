@@ -32,7 +32,7 @@ function tracePairGap(a: HighDensityRoute, b: HighDensityRoute): number {
   return gap
 }
 
-test("real Bluetooth pedometer exposes the ignored wire-pair rule in repair", async (): Promise<void> => {
+test("real Bluetooth pedometer repairs all nine measured wire-pair gaps", async (): Promise<void> => {
   // The fixture retains the complete 4-layer board and 165 automatic routes.
   // Only route representation changes: wires/vias become HD route vertices.
   // Source URL, source commit, and autorouter commit are recorded in the fixture.
@@ -47,7 +47,7 @@ test("real Bluetooth pedometer exposes the ignored wire-pair rule in repair", as
   )
   // Match the checker tolerance: a gap below 0.095 mm violates the 0.1 mm rule.
   expect(before.filter((gap) => gap < 0.095)).toHaveLength(9)
-  expect(after.filter((gap) => gap < 0.095)).toHaveLength(9)
+  expect(after.filter((gap) => gap < 0.095)).toHaveLength(0)
   expect(fixture.input).toEqual(original)
   for (const [routeIndex, route] of output.entries()) {
     for (const [pointIndex, locked] of original.lockedPointIndices[routeIndex]!.entries()) {
@@ -61,10 +61,10 @@ test("real Bluetooth pedometer exposes the ignored wire-pair rule in repair", as
     const graphics = getClearanceReproGraphics({ ...fixture, viewport }, output)
     graphics.texts!.push({
       x: 550,
-      y: 565,
+      y: 556,
       text: `Requested 0.1 mm wire gaps: ${before.filter((gap) => gap < 0.095).length} before / ${after.filter((gap) => gap < 0.095).length} after`,
       fontSize: 13,
-      color: "#b91c1c",
+      color: after.some((gap) => gap < 0.095) ? "#b91c1c" : "#166534",
     })
     await expect(
       getSvgFromGraphicsObject(graphics, { backgroundColor: "white" }),
