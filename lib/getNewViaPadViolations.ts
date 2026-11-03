@@ -19,6 +19,7 @@ export type NewViaPadViolation = {
   key: string
   center: { x: number; y: number }
   routeIndex: number
+  viaIndex: number
   obstacleIndex: number
   kind: "via"
   /** Required edge clearance minus measured clearance, in millimeters. */
@@ -31,6 +32,8 @@ export type NewViaPadViolationInput = {
   previousRoutes: readonly HighDensityRoute[]
   routes: readonly HighDensityRoute[]
   viaClearance?: number
+  /** Explicit drill-only clearance to own pads; foreign pads still use copper clearance. */
+  sameNetViaHoleDiameter?: number
   /** Optional existing via ordinals to score even before they move. */
   includeExistingVias?: readonly { routeIndex: number; viaIndex: number }[]
 }
@@ -43,7 +46,10 @@ type StaticContext = Pick<
   | "defaultObstacleMargin"
   | "minViaEdgeToPadEdgeClearance"
 > & { allowBlindAndBuriedVias?: boolean }
-type RouteInput = Omit<NewViaPadViolationInput, "srj" | "viaClearance">
+type RouteInput = Omit<
+  NewViaPadViolationInput,
+  "srj" | "viaClearance" | "sameNetViaHoleDiameter"
+>
 type Contact = { obstacleIndex: number; severity: number }
 type PreparedObstacle = {
   zs: number[]
@@ -60,9 +66,11 @@ type PreparedObstacle = {
 const createEvaluator = ({
   srj,
   viaClearance = 0.1,
+  sameNetViaHoleDiameter,
 }: {
   srj: StaticContext
   viaClearance?: number
+  sameNetViaHoleDiameter?: number
 }): ((input: RouteInput) => NewViaPadViolation[]) => {
   const preparedObstacles = new Map<number, PreparedObstacle>()
   const contactsByVia = new Map<string, Contact[]>()
@@ -78,7 +86,23 @@ const createEvaluator = ({
     "connectionName" | "rootConnectionName"
   >[] = []
   let nets: Map<string, string> | undefined
+  if (
+    sameNetViaHoleDiameter !== undefined &&
+    (!Number.isFinite(sameNetViaHoleDiameter) || sameNetViaHoleDiameter <= 0)
+  ) {
+    throw new Error(
+      "repair04: same-net via hole diameter must be positive and finite",
+    )
+  }
   const getContacts = (via: RepairViaGeometry): Contact[] => {
+    if (
+      sameNetViaHoleDiameter !== undefined &&
+      sameNetViaHoleDiameter > via.diameter
+    ) {
+      throw new Error(
+        "repair04: via hole diameter cannot exceed copper diameter",
+      )
+    }
     const cached = contactsByVia.get(via.identity)
     if (cached) return cached
     const contacts: Contact[] = []
@@ -209,8 +233,14 @@ const createEvaluator = ({
           ]!.connectedTo.some(
             (name): boolean => (nets!.get(name) ?? name) === owner,
           )
-          const severity =
-            contact.severity - (sameNet ? clearance - sameNetClearance : 0)
+          let severity = contact.severity
+          if (sameNet) {
+            severity -= clearance - sameNetClearance
+            if (sameNetViaHoleDiameter !== undefined) {
+              severity -=
+                sameNetClearance + (via.diameter - sameNetViaHoleDiameter) / 2
+            }
+          }
           return severity > 1e-8
             ? [{ obstacleIndex: contact.obstacleIndex, severity }]
             : []
@@ -302,6 +332,7 @@ const createEvaluator = ({
           violations.push({
             key: `new-via-pad:${routeIndex}:${contact.obstacleIndex}:${viaIndex}`,
             routeIndex,
+            viaIndex,
             obstacleIndex: contact.obstacleIndex,
             center: { x: via.x, y: via.y },
             kind: "via",
@@ -322,9 +353,11 @@ const createEvaluator = ({
 export const createNewViaPadViolationEvaluator = ({
   srj,
   viaClearance,
-}: Pick<NewViaPadViolationInput, "srj" | "viaClearance">): ((
-  input: RouteInput,
-) => NewViaPadViolation[]) =>
+  sameNetViaHoleDiameter,
+}: Pick<
+  NewViaPadViolationInput,
+  "srj" | "viaClearance" | "sameNetViaHoleDiameter"
+>): ((input: RouteInput) => NewViaPadViolation[]) =>
   createEvaluator({
     srj: {
       layerCount: srj.layerCount,
@@ -337,10 +370,13 @@ export const createNewViaPadViolationEvaluator = ({
       minViaEdgeToPadEdgeClearance: srj.minViaEdgeToPadEdgeClearance,
     },
     viaClearance,
+    sameNetViaHoleDiameter,
   })
 
 /**
  * New vias must clear foreign pads and stay outside same-net pad copper.
+ * An explicit sameNetViaHoleDiameter instead checks the drilled hole on own
+ * pads, with no extra same-net gap. Foreign-pad copper rules stay unchanged.
  * Explicit obstacle/pad margins also apply to connected pads; the default
  * electrical clearance does not introduce an additional same-net gap.
  * Ordinary electrical clearance checks allow same-net copper contact, which
