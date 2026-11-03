@@ -1,6 +1,6 @@
 import {
   getLocalObstacleDistance,
-  getLocalObstacleGeometry,
+  getLocalPadDrillGeometry,
 } from "./obstacleDistanceGeometry"
 import { getPadDrillBoundaryPoint } from "./getPadDrillBoundaryPoint"
 import { preservesDrcClearances } from "./preservesDrcClearances"
@@ -1453,7 +1453,7 @@ export class Repair04Solver extends BaseSolver {
             const distance = getLocalObstacleDistance(
               local,
               local,
-              getLocalObstacleGeometry(obstacle),
+              getLocalPadDrillGeometry(obstacle),
             )
             return distance < this.input.padDrillRepair!.holeDiameter / 2 - 1e-8
           },

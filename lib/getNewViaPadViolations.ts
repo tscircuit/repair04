@@ -5,6 +5,7 @@ import {
 } from "./getRepairViaGeometry"
 import {
   getLocalObstacleGeometry,
+  getLocalPadDrillGeometry,
   getLocalObstacleDistance,
   type ObstacleDistanceGeometry,
 } from "./obstacleDistanceGeometry"
@@ -159,13 +160,17 @@ const createEvaluator = ({
             "repair04 new-via guard found invalid obstacle geometry",
           )
         const radians = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
+        let shape = getLocalObstacleGeometry(obstacle)
+        if (sameNetViaHoleDiameter !== undefined) {
+          shape = getLocalPadDrillGeometry(obstacle)
+        }
         prepared.geometry = {
           x: obstacle.center.x,
           y: obstacle.center.y,
           cosine: Math.cos(radians),
           sine: Math.sin(radians),
           extent: Math.hypot(obstacle.width, obstacle.height) / 2,
-          shape: getLocalObstacleGeometry(obstacle),
+          shape,
         }
       }
       const geometry = prepared.geometry

@@ -1,7 +1,7 @@
 import type { SimpleRouteJson } from "high-density-repair03/lib"
 import {
   getLocalObstacleDistance,
-  getLocalObstacleGeometry,
+  getLocalPadDrillGeometry,
 } from "./obstacleDistanceGeometry"
 
 type Point = { x: number; y: number }
@@ -17,7 +17,7 @@ export function getPadDrillBoundaryPoint({
   holeDiameter,
   angle,
 }: BoundaryInput): Point {
-  const geometry = getLocalObstacleGeometry(obstacle)
+  const geometry = getLocalPadDrillGeometry(obstacle)
   const rotation = ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
   const cosine = Math.cos(angle - rotation)
   const sine = Math.sin(angle - rotation)
