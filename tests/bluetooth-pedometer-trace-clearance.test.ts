@@ -61,7 +61,7 @@ test("real Bluetooth pedometer exposes the ignored wire-pair rule in repair", as
     const graphics = getClearanceReproGraphics({ ...fixture, viewport }, output)
     graphics.texts!.push({
       x: 550,
-      y: 565,
+      y: 556,
       text: `Requested 0.1 mm wire gaps: ${before.filter((gap) => gap < 0.095).length} before / ${after.filter((gap) => gap < 0.095).length} after`,
       fontSize: 13,
       color: "#b91c1c",
