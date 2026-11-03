@@ -6,10 +6,10 @@ import { RelaxTraceClearanceSolver } from "../lib/RelaxTraceClearanceSolver"
 import { relaxTraceClearance, type RelaxTraceClearanceInput } from "../lib/relaxTraceClearance"
 import { getFixedObstacleViolations } from "../lib/getFixedObstacleViolations"
 
-test("reproduce independent wire-pair clearance being ignored in relaxation", (): void => {
+test("relaxation separates wire pairs without increasing pad clearance", (): void => {
   // Board-world XY positions in mm, +Y up. Fixed lower trace has a valid
   // 0.075 mm pad gap; the upper trace must move to meet the 0.1 mm pair gap.
-  const input: RelaxTraceClearanceInput & { differentNetTraceClearance: number } = {
+  const input: RelaxTraceClearanceInput = {
     srj: {
       layerCount: 2, minTraceWidth: 0.1, minTraceToPadEdgeClearance: 0.05,
       bounds: { minX: -3, maxX: 3, minY: -1, maxY: 1 },
@@ -37,8 +37,7 @@ test("reproduce independent wire-pair clearance being ignored in relaxation", ()
   expect(output).toEqual(relaxTraceClearance(input))
   const gap = segmentToSegmentMinDistance(output[0]!.route[1]!, output[0]!.route[2]!,
     output[1]!.route[1]!, output[1]!.route[2]!) - 0.1
-  // Before the fix, the independent pair rule is ignored.
-  expect(gap).toBeCloseTo(0.075, 8)
+  expect(gap).toBeGreaterThanOrEqual(0.1 - 1e-7)
   expect(getFixedObstacleViolations({ ...input, routes: output })).toEqual([])
   expect(output[0]).toEqual(input.routes[0])
   expect(output[1]!.route[0]).toEqual(input.routes[1]!.route[0])

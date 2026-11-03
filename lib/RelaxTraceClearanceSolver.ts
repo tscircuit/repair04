@@ -136,6 +136,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
   private pairs: SegmentPair[] = []
   private padContacts: PadContact[] = []
   private viaPadConstraints = new Map<Vertex, ViaPadConstraint[]>()
+  private differentNetTraceClearance = 0.1
   private traceClearance = 0.1
   private viaClearance = 0.1
   private pairOuterIndex = 0
@@ -275,6 +276,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
     this.nets = nets
     this.vertices = vertices
     this.segments = segments
+    this.differentNetTraceClearance = input.differentNetTraceClearance ?? traceClearance
     this.traceClearance = traceClearance
     this.viaClearance = viaClearance
     const pairCount = (segments.length * (segments.length - 1)) / 2
@@ -304,7 +306,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       const reach =
         a.radius +
         b.radius +
-        Math.max(this.traceClearance, this.viaClearance) +
+        Math.max(this.traceClearance, this.differentNetTraceClearance, this.viaClearance) +
         2 * Math.SQRT2 * MAX_DISPLACEMENT
       if (areExpandedBoundsSeparated(a.initialBounds, b.initialBounds, reach))
         continue
@@ -786,7 +788,9 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
     const required =
       a.radius +
       b.radius +
-      (a.via && b.via ? this.viaClearance : this.traceClearance)
+      (a.via && b.via
+        ? this.viaClearance
+        : a.via || b.via ? this.traceClearance : this.differentNetTraceClearance)
     const boundsA = {
       minX: Math.min(a.a.x, a.b.x),
       maxX: Math.max(a.a.x, a.b.x),
