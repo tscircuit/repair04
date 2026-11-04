@@ -70,3 +70,18 @@ export function getLocalObstacleDistance(
     segmentToSegmentMinDistance(a, b, geometry.a, geometry.b) - geometry.radius,
   )
 }
+
+/** Drill repair uses physical circular pads without changing ordinary repair geometry. */
+export function getLocalPadDrillGeometry(
+  obstacle: SimpleRouteJson["obstacles"][number],
+): ObstacleDistanceGeometry {
+  if (obstacle.shape === "circle") {
+    return {
+      type: "oval",
+      a: { x: 0, y: 0 },
+      b: { x: 0, y: 0 },
+      radius: obstacle.width / 2,
+    }
+  }
+  return getLocalObstacleGeometry(obstacle)
+}

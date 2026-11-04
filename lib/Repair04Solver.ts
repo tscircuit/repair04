@@ -1,9 +1,15 @@
+import {
+  getLocalObstacleDistance,
+  getLocalPadDrillGeometry,
+} from "./obstacleDistanceGeometry"
+import { getPadDrillBoundaryPoint } from "./getPadDrillBoundaryPoint"
+import { preservesDrcClearances } from "./preservesDrcClearances"
 import { generateThreeRouteCandidates } from "./generateThreeRouteCandidates"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import {
   AutoroutingDrcEngine,
-  type AutoroutingDrcError,
+  type DrcEvaluator,
   type HighDensityRoute,
   type SimplifiedPcbTrace,
 } from "high-density-repair03/lib"
@@ -34,6 +40,12 @@ import {
 } from "./getRepairViaGeometry"
 
 type Point = HighDensityRoute["route"][number]
+type RepairDrcError = Record<string, unknown> & {
+  type: string
+  message: string
+  center?: { x: number; y: number }
+  pcb_center?: { x: number; y: number }
+}
 type RouteReplacement = { routeIndex: number; route: HighDensityRoute }
 type Candidate = RouteReplacement & {
   additionalRoutes?: RouteReplacement[]
@@ -54,7 +66,7 @@ type RouteCache = {
 type Score = {
   count: number
   severity: number
-  errors: AutoroutingDrcError[]
+  errors: RepairDrcError[]
   fixedViolations: Map<string, number>
 }
 export type Repair04SolverInput = RepairRegionInput & {
@@ -72,6 +84,11 @@ export type Repair04SolverInput = RepairRegionInput & {
   traceOnlyFirst?: boolean
   /** Permit selected existing vias to move in XY independently of allowLayerChanges; a nonempty list fixes all other via geometry, counts, spans, and diameters. */
   movableVias?: readonly { routeIndex: number; viaIndex: number }[]
+  /** Only relocate selected existing vias to clear drilled holes from own pads.
+   * Keeps every residual clearance non-worsening; never runs planar/path searches.
+   * Without this option the existing copper/annulus policy is unchanged.
+   */
+  padDrillRepair?: { holeDiameter: number }
 }
 
 function inside(point: Point, bounds: Bounds): boolean {
@@ -119,7 +136,8 @@ function getViaGeometryKey(route: HighDensityRoute): string {
 export class Repair04Solver extends BaseSolver {
   private readonly input: Repair04SolverInput
   private readonly mutableBounds: Bounds
-  private readonly engine: AutoroutingDrcEngine
+  private readonly engine: AutoroutingDrcEngine | null
+  private readonly drcEvaluator?: DrcEvaluator
   private readonly fixedTraces: SimplifiedPcbTrace[]
   private routes: HighDensityRoute[]
   private score: Score | null = null
@@ -158,8 +176,9 @@ export class Repair04Solver extends BaseSolver {
     RepairViaGeometry[]
   >()
 
-  constructor(input: Repair04SolverInput) {
+  constructor(input: Repair04SolverInput, drcEvaluator?: DrcEvaluator) {
     super()
+    this.drcEvaluator = drcEvaluator
     if (!Number.isFinite(input.boundaryMargin) || input.boundaryMargin <= 0) {
       throw new Error("repair04: boundaryMargin must be positive and finite")
     }
@@ -175,6 +194,7 @@ export class Repair04Solver extends BaseSolver {
     this.viaPadEvaluator = createNewViaPadViolationEvaluator({
       srj: this.input.srj,
       viaClearance: this.input.viaClearance,
+      sameNetViaHoleDiameter: this.input.padDrillRepair?.holeDiameter,
     })
     this.routes = structuredClone(input.routes)
     // Candidate generators preserve route ownership. Retain every alias when
@@ -242,6 +262,14 @@ export class Repair04Solver extends BaseSolver {
           !inside(p, this.mutableBounds),
       )
     })
+    if (
+      input.padDrillRepair &&
+      (!input.movableVias?.length || input.allowLayerChanges)
+    ) {
+      throw new Error(
+        "repair04: pad drill repair requires selected vias and no layer changes",
+      )
+    }
     for (const selected of input.movableVias ?? []) {
       const route = this.routes[selected.routeIndex]
       const via =
@@ -271,15 +299,17 @@ export class Repair04Solver extends BaseSolver {
       throw new Error("repair04: maxCandidates must be a positive integer")
     }
     this.MAX_ITERATIONS = this.maxCandidates * 2 + 4
-    this.engine = new AutoroutingDrcEngine(this.input.srj, {
-      cacheStaticObstacleNetMembership: true,
-      cacheImmutableTraceGeometry: true,
-      useTransientDynamicQueryMarkers: true,
-      useConservativeRectObstaclePrecheck: true,
-      traceClearance: input.traceClearance ?? 0.1,
-      viaClearance: input.viaClearance ?? 0.1,
-      includeTraceViaOwnerMetadata: true,
-    })
+    this.engine = null
+    if (!drcEvaluator)
+      this.engine = new AutoroutingDrcEngine(this.input.srj, {
+        cacheStaticObstacleNetMembership: true,
+        cacheImmutableTraceGeometry: true,
+        useTransientDynamicQueryMarkers: true,
+        useConservativeRectObstaclePrecheck: true,
+        traceClearance: input.traceClearance ?? 0.1,
+        viaClearance: input.viaClearance ?? 0.1,
+        includeTraceViaOwnerMetadata: true,
+      })
   }
 
   private getWorkLimitReason():
@@ -451,7 +481,7 @@ export class Repair04Solver extends BaseSolver {
   }
 
   private evaluate(routes: HighDensityRoute[]): Score {
-    const { errors } = this.engine.evaluate([
+    const traces = [
       ...this.fixedTraces,
       ...routes.map((route, routeIndex): SimplifiedPcbTrace => {
         const cache = this.getRouteCache(routeIndex, route)
@@ -464,7 +494,49 @@ export class Repair04Solver extends BaseSolver {
         }
         return cache.trace
       }),
-    ])
+    ]
+    let errors: RepairDrcError[]
+    if (this.drcEvaluator) {
+      const evaluated = this.drcEvaluator({
+        srj: this.input.srj,
+        routes,
+        traces,
+      })
+      const rawErrors = Array.isArray(evaluated) ? evaluated : evaluated.errors
+      errors = rawErrors.map((error): RepairDrcError => {
+        const { type, message, center, pcb_center, ...metadata } = error
+        if (typeof type !== "string" || typeof message !== "string") {
+          throw new Error(
+            "repair04: DRC evaluator must provide an error type and message",
+          )
+        }
+        const checked: RepairDrcError = { ...metadata, type, message }
+        for (const [key, location] of [
+          ["center", center],
+          ["pcb_center", pcb_center],
+        ] as const) {
+          if (location === undefined) continue
+          if (
+            typeof location !== "object" ||
+            location === null ||
+            !("x" in location) ||
+            !("y" in location) ||
+            typeof location.x !== "number" ||
+            typeof location.y !== "number" ||
+            !Number.isFinite(location.x) ||
+            !Number.isFinite(location.y)
+          ) {
+            throw new Error(
+              "repair04: DRC error centers must have finite coordinates",
+            )
+          }
+          checked[key] = { x: location.x, y: location.y }
+        }
+        return checked
+      })
+    } else {
+      errors = this.engine!.evaluate(traces).errors
+    }
     const fixedViolations = new Map<string, number>()
     for (const violation of this.getFixedViolations(routes)) {
       fixedViolations.set(violation.key, violation.severity)
@@ -1059,7 +1131,7 @@ export class Repair04Solver extends BaseSolver {
     if (!oldIds.size) return
     const owner = `repair04_${selected.routeIndex}`
     const contactForeign = (
-      error: AutoroutingDrcError,
+      error: RepairDrcError,
       ids: Set<string>,
     ): string | undefined => {
       const viaId = error.pcb_via_id
@@ -1080,7 +1152,7 @@ export class Repair04Solver extends BaseSolver {
       return foreign
     }
     const contacts = (
-      errors: AutoroutingDrcError[],
+      errors: RepairDrcError[],
       ids: Set<string>,
     ): Set<string> => {
       const found = new Set<string>()
@@ -1348,6 +1420,74 @@ export class Repair04Solver extends BaseSolver {
         )
       )
         continue
+      if (this.input.padDrillRepair) {
+        const contacts = this.getViaPadViolations(this.routes, true).filter(
+          (contact): boolean => {
+            if (
+              contact.routeIndex !== selected.routeIndex ||
+              contact.viaIndex !== selected.viaIndex
+            )
+              return false
+            const obstacle = this.input.srj.obstacles[contact.obstacleIndex]!
+            let metadata: unknown
+            if ("circuitJsonMetadata" in obstacle)
+              metadata = obstacle.circuitJsonMetadata
+            const hasPadMetadata =
+              typeof metadata === "object" &&
+              metadata !== null &&
+              ("pcb_smtpad_id" in metadata || "pcb_plated_hole_id" in metadata)
+            const recognizedPad =
+              hasPadMetadata ||
+              obstacle.connectedTo.some((id): boolean =>
+                /^(pcb_smtpad_|pcb_plated_hole_|pcb_port_)/.test(id),
+              )
+            if (!recognizedPad || obstacle.isNonPlatedHole) return false
+            const rotation =
+              ((obstacle.ccwRotationDegrees ?? 0) * Math.PI) / 180
+            const dx = via.x - obstacle.center.x
+            const dy = via.y - obstacle.center.y
+            const local = {
+              x: dx * Math.cos(rotation) + dy * Math.sin(rotation),
+              y: -dx * Math.sin(rotation) + dy * Math.cos(rotation),
+            }
+            const distance = getLocalObstacleDistance(
+              local,
+              local,
+              getLocalPadDrillGeometry(obstacle),
+            )
+            return distance < this.input.padDrillRepair!.holeDiameter / 2 - 1e-8
+          },
+        )
+        for (const contact of contacts) {
+          const obstacle = this.input.srj.obstacles[contact.obstacleIndex]!
+          const angle = Math.atan2(
+            via.y - obstacle.center.y,
+            via.x - obstacle.center.x,
+          )
+          for (let direction = 0; direction < 32; direction++) {
+            const site = getPadDrillBoundaryPoint({
+              obstacle,
+              holeDiameter: this.input.padDrillRepair.holeDiameter,
+              angle: angle + (direction * Math.PI) / 16,
+            })
+            if (!inside({ ...site, z: via.minZ }, this.input.srj.bounds))
+              continue
+            yield {
+              routeIndex: selected.routeIndex,
+              route: rebuildVias({
+                ...route,
+                route: route.route.map(
+                  (point, index): Point =>
+                    via.pointIndices.includes(index)
+                      ? { ...point, ...site }
+                      : point,
+                ),
+              }),
+            }
+          }
+        }
+        continue
+      }
       const context: ViaBlockerContext = {}
       for (const amount of [0.025, 0.05, 0.1, 0.2, 0.35, 0.5, 0.8, 1.2]) {
         for (let direction = 0; direction < 16; direction++) {
@@ -1374,6 +1514,7 @@ export class Repair04Solver extends BaseSolver {
   private *generateCandidates(): Generator<Candidate> {
     yield* this.generatePadViaCandidates()
     yield* this.generateExistingViaCandidates()
+    if (this.input.padDrillRepair) return
     for (const allowLayerChanges of this.input.allowLayerChanges === true
       ? this.input.traceOnlyFirst === false
         ? [true]
@@ -1837,7 +1978,12 @@ export class Repair04Solver extends BaseSolver {
       score &&
       preservesViaPadClearance &&
       preservesFixedObstacles &&
-      score.count < this.score.count
+      score.count < this.score.count &&
+      (!this.input.padDrillRepair ||
+        preservesDrcClearances({
+          before: this.score.errors,
+          after: score.errors,
+        }))
     ) {
       this.routes = candidate
       this.candidateScores.clear()
@@ -1846,6 +1992,7 @@ export class Repair04Solver extends BaseSolver {
       this.bestAdjustment = null
       this.candidates = this.generateCandidates()
     } else if (
+      !this.input.padDrillRepair &&
       score &&
       preservesFixedObstacles &&
       preservesViaPadClearance &&
@@ -1866,7 +2013,9 @@ export class Repair04Solver extends BaseSolver {
     this.progress = this.evaluated / this.maxCandidates
   }
 
-  override getConstructorParams(): [Repair04SolverInput] {
+  override getConstructorParams(): [Repair04SolverInput, DrcEvaluator?] {
+    if (this.drcEvaluator)
+      return [structuredClone(this.input), this.drcEvaluator]
     return [structuredClone(this.input)]
   }
 

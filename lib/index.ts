@@ -44,3 +44,6 @@ export {
   findPairedClearancePath,
 } from "./PairedClearancePathSolver"
 export type { PairedClearancePathInput } from "./PairedClearancePathSolver"
+
+export { getRepairJunctionAnchors } from "./getRepairJunctionAnchors"
+export { preservesDrcClearances } from "./preservesDrcClearances"
