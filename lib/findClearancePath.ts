@@ -1,3 +1,4 @@
+import { getClearanceGridAxes } from "./getClearanceGridAxes"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import {
   segmentToBoundsMinDistance,
@@ -248,7 +249,7 @@ export function findClearancePath(input: {
       obstacle.zLayers ??
       obstacle.layers.map(layer)
     const circularObstacle =
-      (obstacle.isNonPlatedHole && obstacle.shape === "circle") ||
+      obstacle.shape === "circle" ||
       (obstacle.type === "oval" &&
         obstacle.width === obstacle.height &&
         obstacle.ccwRotationDegrees === undefined &&
@@ -396,11 +397,13 @@ export function findClearancePath(input: {
               ? srj.minTraceToHoleEdgeClearance
               : barrier.viaOnly
                 ? getViaPadClearance(srj, input.viaClearance, true)
-                : barrier.rect || barrier.pad
-                  ? margin
-                  : isVia && barrier.minZ !== barrier.maxZ
-                    ? input.viaClearance
-                    : input.traceClearance
+                : barrier.pad && isVia
+                  ? getViaPadClearance(srj, input.viaClearance, false)
+                  : barrier.rect || barrier.pad
+                    ? margin
+                    : isVia && barrier.minZ !== barrier.maxZ
+                      ? input.viaClearance
+                      : input.traceClearance
           const clearance = radius + requiredGap
           // These bounds enclose the entire copper/rotated obstacle. Strict
           // separation can only rule out a collision; exact boundary cases
@@ -491,22 +494,19 @@ export function findClearancePath(input: {
   const grid = input.gridSize ?? 0.1
   if (!Number.isFinite(grid) || grid <= 0)
     throw new Error("repair04: clearance grid size must be positive and finite")
-  const nx = Math.floor((bounds.maxX - bounds.minX) / grid)
-  const ny = Math.floor((bounds.maxY - bounds.minY) / grid)
+  const { xs, ys, nearestIndex } = getClearanceGridAxes(srj, bounds, grid)
+  const nx = xs.length
+  const ny = ys.length
   const point = (id: number): Point => ({
-    x: bounds.minX + ((id % nx) + 0.5) * grid,
-    y: bounds.minY + ((Math.floor(id / nx) % ny) + 0.5) * grid,
+    x: xs[id % nx]!,
+    y: ys[Math.floor(id / nx) % ny]!,
     z: Math.floor(id / (nx * ny)),
     traceThickness,
   })
   const idAt = (x: number, y: number, z: number): number =>
     (z * ny + y) * nx + x
   const idOf = (p: Point): number =>
-    idAt(
-      Math.max(0, Math.min(nx - 1, Math.floor((p.x - bounds.minX) / grid))),
-      Math.max(0, Math.min(ny - 1, Math.floor((p.y - bounds.minY) / grid))),
-      p.z,
-    )
+    idAt(nearestIndex(xs, p.x), nearestIndex(ys, p.y), p.z)
   const heuristic = (p: Point): number =>
     Math.hypot(p.x - end.x, p.y - end.y) + (p.z === end.z ? 0 : 1)
   const denseNodeCount = nx * ny * srj.layerCount
