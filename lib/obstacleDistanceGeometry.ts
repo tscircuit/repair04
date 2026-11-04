@@ -1,4 +1,6 @@
 import {
+  clamp,
+  distance,
   segmentToBoundsMinDistance,
   segmentToSegmentMinDistance,
 } from "@tscircuit/math-utils"
@@ -53,6 +55,14 @@ export function getLocalObstacleDistance(
   geometry: ObstacleDistanceGeometry,
 ): number {
   if (geometry.type === "rect") {
+    if (a.x === b.x && a.y === b.y) {
+      // A point's nearest rectangle position is its coordinate-wise clamp.
+      // Keep the distance arithmetic used by segmentToBoundsMinDistance.
+      return distance(a, {
+        x: clamp(a.x, geometry.bounds.minX, geometry.bounds.maxX),
+        y: clamp(a.y, geometry.bounds.minY, geometry.bounds.maxY),
+      })
+    }
     return segmentToBoundsMinDistance(a, b, geometry.bounds)
   }
   return Math.max(
