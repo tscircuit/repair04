@@ -23,8 +23,16 @@ test("point rectangle distances exactly match the segment reference at edges and
             maxY: translation + height / 2,
           },
         }
-        for (const x of [geometry.bounds.minX, translation, geometry.bounds.maxX]) {
-          for (const y of [geometry.bounds.minY, translation, geometry.bounds.maxY]) {
+        for (const x of [
+          geometry.bounds.minX,
+          translation,
+          geometry.bounds.maxX,
+        ]) {
+          for (const y of [
+            geometry.bounds.minY,
+            translation,
+            geometry.bounds.maxY,
+          ]) {
             const point = { x, y }
             expect(getLocalObstacleDistance(point, point, geometry)).toBe(
               segmentToBoundsMinDistance(point, point, geometry.bounds),

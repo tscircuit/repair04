@@ -42,7 +42,9 @@ if (argument === "--revision") {
     solver.solve()
     const elapsedMs = performance.now() - started
     if (!solver.solved || solver.failed)
-      throw new Error(name + ": " + (solver.error ?? "projection did not solve"))
+      throw new Error(
+        name + ": " + (solver.error ?? "projection did not solve"),
+      )
     const outputSha256 = createHash("sha256")
       .update(JSON.stringify(solver.getOutput()))
       .digest("hex")
