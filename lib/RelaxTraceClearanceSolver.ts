@@ -1,4 +1,5 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
+import Flatbush from "flatbush"
 import type { RelaxTraceClearanceInput } from "./relaxTraceClearance"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { getVectorLength } from "./getVectorLength"
@@ -33,6 +34,8 @@ type Segment = {
   a: Vertex
   b: Vertex
   initialBounds: Bounds
+  currentBounds: Bounds
+  boundsRevisions: [number, number]
   minZ: number
   maxZ: number
   radius: number
@@ -133,13 +136,18 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
   private nets = new Map<string, string>()
   private vertices = new Map<string, Vertex>()
   private segments: Segment[] = []
+  private segmentIndex!: Flatbush
+  private obstacleSegmentIndex!: Flatbush
+  private maxSegmentRadius = 0
+  private obstacleClearance = 0
   private pairs: SegmentPair[] = []
   private padContacts: PadContact[] = []
   private viaPadConstraints = new Map<Vertex, ViaPadConstraint[]>()
   private traceClearance = 0.1
   private viaClearance = 0.1
   private pairOuterIndex = 0
-  private pairInnerIndex = 1
+  private pairCandidateIndices?: number[]
+  private pairCandidateIndex = 0
   private obstacleIndex = 0
   private sweepIndex = 0
   private sweepPairIndex = 0
@@ -159,6 +167,14 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
     const nets = getNetRepresentatives(input.srj, routes)
     const traceClearance = input.traceClearance ?? 0.1
     const viaClearance = input.viaClearance ?? 0.1
+    this.obstacleClearance = Math.max(
+      traceClearance,
+      viaClearance,
+      input.srj.defaultObstacleMargin ?? 0,
+      input.srj.minTraceToPadEdgeClearance ?? 0,
+      input.srj.minTraceToHoleEdgeClearance ?? 0,
+      input.srj.minViaEdgeToPadEdgeClearance ?? 0,
+    )
     const mutable: Bounds = {
       minX: input.bounds.minX + input.boundaryMargin,
       maxX: input.bounds.maxX - input.boundaryMargin,
@@ -220,15 +236,18 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
           vb = routeVertices[ri]![pi]!
         const via = a.z !== b.z
         if (via && input.allowViaMovement !== true) va.locked = vb.locked = true
+        const initialBounds = {
+          minX: Math.min(va.x, vb.x),
+          maxX: Math.max(va.x, vb.x),
+          minY: Math.min(va.y, vb.y),
+          maxY: Math.max(va.y, vb.y),
+        }
         segments.push({
           a: va,
           b: vb,
-          initialBounds: {
-            minX: Math.min(va.x, vb.x),
-            maxX: Math.max(va.x, vb.x),
-            minY: Math.min(va.y, vb.y),
-            maxY: Math.max(va.y, vb.y),
-          },
+          initialBounds,
+          currentBounds: { ...initialBounds },
+          boundsRevisions: [0, 0],
           ...getRepairCopperLayerSpan(input.srj, a, b),
           radius: via
             ? route.viaDiameter / 2
@@ -245,6 +264,28 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
     for (const segment of segments) {
       segment.a.radius = Math.max(segment.a.radius, segment.radius)
       segment.b.radius = Math.max(segment.b.radius, segment.radius)
+      this.maxSegmentRadius = Math.max(this.maxSegmentRadius, segment.radius)
+    }
+    if (segments.length > 0) {
+      this.segmentIndex = new Flatbush(segments.length)
+      this.obstacleSegmentIndex = new Flatbush(segments.length)
+      for (const segment of segments) {
+        const { minX, minY, maxX, maxY } = segment.initialBounds
+        this.segmentIndex.add(minX, minY, maxX, maxY)
+        const reach =
+          segment.radius +
+          this.obstacleClearance +
+          Math.SQRT2 * MAX_DISPLACEMENT
+        // Match the exact predicate's arithmetic before reversing the query.
+        this.obstacleSegmentIndex.add(
+          minX - reach - REGION_EPSILON,
+          minY - reach - REGION_EPSILON,
+          maxX + reach + REGION_EPSILON,
+          maxY + reach + REGION_EPSILON,
+        )
+      }
+      this.segmentIndex.finish()
+      this.obstacleSegmentIndex.finish()
     }
     if (input.boardEdgeClearance !== undefined) {
       const board = input.srj.bounds
@@ -290,17 +331,37 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
 
   private preparePairs(): void {
     let processed = 0
-    while (processed < 4096 && this.pairOuterIndex < this.segments.length) {
-      if (this.pairInnerIndex >= this.segments.length) {
+    let queried = 0
+    while (
+      processed < 4096 &&
+      queried < 16 &&
+      this.pairOuterIndex < this.segments.length
+    ) {
+      const a = this.segments[this.pairOuterIndex]!
+      if (!this.pairCandidateIndices) {
+        queried++
+        const reach =
+          a.radius +
+          this.maxSegmentRadius +
+          Math.max(this.traceClearance, this.viaClearance) +
+          2 * Math.SQRT2 * MAX_DISPLACEMENT
+        this.pairCandidateIndices = this.getNearbySegmentIndices(
+          a.initialBounds,
+          reach,
+        ).filter((index): boolean => index > this.pairOuterIndex)
+        this.pairCandidateIndex = 0
+      }
+      if (this.pairCandidateIndex === this.pairCandidateIndices.length) {
         this.pairOuterIndex++
-        this.pairInnerIndex = this.pairOuterIndex + 1
+        this.pairCandidateIndices = undefined
         continue
       }
-      const a = this.segments[this.pairOuterIndex]!
-      const b = this.segments[this.pairInnerIndex++]!
+      const b =
+        this.segments[this.pairCandidateIndices[this.pairCandidateIndex++]!]!
       processed++
       this.preparedPairCount++
       if (a.net === b.net || a.maxZ < b.minZ || b.maxZ < a.minZ) continue
+      if (a.a.locked && a.b.locked && b.a.locked && b.b.locked) continue
       const reach =
         a.radius +
         b.radius +
@@ -319,6 +380,27 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       pairCount: this.pairs.length,
       lastPreparedPairBatchCount: processed,
     }
+  }
+
+  private getNearbySegmentIndices(bounds: Bounds, reach: number): number[] {
+    if (this.segments.length === 0) return []
+    // Keep the exact predicate's arithmetic and its inclusive boundary.
+    // The maximum radius encloses every candidate's possible displacement.
+    return this.segmentIndex
+      .search(
+        bounds.minX - reach - REGION_EPSILON,
+        bounds.minY - reach - REGION_EPSILON,
+        bounds.maxX + reach + REGION_EPSILON,
+        bounds.maxY + reach + REGION_EPSILON,
+      )
+      .sort((a, b): number => a - b)
+  }
+
+  private getObstacleSegmentIndices(bounds: Bounds): number[] {
+    if (this.segments.length === 0) return []
+    return this.obstacleSegmentIndex
+      .search(bounds.minX, bounds.minY, bounds.maxX, bounds.maxY)
+      .sort((a, b): number => a - b)
   }
 
   private prepareObstacles(): void {
@@ -374,7 +456,9 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         minY: Math.min(...corners.map((corner): number => corner.y)),
         maxY: Math.max(...corners.map((corner): number => corner.y)),
       }
-      for (const segment of segments) {
+      for (const segmentIndex of this.getObstacleSegmentIndices(padBounds)) {
+        const segment = segments[segmentIndex]!
+        if (segment.a.locked && segment.b.locked) continue
         if (
           (!segment.via && obstacleNets.has(segment.net)) ||
           !zs.some((z) => z >= segment.minZ && z <= segment.maxZ)
@@ -382,30 +466,22 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
           continue
         const reach =
           segment.radius +
-          Math.max(
-            traceClearance,
-            viaClearance,
-            input.srj.defaultObstacleMargin ?? 0,
-            input.srj.minTraceToPadEdgeClearance ?? 0,
-            input.srj.minTraceToHoleEdgeClearance ?? 0,
-            input.srj.minViaEdgeToPadEdgeClearance ?? 0,
-          ) +
+          this.obstacleClearance +
           Math.SQRT2 * MAX_DISPLACEMENT
         // Enclose all four transformed corners, including rotated pads. Keep
         // the original edge-distance predicate whenever the expanded bounds meet.
         if (areExpandedBoundsSeparated(segment.initialBounds, padBounds, reach))
           continue
         if (
-          Math.min(
-            ...corners.map((a, i) =>
+          corners.every(
+            (a, i): boolean =>
               segmentToSegmentMinDistance(
                 segment.a,
                 segment.b,
                 a,
                 corners[(i + 1) % 4]!,
-              ),
-            ),
-          ) > reach
+              ) > reach,
+          )
         )
           continue
         // Use the enclosing rectangle as a conservative routing constraint for
@@ -787,18 +863,8 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       a.radius +
       b.radius +
       (a.via && b.via ? this.viaClearance : this.traceClearance)
-    const boundsA = {
-      minX: Math.min(a.a.x, a.b.x),
-      maxX: Math.max(a.a.x, a.b.x),
-      minY: Math.min(a.a.y, a.b.y),
-      maxY: Math.max(a.a.y, a.b.y),
-    }
-    const boundsB = {
-      minX: Math.min(b.a.x, b.b.x),
-      maxX: Math.max(b.a.x, b.b.x),
-      minY: Math.min(b.a.y, b.b.y),
-      maxY: Math.max(b.a.y, b.b.y),
-    }
+    const boundsA = this.getCurrentSegmentBounds(a)
+    const boundsB = this.getCurrentSegmentBounds(b)
     if (areExpandedBoundsSeparated(boundsA, boundsB, required)) {
       pair.contact = null
       return
@@ -821,6 +887,22 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
     )
   }
 
+  private getCurrentSegmentBounds(segment: Segment): Bounds {
+    const { a, b, currentBounds, boundsRevisions } = segment
+    if (
+      a.revision !== boundsRevisions[0] ||
+      b.revision !== boundsRevisions[1]
+    ) {
+      currentBounds.minX = Math.min(a.x, b.x)
+      currentBounds.maxX = Math.max(a.x, b.x)
+      currentBounds.minY = Math.min(a.y, b.y)
+      currentBounds.maxY = Math.max(a.y, b.y)
+      boundsRevisions[0] = a.revision
+      boundsRevisions[1] = b.revision
+    }
+    return currentBounds
+  }
+
   private projectPad(pad: PadContact): void {
     const { segment, corners, required } = pad
     if (segment.a.locked && segment.b.locked) return
@@ -833,12 +915,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       return
     pad.projectionRevisions[0] = segment.a.revision
     pad.projectionRevisions[1] = segment.b.revision
-    const bounds = {
-      minX: Math.min(segment.a.x, segment.b.x),
-      maxX: Math.max(segment.a.x, segment.b.x),
-      minY: Math.min(segment.a.y, segment.b.y),
-      maxY: Math.max(segment.a.y, segment.b.y),
-    }
+    const bounds = this.getCurrentSegmentBounds(segment)
     if (areExpandedBoundsSeparated(bounds, pad.bounds, required)) return
     const endpointCount = segment.a === segment.b ? 1 : 2
     for (let endpoint = 0; endpoint < endpointCount; endpoint++) {
