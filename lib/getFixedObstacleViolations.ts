@@ -125,6 +125,13 @@ const createEvaluator = ({
 }: FixedObstacleViolationInput): ((
   routes: HighDensityRoute[],
 ) => FixedObstacleViolation[]) => {
+  const copperLayerContext = {
+    layerCount: srj.layerCount,
+    allowBlindAndBuriedVias: (
+      srj as Parameters<typeof getRepairCopperLayerSpan>[0]
+    ).allowBlindAndBuriedVias,
+  }
+  let preparationSrj: SimpleRouteJson | undefined = srj
   let nets: Map<string, string> | undefined
   const preparedByIndex = new Map<number, PreparedObstacle | null>()
   const relevantObstacles: PreparedObstacle[] = []
@@ -132,6 +139,7 @@ const createEvaluator = ({
   function* prepareObstacles(
     nets: Map<string, string>,
   ): Generator<PreparedObstacle> {
+    const srj = preparationSrj!
     for (
       let obstacleIndex = 0;
       obstacleIndex < srj.obstacles.length;
@@ -228,11 +236,16 @@ const createEvaluator = ({
       yield prepared
     }
     preparationComplete = true
+    // Prepared geometry and net representatives now own the required context.
+    preparationSrj = undefined
   }
   return (routes): FixedObstacleViolation[] => {
     // First use keeps the original union/validation order. Later evaluations
     // reuse only static context; candidate copper is always checked afresh.
-    const currentNets = (nets ??= getNetRepresentatives(srj, ownershipRoutes))
+    const currentNets = (nets ??= getNetRepresentatives(
+      preparationSrj!,
+      ownershipRoutes,
+    ))
     const violations = new Map<string, FixedObstacleViolation>()
     const obstacles = preparationComplete
       ? relevantObstacles
@@ -268,7 +281,11 @@ const createEvaluator = ({
           const end = route.route[pointIndex]! as RepairRoutePoint
           if (start.toNextSegmentType === "through_obstacle") continue
           if (start.z !== end.z) {
-            const span = getRepairCopperLayerSpan(srj, start, end)
+            const span = getRepairCopperLayerSpan(
+              copperLayerContext,
+              start,
+              end,
+            )
             if (
               !Array.from(zLayers).some((z) => z >= span.minZ && z <= span.maxZ)
             )
