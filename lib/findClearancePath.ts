@@ -251,10 +251,9 @@ export function findClearancePath(input: {
       (obstacle.isNonPlatedHole && obstacle.shape === "circle") ||
       (obstacle.type === "oval" &&
         obstacle.width === obstacle.height &&
-        obstacle.ccwRotationDegrees === undefined &&
-        zs.length > 1)
+        obstacle.ccwRotationDegrees === undefined)
     for (const z of zs) {
-      // Circular holes and round through-hole copper use their physical outline.
+      // Round holes and copper use their physical outline on each layer.
       // Other pads retain the conservative rectangle used for validation.
       const center = { ...obstacle.center, z }
       add(

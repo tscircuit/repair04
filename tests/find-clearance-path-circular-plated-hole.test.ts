@@ -92,6 +92,6 @@ test("round plated-hole corners remain routable with the declared pad clearance"
         layers: ["top"],
       })),
     }
-    expect(findClearancePath({ ...params, srj: smtSrj })).toBeNull()
+    expect(findClearancePath({ ...params, srj: smtSrj })).toEqual(path)
   }
 })

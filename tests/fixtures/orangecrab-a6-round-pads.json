@@ -1,0 +1,33 @@
+{
+  "layerCount": 6,
+  "minTraceWidth": 0.0889,
+  "bounds": {
+    "minX": 5.3,
+    "maxX": 5.85,
+    "minY": 4.95,
+    "maxY": 5.15
+  },
+  "connections": [],
+  "obstacles": [
+    {
+      "type": "oval",
+      "shape": "circle",
+      "center": { "x": 5.539999999999993, "y": 4.799998999999985 },
+      "width": 0.23,
+      "height": 0.23,
+      "layers": ["top"],
+      "connectedTo": ["pcb_smtpad_46"],
+      "circuitJsonMetadata": { "pcb_smtpad_id": "pcb_smtpad_46" }
+    },
+    {
+      "type": "oval",
+      "shape": "circle",
+      "center": { "x": 5.539999999999993, "y": 5.299998999999985 },
+      "width": 0.23,
+      "height": 0.23,
+      "layers": ["top"],
+      "connectedTo": ["pcb_smtpad_30"],
+      "circuitJsonMetadata": { "pcb_smtpad_id": "pcb_smtpad_30" }
+    }
+  ]
+}
