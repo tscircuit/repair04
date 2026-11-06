@@ -281,7 +281,11 @@ const createEvaluator = ({
           const end = route.route[pointIndex]! as RepairRoutePoint
           if (start.toNextSegmentType === "through_obstacle") continue
           if (start.z !== end.z) {
-            const span = getRepairCopperLayerSpan(copperLayerContext, start, end)
+            const span = getRepairCopperLayerSpan(
+              copperLayerContext,
+              start,
+              end,
+            )
             if (
               !Array.from(zLayers).some((z) => z >= span.minZ && z <= span.maxZ)
             )
