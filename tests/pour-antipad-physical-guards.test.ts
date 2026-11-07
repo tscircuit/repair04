@@ -51,6 +51,14 @@ test("physical repair guards distinguish pour antipads from solid pad collisions
     vias: [],
   }
   expect(getFixedObstacleViolations({ srj, routes: [wire] })).toHaveLength(1)
+  const aliasedPlane = structuredClone(srj)
+  aliasedPlane.obstacles[0]!.connectedTo.push("pcb_port_ground")
+  expect(
+    getFixedObstacleViolations({ srj: aliasedPlane, routes: [wire] }),
+  ).toHaveLength(1)
+  expect(
+    getFixedObstacleViolations({ srj: aliasedPlane, routes: [via] }),
+  ).toHaveLength(0)
   const ownPlane = structuredClone(srj)
   ownPlane.obstacles[0]!.connectedTo = ["signal"]
   expect(

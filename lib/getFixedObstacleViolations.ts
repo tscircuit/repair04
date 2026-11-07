@@ -151,7 +151,12 @@ const createEvaluator = ({
         obstacle.type === "rect" &&
         obstacle.layers.length > 1 &&
         Math.abs(obstacle.width - obstacle.height) < 0.001
-      if (recognizedPad && !rotated && !rectangularPlatedHole) {
+      if (
+        recognizedPad &&
+        !obstacle.isCopperPour &&
+        !rotated &&
+        !rectangularPlatedHole
+      ) {
         preparedByIndex.set(obstacleIndex, null)
         continue
       }
