@@ -320,6 +320,7 @@ export function relaxTraceClearance(
       maxY: Math.max(...corners.map((corner): number => corner.y)),
     }
     for (const segment of segments) {
+      if (segment.via && obstacle.isCopperPour) continue
       if (
         (!segment.via && obstacleNets.has(segment.net)) ||
         !zs.some((z) => z >= segment.minZ && z <= segment.maxZ)

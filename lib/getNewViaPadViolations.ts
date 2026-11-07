@@ -89,6 +89,7 @@ const createEvaluator = ({
       obstacleIndex++
     ) {
       const obstacle = srj.obstacles[obstacleIndex]!
+      if (obstacle.isCopperPour) continue
       let prepared = preparedObstacles.get(obstacleIndex)
       if (!prepared) {
         const zs =

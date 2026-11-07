@@ -1,0 +1,57 @@
+{
+  "connectionName": "source_trace_86__source_net_19",
+  "start": {
+    "x": 21.369,
+    "y": 30.015,
+    "z": 0,
+    "traceThickness": 0.125
+  },
+  "end": {
+    "x": 21.369,
+    "y": 30.015,
+    "z": 3,
+    "traceThickness": 0.125
+  },
+  "before": {
+    "nodesPopped": 5000,
+    "completionReason": "node-limit"
+  },
+  "after": {
+    "nodesPopped": 2,
+    "completionReason": "found"
+  },
+  "path": [
+    {
+      "x": 21.369,
+      "y": 30.015,
+      "z": 0,
+      "traceThickness": 0.125
+    },
+    {
+      "x": 21.400000000000006,
+      "y": 30.049999999999997,
+      "z": 0,
+      "traceThickness": 0.125
+    },
+    {
+      "x": 21.400000000000006,
+      "y": 30.049999999999997,
+      "z": 3,
+      "traceThickness": 0.125
+    },
+    {
+      "x": 21.369,
+      "y": 30.015,
+      "z": 3,
+      "traceThickness": 0.125
+    }
+  ],
+  "inputSha256": "bce23e61926db8e3b287097e02a74111eb01851d4c4de923d2287d5455f6690d",
+  "provenance": "Exact RVboy repair input: native-completion-paired.json and native-b01-round3.result.json; start/end are an existing top-to-bottom via transition. Solver input is not cropped.",
+  "viewbox": {
+    "minX": 19.8,
+    "maxX": 22.9,
+    "minY": 28.4,
+    "maxY": 31.6
+  }
+}

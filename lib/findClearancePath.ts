@@ -26,6 +26,7 @@ type Barrier = {
   viaOnly?: boolean
   pad?: boolean
   isNonPlatedHole?: boolean
+  isCopperPour?: boolean
   a: Point
   b: Point
   rect?: { width: number; height: number; rotation: number }
@@ -196,6 +197,7 @@ export function findClearancePath(input: {
     viaOnly = false,
     pad = false,
     isNonPlatedHole = false,
+    isCopperPour = false,
   ): void => {
     const extent = rect ? Math.hypot(rect.width, rect.height) / 2 : radius
     const rectCos = rect ? Math.cos(rect.rotation) : 1
@@ -225,6 +227,7 @@ export function findClearancePath(input: {
       viaOnly,
       pad,
       isNonPlatedHole,
+      isCopperPour,
       rectCos,
       rectSin,
       rectBounds: rect
@@ -243,6 +246,8 @@ export function findClearancePath(input: {
   for (const obstacle of srj.obstacles) {
     // A wire may enter its own pad. A via's annulus must remain outside it.
     const viaOnly = obstacle.connectedTo.some((name) => net(name) === owner)
+    // Same-net pours conduct; foreign-net pours open antipads around vias.
+    if (obstacle.isCopperPour && viaOnly) continue
     const zs =
       (obstacle as typeof obstacle & { __zLayers?: number[] }).__zLayers ??
       obstacle.zLayers ??
@@ -271,6 +276,7 @@ export function findClearancePath(input: {
         viaOnly,
         circularObstacle,
         obstacle.isNonPlatedHole,
+        obstacle.isCopperPour,
       )
     }
   }
@@ -386,6 +392,7 @@ export function findClearancePath(input: {
         if (!bucket) continue
         for (const barrier of bucket) {
           if (barrier.viaOnly && !isVia) continue
+          if (barrier.isCopperPour && isVia) continue
           if (barrier.visitedQuery === currentQuery) continue
           barrier.visitedQuery = currentQuery
           if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue

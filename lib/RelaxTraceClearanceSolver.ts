@@ -455,6 +455,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       for (const segmentIndex of this.getObstacleSegmentIndices(padBounds)) {
         const segment = segments[segmentIndex]!
         if (segment.a.locked && segment.b.locked) continue
+        if (segment.via && obstacle.isCopperPour) continue
         if (
           (!segment.via && obstacleNets.has(segment.net)) ||
           !zs.some((z) => z >= segment.minZ && z <= segment.maxZ)
