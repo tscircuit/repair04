@@ -228,6 +228,15 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
     const spans: Span[] = []
     const byRoute: number[][] = input.routes.map((): number[] => [])
 
+    const fixedRouteIndices = new Set(input.fixedRouteIndices)
+    for (const index of fixedRouteIndices) {
+      if (
+        !Number.isSafeInteger(index) ||
+        index < 0 ||
+        index >= input.routes.length
+      )
+        throw new Error("repair04: fixed route index is out of range")
+    }
     this.prepareRoute = (ri): void => {
       const route = input.routes[ri]!
       const points: RepairRoutePoint[] = route.route
@@ -289,6 +298,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             )
           })
         const mutable =
+          !fixedRouteIndices.has(ri) &&
           fragment.every(inside) &&
           hasMutableInterior &&
           preservesLockedVias &&
@@ -400,7 +410,8 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
         ) {
           this.output = {
             routes: input.routes.map((route, ri): HighDensityRoute => {
-              if (!byRoute[ri]!.length) return route
+              if (!byRoute[ri]!.length || fixedRouteIndices.has(ri))
+                return route
               const points = byRoute[ri]!.flatMap(
                 (si, index): RepairRoutePoint[] =>
                   index === 0

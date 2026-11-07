@@ -43,6 +43,8 @@ export type NegotiatedClearanceInput = {
   routes: HighDensityRoute[]
   bounds: Bounds
   dirtyRouteIndices: readonly number[]
+  /** Entire routes whose copper must remain unchanged, not just their vertices. */
+  fixedRouteIndices?: readonly number[]
   isLocked: (routeIndex: number, pointIndex: number) => boolean
   allowLayerChanges: boolean
   traceClearance: number
@@ -145,6 +147,15 @@ export function negotiateTraceClearance(
     point.x <= input.bounds.maxX + REGION_EPSILON &&
     point.y >= input.bounds.minY - REGION_EPSILON &&
     point.y <= input.bounds.maxY + REGION_EPSILON
+  const fixedRouteIndices = new Set(input.fixedRouteIndices)
+  for (const index of fixedRouteIndices) {
+    if (
+      !Number.isSafeInteger(index) ||
+      index < 0 ||
+      index >= input.routes.length
+    )
+      throw new Error("repair04: fixed route index is out of range")
+  }
   const spans: Span[] = []
   const byRoute: number[][] = input.routes.map((): number[] => [])
   for (let ri = 0; ri < input.routes.length; ri++) {
@@ -208,6 +219,7 @@ export function negotiateTraceClearance(
           )
         })
       const mutable =
+        !fixedRouteIndices.has(ri) &&
         fragment.every(inside) &&
         hasMutableInterior &&
         preservesLockedVias &&
@@ -564,7 +576,7 @@ export function negotiateTraceClearance(
   }
   return {
     routes: input.routes.map((route, ri): HighDensityRoute => {
-      if (!byRoute[ri]!.length) return route
+      if (!byRoute[ri]!.length || fixedRouteIndices.has(ri)) return route
       const points = byRoute[ri]!.flatMap((si, index): RepairRoutePoint[] =>
         index === 0 ? current[si]!.route : current[si]!.route.slice(1),
       )
