@@ -1,3 +1,4 @@
+import { getRepairViaHoleClearance } from "./getRepairViaHoleClearance"
 import { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import type {
   ClearancePathInput,
@@ -216,7 +217,8 @@ export class FindClearancePathSolver extends BaseSolver {
       throw new Error(
         "repair04: via hole diameter must be positive and fit the copper",
       )
-    const drillSpacing = drillDiameter + input.viaClearance
+    const drillSpacing =
+      drillDiameter + getRepairViaHoleClearance(srj, input.viaClearance)
     const clearsDrills = (
       point: Point,
       viaPath: ViaPath | undefined,
