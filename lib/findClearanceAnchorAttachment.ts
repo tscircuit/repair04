@@ -7,18 +7,19 @@ export const findClearanceAnchorAttachment = (
   clear: (a: Point, b: Point) => boolean,
   extraCost: (a: Point, b: Point) => number,
 ): { path: Point[]; cost: number } | undefined => {
+  // Bends are new copper points, not copies of terminal or jumper metadata.
   const candidates = [
     [a, b],
-    [a, { ...a, y: b.y }, b],
-    [a, { ...a, x: b.x }, b],
+    [a, { x: a.x, y: b.y, z: a.z }, b],
+    [a, { x: b.x, y: a.y, z: a.z }, b],
   ]
   const orthogonalLength = Math.abs(b.x - a.x) + Math.abs(b.y - a.y)
   let best: { path: Point[]; cost: number } | undefined
   for (const path of candidates) {
     let cost = 0
     for (let i = 1; i < path.length; i++) {
-      const from = path[i - 1]!,
-        to = path[i]!
+      const from = path[i - 1]!
+      const to = path[i]!
       if (!clear(from, to)) {
         cost = Infinity
         break
