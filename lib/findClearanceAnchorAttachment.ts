@@ -28,9 +28,12 @@ export const findClearanceAnchorAttachment = (
     }
     if (Number.isFinite(cost) && (!best || cost < best.cost))
       best = { path, cost }
-    // Congestion costs are nonnegative. Once a candidate beats the geometric
-    // lower bound for both orthogonal edges, neither can improve it.
-    if (best && best.cost <= orthogonalLength) return best
+    // Preserve a legal straight grid attachment, including its congestion cost.
+    // Bending that edge to reduce soft cost changes the weighted search's seed
+    // ordering even when the anchor is not pinched. Orthogonal attachments
+    // supply access only when the straight edge is physically blocked.
+    if (best && (path.length === 2 || best.cost <= orthogonalLength))
+      return best
     if (a.x === b.x || a.y === b.y) return best
   }
   return best
