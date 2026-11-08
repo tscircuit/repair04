@@ -1,3 +1,4 @@
+import { findClearanceAnchorAttachment } from "./findClearanceAnchorAttachment"
 import { getRepairViaHoleClearance } from "./getRepairViaHoleClearance"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import {
@@ -542,6 +543,7 @@ export function findClearancePath(input: {
   const costs = new Map<number, number>()
   const previous = new Map<number, number>()
   const viaPaths = new Map<number, ViaPath | undefined>()
+  const seedAttachments = new Map<number, Point[]>()
   const startId = idOf(start),
     sx = startId % nx,
     sy = Math.floor(startId / nx) % ny
@@ -552,10 +554,15 @@ export function findClearancePath(input: {
       if (x < 0 || x >= nx || y < 0 || y >= ny) continue
       const id = idAt(x, y, start.z),
         p = point(id)
-      if (!clear(start, p)) continue
-      const cost =
-        Math.hypot(p.x - start.x, p.y - start.y) + extraCost(start, p)
-      if (!Number.isFinite(cost)) continue
+      const attachment = findClearanceAnchorAttachment(
+        start,
+        p,
+        clear,
+        extraCost,
+      )
+      if (!attachment) continue
+      const { cost } = attachment
+      seedAttachments.set(id, attachment.path)
       costs.set(id, cost)
       previous.set(id, -1)
       heap.pushValues(id, cost, cost + heuristicWeight * heuristic(p))
@@ -589,16 +596,20 @@ export function findClearancePath(input: {
     settled?.add(current.id)
     const a = point(current.id)
     const viaPath = viaPaths.get(current.id)
-    if (
-      a.z === end.z &&
-      Math.hypot(a.x - end.x, a.y - end.y) < anchorReach &&
-      clear(a, end) &&
-      Number.isFinite(extraCost(a, end))
-    ) {
-      const reversed: Point[] = [end]
-      for (let id = current.id; id !== -1; id = previous.get(id)!)
+    const endAttachment =
+      a.z === end.z && Math.hypot(a.x - end.x, a.y - end.y) < anchorReach
+        ? findClearanceAnchorAttachment(a, end, clear, extraCost)
+        : undefined
+    if (endAttachment) {
+      const reversed: Point[] = endAttachment.path.slice(1).reverse()
+      let seedId = current.id
+      for (let id = current.id; id !== -1; id = previous.get(id)!) {
         reversed.push(point(id))
-      reversed.push(start)
+        seedId = id
+      }
+      const seed = seedAttachments.get(seedId)
+      if (!seed) throw new Error("repair04: missing anchor attachment")
+      reversed.push(...seed.slice(0, -1).reverse())
       const path = reversed.reverse(),
         simplified: Point[] = [start]
       const pathCosts = [0]
