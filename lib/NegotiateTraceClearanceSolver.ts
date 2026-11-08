@@ -366,13 +366,13 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
         }
         return length
       })
-      const frozen = new Set<number>()
+      const unresolved = new Set<number>()
       const dirty = new Set(input.dirtyRouteIndices)
       const queue: number[] = []
       const queued = new Set<number>()
       const enqueue = (index: number): void => {
-        if (queued.has(index) || frozen.has(index) || !spans[index]!.mutable)
-          return
+        if (queued.has(index) || !spans[index]!.mutable) return
+        unresolved.delete(index)
         queued.add(index)
         queue.push(index)
       }
@@ -389,7 +389,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
           pathSearchNodes:
             pathSearchNodes + (this.pathSolver?.stats.nodesPopped ?? 0),
           pathSearchCalls,
-          unresolvedSpanCount: queued.size + frozen.size,
+          unresolvedSpanCount: queued.size + unresolved.size,
         }
         this.progress = this.solved
           ? 1
@@ -424,7 +424,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             }),
             pathSearchNodes,
             pathSearchCalls,
-            unresolvedSpanCount: queued.size + frozen.size,
+            unresolvedSpanCount: queued.size + unresolved.size,
           }
 
           this.solved = true
@@ -448,7 +448,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             if (a.toNextSegmentType === "through_obstacle") continue
             // Same-net wires can share copper. Distinct drill holes still require
             // clearance, including holes in otherwise immutable spans.
-            const immutable = !spans[si]!.mutable || frozen.has(si)
+            const immutable = !spans[si]!.mutable
             if (a.z === b.z && (otherOwner === selectedOwner || immutable))
               continue
             const radius =
@@ -783,8 +783,9 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               input.onSearch?.(lane)
             }
             if (!path) {
-              frozen.add(index)
-              fixed.push(route)
+              // Search exhaustion does not make tentative copper immutable. Other
+              // spans may displace it and enqueue this search again.
+              unresolved.add(index)
               this.phase = "select"
               this.pathSolver = undefined
               return
