@@ -716,6 +716,19 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             nodesPopped: 0,
             completionReason: "no-path",
           }
+          const remainingNodes = input.maxPathSearchNodes - pathSearchNodes
+          const reserveReverseSearch =
+            input.searchDirectionCount === 2 &&
+            input.maxPathSearchCalls - pathSearchCalls >= 2 &&
+            remainingNodes >= 2
+          // Both requested directions must receive work even when one call can
+          // consume the entire remaining regional allowance.
+          const forwardNodes = Math.min(
+            input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
+            reserveReverseSearch
+              ? Math.ceil(remainingNodes / 2)
+              : remainingNodes,
+          )
           const pathInput = {
             srj: input.srj,
             routes: [...fixed, route],
@@ -731,17 +744,14 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               (route.traceThickness * (input.pathGridSizeScale ?? 1)) / 2,
             ),
             allowLayerChanges: input.allowLayerChanges,
-            maxNodes: Math.min(
-              input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
-              input.maxPathSearchNodes - pathSearchNodes,
-            ),
+            maxNodes: forwardNodes,
             heuristicWeight: input.pathHeuristicWeight,
             existingPath: route.route,
             viaHoleDiameter: input.viaHoleDiameter,
           }
           const reverseNodes = Math.min(
             input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
-            input.maxPathSearchNodes - pathSearchNodes - pathInput.maxNodes,
+            remainingNodes - forwardNodes,
           )
           const solver =
             input.searchDirectionCount === 2
@@ -749,8 +759,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
                   task: { pathInput, coppers, selectedOwner, weights },
                   connectivity,
                   reverseMaxNodes:
-                    input.maxPathSearchCalls - pathSearchCalls >= 2 &&
-                    reverseNodes > 0
+                    reserveReverseSearch && reverseNodes > 0
                       ? reverseNodes
                       : undefined,
                 })
