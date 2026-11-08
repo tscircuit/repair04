@@ -341,7 +341,7 @@ export class FindClearancePathSolver extends BaseSolver {
         obstacle.zLayers ??
         obstacle.layers.map(layer)
       const circularObstacle =
-        (obstacle.isNonPlatedHole && obstacle.shape === "circle") ||
+        obstacle.shape === "circle" ||
         (obstacle.type === "oval" &&
           obstacle.width === obstacle.height &&
           obstacle.ccwRotationDegrees === undefined &&
