@@ -14,7 +14,7 @@ test("reverse search waits for 1024 forward pops and skips cheap terminal paths"
   cheap.solve()
   expect(cheap.failed).toBe(false)
   expect(cheap.getOutput()).toStrictEqual(native.getOutput())
-  expect(cheap.forward.stats.nodesPopped).toBe(84)
+  expect(cheap.forward.stats.nodesPopped).toBe(82)
   expect(cheap.stats).toStrictEqual(native.stats)
   expect(cheap.reverse).toBeUndefined()
   expect(cheap.getLaneStats()).toHaveLength(1)

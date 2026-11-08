@@ -500,6 +500,12 @@ export function findClearancePath(input: {
   const grid = input.gridSize ?? 0.1
   if (!Number.isFinite(grid) || grid <= 0)
     throw new Error("repair04: clearance grid size must be positive and finite")
+  // Match the incremental search's physical anchor reach on fine grids.
+  const anchorReach = Math.max(3 * grid, traceThickness + input.traceClearance)
+  const anchorGridRadius = Math.max(
+    2,
+    Math.ceil((traceThickness + input.traceClearance) / grid),
+  )
   const nx = Math.floor((bounds.maxX - bounds.minX) / grid)
   const ny = Math.floor((bounds.maxY - bounds.minY) / grid)
   const point = (id: number): Point => ({
@@ -539,8 +545,8 @@ export function findClearancePath(input: {
   const startId = idOf(start),
     sx = startId % nx,
     sy = Math.floor(startId / nx) % ny
-  for (let dx = -2; dx <= 2; dx++)
-    for (let dy = -2; dy <= 2; dy++) {
+  for (let dx = -anchorGridRadius; dx <= anchorGridRadius; dx++)
+    for (let dy = -anchorGridRadius; dy <= anchorGridRadius; dy++) {
       const x = sx + dx,
         y = sy + dy
       if (x < 0 || x >= nx || y < 0 || y >= ny) continue
@@ -585,7 +591,7 @@ export function findClearancePath(input: {
     const viaPath = viaPaths.get(current.id)
     if (
       a.z === end.z &&
-      Math.hypot(a.x - end.x, a.y - end.y) < grid * 3 &&
+      Math.hypot(a.x - end.x, a.y - end.y) < anchorReach &&
       clear(a, end) &&
       Number.isFinite(extraCost(a, end))
     ) {
