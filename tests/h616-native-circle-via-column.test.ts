@@ -183,9 +183,11 @@ const fixedData: HighDensityRoute[] = fixedDataPoints.map(([net, points]) => {
     traceThickness: 0.0975,
     viaDiameter: 0.35,
     route,
-    vias: route.slice(1).flatMap((b, index) =>
-      b.z === route[index]!.z ? [] : [{ x: b.x, y: b.y }],
-    ),
+    vias: route
+      .slice(1)
+      .flatMap((b, index) =>
+        b.z === route[index]!.z ? [] : [{ x: b.x, y: b.y }],
+      ),
   }
 })
 const srj: SimpleRouteJson & {
@@ -212,7 +214,7 @@ const anchorPoints: [number, number, number, number][] = [
   [44, 1.3399999999999972, 16.699999999999996, 0.093],
   [43, 1.3399999999999972, 15.399999999999997, 0.0975],
   [42, 0.03999999999999737, 16.699999999999996, 0.093],
- ]
+]
 const anchors: HighDensityRoute[] = anchorPoints.map(([net, x, y, width]) => {
   const point = { x, y, z: 0 }
   return {
@@ -384,7 +386,12 @@ test("H616: find a via column between native round pads", async () => {
     .find((route) => route.connectionName === "source_trace_5")!
     .route.filter((point) => point.z === 2)
   const originalGap =
-    getSegmentToSegmentMinDistance(originalVia, originalVia, bus5[0]!, bus5[1]!) -
+    getSegmentToSegmentMinDistance(
+      originalVia,
+      originalVia,
+      bus5[0]!,
+      bus5[1]!,
+    ) -
     source.viaDiameter / 2 -
     0.0975 / 2
   expect(originalGap).toBeLessThan(0.1)
