@@ -1,3 +1,4 @@
+import { createRetainedDrillClearanceCheck } from "./createRetainedDrillClearanceCheck"
 import { findClearanceAnchorAttachment } from "./findClearanceAnchorAttachment"
 import { getRepairViaHoleClearance } from "./getRepairViaHoleClearance"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
@@ -165,6 +166,13 @@ export function findClearancePath(input: {
   for (const obstacle of srj.obstacles) join(obstacle.connectedTo)
   for (const r of routes) join([r.connectionName, r.rootConnectionName])
   const owner = net(route.connectionName)
+  const clearsRetainedDrills = createRetainedDrillClearanceCheck({
+    srj,
+    holeDiameter: drillDiameter,
+    clearance: getRepairViaHoleClearance(srj, input.viaClearance),
+    owner,
+    net,
+  })
   const layer = (name: string): number =>
     name === "top"
       ? 0
@@ -365,6 +373,7 @@ export function findClearancePath(input: {
   const localB = { x: 0, y: 0 }
   const clear = (a: Point, b: Point): boolean => {
     const isVia = a.z !== b.z
+    if (isVia && !clearsRetainedDrills(a)) return false
     const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
     const margin = Math.max(
       isVia ? input.viaClearance : input.traceClearance,
