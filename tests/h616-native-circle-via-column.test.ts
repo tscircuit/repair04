@@ -396,7 +396,7 @@ test("H616: find a via column between native round pads", async () => {
     0.0975 / 2
   expect(originalGap).toBeLessThan(0.1)
   const path = solver.getOutput()
-  expect(path).toBeNull()
+  expect(path).not.toBeNull()
   if (path) {
     expect(path[0]).toEqual(input.start)
     expect(path.at(-1)).toEqual(input.end)

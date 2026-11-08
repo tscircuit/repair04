@@ -8,6 +8,10 @@ import type {
   SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { ClearancePathHeap } from "./ClearancePathHeap"
+import {
+  getClearancePathAxes,
+  getNearestClearancePathAxisIndex,
+} from "./getClearancePathAxes"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { getViaPadClearance } from "./getViaPadClearance"
 import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
@@ -248,7 +252,7 @@ export function findClearancePath(input: {
       obstacle.zLayers ??
       obstacle.layers.map(layer)
     const circularObstacle =
-      (obstacle.isNonPlatedHole && obstacle.shape === "circle") ||
+      obstacle.shape === "circle" ||
       (obstacle.type === "oval" &&
         obstacle.width === obstacle.height &&
         obstacle.ccwRotationDegrees === undefined &&
@@ -491,11 +495,18 @@ export function findClearancePath(input: {
   const grid = input.gridSize ?? 0.1
   if (!Number.isFinite(grid) || grid <= 0)
     throw new Error("repair04: clearance grid size must be positive and finite")
-  const nx = Math.floor((bounds.maxX - bounds.minX) / grid)
-  const ny = Math.floor((bounds.maxY - bounds.minY) / grid)
+  const axes = getClearancePathAxes(srj.obstacles, bounds, grid)
+  const nx =
+    axes?.x.coordinates.length ?? Math.floor((bounds.maxX - bounds.minX) / grid)
+  const ny =
+    axes?.y.coordinates.length ?? Math.floor((bounds.maxY - bounds.minY) / grid)
   const point = (id: number): Point => ({
-    x: bounds.minX + ((id % nx) + 0.5) * grid,
-    y: bounds.minY + ((Math.floor(id / nx) % ny) + 0.5) * grid,
+    x: axes
+      ? axes.x.coordinates[id % nx]!
+      : bounds.minX + ((id % nx) + 0.5) * grid,
+    y: axes
+      ? axes.y.coordinates[Math.floor(id / nx) % ny]!
+      : bounds.minY + ((Math.floor(id / nx) % ny) + 0.5) * grid,
     z: Math.floor(id / (nx * ny)),
     traceThickness,
   })
@@ -503,8 +514,18 @@ export function findClearancePath(input: {
     (z * ny + y) * nx + x
   const idOf = (p: Point): number =>
     idAt(
-      Math.max(0, Math.min(nx - 1, Math.floor((p.x - bounds.minX) / grid))),
-      Math.max(0, Math.min(ny - 1, Math.floor((p.y - bounds.minY) / grid))),
+      axes
+        ? getNearestClearancePathAxisIndex(axes.x.coordinates, p.x)
+        : Math.max(
+            0,
+            Math.min(nx - 1, Math.floor((p.x - bounds.minX) / grid)),
+          ),
+      axes
+        ? getNearestClearancePathAxisIndex(axes.y.coordinates, p.y)
+        : Math.max(
+            0,
+            Math.min(ny - 1, Math.floor((p.y - bounds.minY) / grid)),
+          ),
       p.z,
     )
   const heuristic = (p: Point): number =>
@@ -545,6 +566,39 @@ export function findClearancePath(input: {
       previous.set(id, -1)
       heap.pushValues(id, cost, cost + heuristicWeight * heuristic(p))
     }
+  if (axes) {
+    // Added centerlines must not displace the original terminal seed sites.
+    const uniformX = Math.max(
+      0,
+      Math.min(
+        axes.x.uniformToAxis.length - 1,
+        Math.floor((start.x - bounds.minX) / grid),
+      ),
+    )
+    const uniformY = Math.max(
+      0,
+      Math.min(
+        axes.y.uniformToAxis.length - 1,
+        Math.floor((start.y - bounds.minY) / grid),
+      ),
+    )
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dy = -2; dy <= 2; dy++) {
+        const x = axes.x.uniformToAxis[uniformX + dx]
+        const y = axes.y.uniformToAxis[uniformY + dy]
+        if (x === undefined || y === undefined) continue
+        const id = idAt(x, y, start.z),
+          p = point(id)
+        if (!clear(start, p)) continue
+        const cost =
+          Math.hypot(p.x - start.x, p.y - start.y) + extraCost(start, p)
+        const previousCost = costs.get(id) ?? Infinity
+        if (!Number.isFinite(cost) || cost >= previousCost) continue
+        costs.set(id, cost)
+        previous.set(id, -1)
+        heap.pushValues(id, cost, cost + heuristicWeight * heuristic(p))
+      }
+  }
   const gridNodeCount = nx * ny * srj.layerCount
   // Only pack edges when every grid-node pair has an exact integer key.
   const useNumericEdgeKeys =
@@ -637,6 +691,21 @@ export function findClearancePath(input: {
           continue
         neighbors.push(idAt(x + dx, y + dy, a.z))
       }
+    if (axes) {
+      // Retain original diagonal edges; nonuniform subdivisions can bend them.
+      const uniformX = axes.x.axisToUniform[x]!
+      const uniformY = axes.y.axisToUniform[y]!
+      if (uniformX >= 0 && uniformY >= 0)
+        for (let dx = -1; dx <= 1; dx++)
+          for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue
+            const nextX = axes.x.uniformToAxis[uniformX + dx]
+            const nextY = axes.y.uniformToAxis[uniformY + dy]
+            if (nextX === undefined || nextY === undefined) continue
+            const id = idAt(nextX, nextY, a.z)
+            if (!neighbors.includes(id)) neighbors.push(id)
+          }
+    }
     if (input.allowLayerChanges !== false && clearsDrills(a, viaPath)) {
       for (let z = 0; z < srj.layerCount; z++)
         if (z !== a.z) neighbors.push(idAt(x, y, z))
