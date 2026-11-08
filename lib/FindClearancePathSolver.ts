@@ -1,3 +1,6 @@
+import { createRetainedDrillClearanceCheck } from "./createRetainedDrillClearanceCheck"
+import { findClearanceAnchorAttachment } from "./findClearanceAnchorAttachment"
+import { getRepairViaHoleClearance } from "./getRepairViaHoleClearance"
 import { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import type {
   ClearancePathInput,
@@ -30,6 +33,7 @@ type Barrier = {
   viaOnly?: boolean
   pad?: boolean
   isNonPlatedHole?: boolean
+  isCopperPour?: boolean
   a: Point
   b: Point
   rect?: { width: number; height: number; rotation: number }
@@ -215,7 +219,8 @@ export class FindClearancePathSolver extends BaseSolver {
       throw new Error(
         "repair04: via hole diameter must be positive and fit the copper",
       )
-    const drillSpacing = drillDiameter + input.viaClearance
+    const drillSpacing =
+      drillDiameter + getRepairViaHoleClearance(srj, input.viaClearance)
     const clearsDrills = (
       point: Point,
       viaPath: ViaPath | undefined,
@@ -246,6 +251,13 @@ export class FindClearancePathSolver extends BaseSolver {
       this.connectivity ?? new ClearancePathConnectivity(srj)
     ).createNetResolver(routes)
     const owner = net(route.connectionName)
+    const clearsRetainedDrills = createRetainedDrillClearanceCheck({
+      srj,
+      holeDiameter: drillDiameter,
+      clearance: getRepairViaHoleClearance(srj, input.viaClearance),
+      owner,
+      net,
+    })
     const layer = (name: string): number =>
       name === "top"
         ? 0
@@ -281,6 +293,7 @@ export class FindClearancePathSolver extends BaseSolver {
       viaOnly = false,
       pad = false,
       isNonPlatedHole = false,
+      isCopperPour = false,
     ): void => {
       const extent = rect ? Math.hypot(rect.width, rect.height) / 2 : radius
       const rectCos = rect ? Math.cos(rect.rotation) : 1
@@ -310,6 +323,7 @@ export class FindClearancePathSolver extends BaseSolver {
         viaOnly,
         pad,
         isNonPlatedHole,
+        isCopperPour,
         rectCos,
         rectSin,
         rectBounds: rect
@@ -329,12 +343,14 @@ export class FindClearancePathSolver extends BaseSolver {
     this.prepareObstacle = (obstacle): void => {
       // A wire may enter its own pad. A via's annulus must remain outside it.
       const viaOnly = obstacle.connectedTo.some((name) => net(name) === owner)
+      // Same-net pours conduct; foreign-net pours open antipads around vias.
+      if (obstacle.isCopperPour && viaOnly) return
       const zs =
         (obstacle as typeof obstacle & { __zLayers?: number[] }).__zLayers ??
         obstacle.zLayers ??
         obstacle.layers.map(layer)
       const circularObstacle =
-        (obstacle.isNonPlatedHole && obstacle.shape === "circle") ||
+        obstacle.shape === "circle" ||
         (obstacle.type === "oval" &&
           obstacle.width === obstacle.height &&
           obstacle.ccwRotationDegrees === undefined &&
@@ -357,6 +373,7 @@ export class FindClearancePathSolver extends BaseSolver {
           viaOnly,
           circularObstacle,
           obstacle.isNonPlatedHole,
+          obstacle.isCopperPour,
         )
       }
 
@@ -451,6 +468,7 @@ export class FindClearancePathSolver extends BaseSolver {
     const localB = { x: 0, y: 0 }
     const clear = (a: Point, b: Point): boolean => {
       const isVia = a.z !== b.z
+      if (isVia && !clearsRetainedDrills(a)) return false
       const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
       const margin = Math.max(
         isVia ? input.viaClearance : input.traceClearance,
@@ -485,6 +503,7 @@ export class FindClearancePathSolver extends BaseSolver {
           if (!bucket) continue
           for (const barrier of bucket) {
             if (barrier.viaOnly && !isVia) continue
+            if (barrier.isCopperPour && isVia) continue
             if (barrier.visitedQuery === currentQuery) continue
             barrier.visitedQuery = currentQuery
             if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
@@ -599,6 +618,18 @@ export class FindClearancePathSolver extends BaseSolver {
         throw new Error(
           "repair04: clearance grid size must be positive and finite",
         )
+      // A legal anchor can sit between a retained wire and a neighboring port
+      // with no visible grid site in the nearest two cells. Attach anchors over
+      // a physical clearance pitch, independent of grid resolution; every
+      // attachment still passes the same exact copper-clearance check.
+      const anchorReach = Math.max(
+        3 * grid,
+        traceThickness + input.traceClearance,
+      )
+      const anchorGridRadius = Math.max(
+        2,
+        Math.ceil((traceThickness + input.traceClearance) / grid),
+      )
       const nx = Math.floor((bounds.maxX - bounds.minX) / grid)
       const ny = Math.floor((bounds.maxY - bounds.minY) / grid)
       const point = (id: number): Point => ({
@@ -644,20 +675,26 @@ export class FindClearancePathSolver extends BaseSolver {
       const costs = new Map<number, number>()
       const previous = new Map<number, number>()
       const viaPaths = new Map<number, ViaPath | undefined>()
+      const seedAttachments = new Map<number, Point[]>()
       const startId = idOf(start),
         sx = startId % nx,
         sy = Math.floor(startId / nx) % ny
-      for (let dx = -2; dx <= 2; dx++)
-        for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -anchorGridRadius; dx <= anchorGridRadius; dx++)
+        for (let dy = -anchorGridRadius; dy <= anchorGridRadius; dy++) {
           const x = sx + dx,
             y = sy + dy
           if (x < 0 || x >= nx || y < 0 || y >= ny) continue
           const id = idAt(x, y, start.z),
             p = point(id)
-          if (!clear(start, p)) continue
-          const cost =
-            Math.hypot(p.x - start.x, p.y - start.y) + extraCost(start, p)
-          if (!Number.isFinite(cost)) continue
+          const attachment = findClearanceAnchorAttachment(
+            start,
+            p,
+            clear,
+            extraCost,
+          )
+          if (!attachment) continue
+          const { cost } = attachment
+          seedAttachments.set(id, attachment.path)
           if (denseCosts) denseCosts[id] = cost
           else costs.set(id, cost)
           if (densePrevious) densePrevious[id] = -1
@@ -715,20 +752,24 @@ export class FindClearancePathSolver extends BaseSolver {
           else settled?.add(current.id)
           const a = point(current.id)
           const viaPath = viaPaths.get(current.id)
-          if (
-            a.z === end.z &&
-            Math.hypot(a.x - end.x, a.y - end.y) < grid * 3 &&
-            clear(a, end) &&
-            Number.isFinite(extraCost(a, end))
-          ) {
-            const reversed: Point[] = [end]
+          const endAttachment =
+            a.z === end.z && Math.hypot(a.x - end.x, a.y - end.y) < anchorReach
+              ? findClearanceAnchorAttachment(a, end, clear, extraCost)
+              : undefined
+          if (endAttachment) {
+            const reversed: Point[] = endAttachment.path.slice(1).reverse()
+            let seedId = current.id
             for (
               let id = current.id;
               id !== -1;
               id = densePrevious ? densePrevious[id]! : previous.get(id)!
-            )
+            ) {
               reversed.push(point(id))
-            reversed.push(start)
+              seedId = id
+            }
+            const seed = seedAttachments.get(seedId)
+            if (!seed) throw new Error("repair04: missing anchor attachment")
+            reversed.push(...seed.slice(0, -1).reverse())
             const path = reversed.reverse(),
               simplified: Point[] = [start]
             const pathCosts = [0]

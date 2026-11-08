@@ -63,14 +63,14 @@ test("copper bounds preserve exact-clearance and near-contact search results", (
         maxPathSearchNodes: 10000,
         maxPathSearchCalls: 2,
       })
-      // Captured from the published search before bounds pruning. Keeping the
-      // route and work count exact also protects tie-breaking and query order.
+      // Captured with clearance-pitch anchor connections. Keeping the route
+      // and work count exact also protects tie-breaking and query order.
       const expectedPath: RepairRoutePoint[] =
         separation < 0.2
           ? [
               routes[0]!.route[0]!,
               {
-                x: 0.675,
+                x: 0.625,
                 y: -0.02499999999999991,
                 z: 0,
                 traceThickness: 0.1,
@@ -79,7 +79,7 @@ test("copper bounds preserve exact-clearance and near-contact search results", (
             ]
           : routes[0]!.route
       expect(result.routes[0]!.route).toEqual(expectedPath)
-      expect(result.pathSearchNodes).toBe(separation < 0.2 ? 34 : 0)
+      expect(result.pathSearchNodes).toBe(separation < 0.2 ? 31 : 0)
       expect(result.pathSearchCalls).toBe(1)
       expect(result.unresolvedSpanCount).toBe(0)
       expect(result.routes.slice(1)).toEqual(context.slice(1))

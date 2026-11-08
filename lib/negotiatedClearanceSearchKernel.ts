@@ -1,3 +1,4 @@
+import { getRepairViaHoleClearance } from "./getRepairViaHoleClearance"
 import Flatbush from "flatbush"
 import type { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import { getSegmentToSegmentMinDistance as segmentToSegmentMinDistance } from "./getSegmentToSegmentMinDistance"
@@ -95,7 +96,11 @@ export function createNegotiatedClearanceSearchKernel(
       maxY = Math.max(a.y, b.y)
     const reach =
       (via ? route.viaDiameter : route.traceThickness) / 2 +
-      Math.max(input.traceClearance, input.viaClearance)
+      Math.max(
+        input.traceClearance,
+        input.viaClearance,
+        getRepairViaHoleClearance(input.srj, input.viaClearance),
+      )
     const hits: Array<{ copper: Copper; ratio: number }> = []
     const span = getRepairCopperLayerSpan(input.srj, a, b)
     const activeIndex = via ? copperIndex : copperByLayer.get(a.z)
@@ -178,7 +183,7 @@ export function createNegotiatedClearanceSearchKernel(
       const drillDistance =
         (input.viaHoleDiameter ?? route.viaDiameter) / 2 +
         (input.viaHoleDiameter ?? copper.radius * 2) / 2 +
-        input.viaClearance
+        getRepairViaHoleClearance(input.srj, input.viaClearance)
       // Drill spacing applies even when the connected copper spans do
       // not share layers. Same-net copper may overlap, distinct holes may not.
       const required = bothVias
@@ -200,7 +205,7 @@ export function createNegotiatedClearanceSearchKernel(
       if (distance < required - REGION_EPSILON)
         hits.push({
           copper,
-          ratio: (required - distance) / (required * required),
+          ratio: 1 / (2 * required),
         })
     }
     // Match the old integer-cell traversal order. This preserves floating

@@ -135,7 +135,7 @@ export function createNegotiatedClearanceSearchKernel(
       if (distance < required - REGION_EPSILON)
         hits.push({
           copper,
-          ratio: (required - distance) / (required * required),
+          ratio: 1 / (2 * required),
         })
     }
     // Match the old integer-cell traversal order. This preserves floating

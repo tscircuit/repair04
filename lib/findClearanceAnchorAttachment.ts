@@ -1,0 +1,40 @@
+import type { RepairRoutePoint as Point } from "./repairRegionTypes"
+
+/** Checked straight and orthogonal edges connecting exact anchors to the grid. */
+export const findClearanceAnchorAttachment = (
+  a: Point,
+  b: Point,
+  clear: (a: Point, b: Point) => boolean,
+  extraCost: (a: Point, b: Point) => number,
+): { path: Point[]; cost: number } | undefined => {
+  // Bends are new copper points, not copies of terminal or jumper metadata.
+  const candidates = [
+    [a, b],
+    [a, { x: a.x, y: b.y, z: a.z }, b],
+    [a, { x: b.x, y: a.y, z: a.z }, b],
+  ]
+  const orthogonalLength = Math.abs(b.x - a.x) + Math.abs(b.y - a.y)
+  let best: { path: Point[]; cost: number } | undefined
+  for (const path of candidates) {
+    let cost = 0
+    for (let i = 1; i < path.length; i++) {
+      const from = path[i - 1]!
+      const to = path[i]!
+      if (!clear(from, to)) {
+        cost = Infinity
+        break
+      }
+      cost += Math.hypot(to.x - from.x, to.y - from.y) + extraCost(from, to)
+    }
+    if (Number.isFinite(cost) && (!best || cost < best.cost))
+      best = { path, cost }
+    // Preserve a legal straight grid attachment, including its congestion cost.
+    // Bending that edge to reduce soft cost changes the weighted search's seed
+    // ordering even when the anchor is not pinched. Orthogonal attachments
+    // supply access only when the straight edge is physically blocked.
+    if (best && (path.length === 2 || best.cost <= orthogonalLength))
+      return best
+    if (a.x === b.x || a.y === b.y) return best
+  }
+  return best
+}

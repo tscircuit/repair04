@@ -1,3 +1,4 @@
+import { getRepairViaHoleClearance } from "./getRepairViaHoleClearance"
 import { getRepairRouteVias } from "./getRepairRouteVias"
 import { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import type {
@@ -227,6 +228,15 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
     const spans: Span[] = []
     const byRoute: number[][] = input.routes.map((): number[] => [])
 
+    const fixedRouteIndices = new Set(input.fixedRouteIndices)
+    for (const index of fixedRouteIndices) {
+      if (
+        !Number.isSafeInteger(index) ||
+        index < 0 ||
+        index >= input.routes.length
+      )
+        throw new Error("repair04: fixed route index is out of range")
+    }
     this.prepareRoute = (ri): void => {
       const route = input.routes[ri]!
       const points: RepairRoutePoint[] = route.route
@@ -288,6 +298,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             )
           })
         const mutable =
+          !fixedRouteIndices.has(ri) &&
           fragment.every(inside) &&
           hasMutableInterior &&
           preservesLockedVias &&
@@ -341,8 +352,10 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
           })
         }
       }
-      // The normalized penetration kernel integrates to one across a
-      // perpendicular crossing. Weight it by the displaced span's routing cost,
+      // The normalized clearance kernel integrates to one across a
+      // perpendicular crossing. Even a shallow violation retains a penalty;
+      // otherwise repeated searches can settle on the same almost-clear path.
+      // Weight it by the displaced span's routing cost,
       // so crossing a long track does not appear cheaper merely because it is thin.
       const weights = spans.map(({ route }): number => {
         let length = 0
@@ -353,13 +366,13 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
         }
         return length
       })
-      const frozen = new Set<number>()
+      const unresolved = new Set<number>()
       const dirty = new Set(input.dirtyRouteIndices)
       const queue: number[] = []
       const queued = new Set<number>()
       const enqueue = (index: number): void => {
-        if (queued.has(index) || frozen.has(index) || !spans[index]!.mutable)
-          return
+        if (queued.has(index) || !spans[index]!.mutable) return
+        unresolved.delete(index)
         queued.add(index)
         queue.push(index)
       }
@@ -376,7 +389,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
           pathSearchNodes:
             pathSearchNodes + (this.pathSolver?.stats.nodesPopped ?? 0),
           pathSearchCalls,
-          unresolvedSpanCount: queued.size + frozen.size,
+          unresolvedSpanCount: queued.size + unresolved.size,
         }
         this.progress = this.solved
           ? 1
@@ -399,7 +412,8 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
         ) {
           this.output = {
             routes: input.routes.map((route, ri): HighDensityRoute => {
-              if (!byRoute[ri]!.length) return route
+              if (!byRoute[ri]!.length || fixedRouteIndices.has(ri))
+                return route
               const points = byRoute[ri]!.flatMap(
                 (si, index): RepairRoutePoint[] =>
                   index === 0
@@ -410,7 +424,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             }),
             pathSearchNodes,
             pathSearchCalls,
-            unresolvedSpanCount: queued.size + frozen.size,
+            unresolvedSpanCount: queued.size + unresolved.size,
           }
 
           this.solved = true
@@ -434,7 +448,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             if (a.toNextSegmentType === "through_obstacle") continue
             // Same-net wires can share copper. Distinct drill holes still require
             // clearance, including holes in otherwise immutable spans.
-            const immutable = !spans[si]!.mutable || frozen.has(si)
+            const immutable = !spans[si]!.mutable
             if (a.z === b.z && (otherOwner === selectedOwner || immutable))
               continue
             const radius =
@@ -506,7 +520,11 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               maxY = Math.max(a.y, b.y)
             const reach =
               (via ? route.viaDiameter : route.traceThickness) / 2 +
-              Math.max(input.traceClearance, input.viaClearance)
+              Math.max(
+                input.traceClearance,
+                input.viaClearance,
+                getRepairViaHoleClearance(input.srj, input.viaClearance),
+              )
             const hits: Array<{ copper: Copper; ratio: number }> = []
             const span = getRepairCopperLayerSpan(input.srj, a, b)
             const activeIndex = via ? copperIndex : copperByLayer.get(a.z)
@@ -592,7 +610,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               const drillDistance =
                 (input.viaHoleDiameter ?? route.viaDiameter) / 2 +
                 (input.viaHoleDiameter ?? copper.radius * 2) / 2 +
-                input.viaClearance
+                getRepairViaHoleClearance(input.srj, input.viaClearance)
               // Drill spacing applies even when the connected copper spans do
               // not share layers. Same-net copper may overlap, distinct holes may not.
               const required = bothVias
@@ -619,7 +637,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               if (distance < required - REGION_EPSILON)
                 hits.push({
                   copper,
-                  ratio: (required - distance) / (required * required),
+                  ratio: 1 / (2 * required),
                 })
             }
             // Match the old integer-cell traversal order. This preserves floating
@@ -698,6 +716,19 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             nodesPopped: 0,
             completionReason: "no-path",
           }
+          const remainingNodes = input.maxPathSearchNodes - pathSearchNodes
+          const reserveReverseSearch =
+            input.searchDirectionCount === 2 &&
+            input.maxPathSearchCalls - pathSearchCalls >= 2 &&
+            remainingNodes >= 2
+          // Both requested directions must receive work even when one call can
+          // consume the entire remaining regional allowance.
+          const forwardNodes = Math.min(
+            input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
+            reserveReverseSearch
+              ? Math.ceil(remainingNodes / 2)
+              : remainingNodes,
+          )
           const pathInput = {
             srj: input.srj,
             routes: [...fixed, route],
@@ -713,17 +744,14 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               (route.traceThickness * (input.pathGridSizeScale ?? 1)) / 2,
             ),
             allowLayerChanges: input.allowLayerChanges,
-            maxNodes: Math.min(
-              input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
-              input.maxPathSearchNodes - pathSearchNodes,
-            ),
+            maxNodes: forwardNodes,
             heuristicWeight: input.pathHeuristicWeight,
             existingPath: route.route,
             viaHoleDiameter: input.viaHoleDiameter,
           }
           const reverseNodes = Math.min(
             input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,
-            input.maxPathSearchNodes - pathSearchNodes - pathInput.maxNodes,
+            remainingNodes - forwardNodes,
           )
           const solver =
             input.searchDirectionCount === 2
@@ -731,8 +759,7 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
                   task: { pathInput, coppers, selectedOwner, weights },
                   connectivity,
                   reverseMaxNodes:
-                    input.maxPathSearchCalls - pathSearchCalls >= 2 &&
-                    reverseNodes > 0
+                    reserveReverseSearch && reverseNodes > 0
                       ? reverseNodes
                       : undefined,
                 })
@@ -765,8 +792,9 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
               input.onSearch?.(lane)
             }
             if (!path) {
-              frozen.add(index)
-              fixed.push(route)
+              // Search exhaustion does not make tentative copper immutable. Other
+              // spans may displace it and enqueue this search again.
+              unresolved.add(index)
               this.phase = "select"
               this.pathSolver = undefined
               return

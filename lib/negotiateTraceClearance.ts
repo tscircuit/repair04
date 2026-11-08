@@ -1,3 +1,4 @@
+import { getRepairViaHoleClearance } from "./getRepairViaHoleClearance"
 import { getRepairRouteVias } from "./getRepairRouteVias"
 import { NegotiateTraceClearanceSolver } from "./NegotiateTraceClearanceSolver"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
@@ -42,6 +43,8 @@ export type NegotiatedClearanceInput = {
   routes: HighDensityRoute[]
   bounds: Bounds
   dirtyRouteIndices: readonly number[]
+  /** Entire routes whose copper must remain unchanged, not just their vertices. */
+  fixedRouteIndices?: readonly number[]
   isLocked: (routeIndex: number, pointIndex: number) => boolean
   allowLayerChanges: boolean
   traceClearance: number
@@ -144,6 +147,15 @@ export function negotiateTraceClearance(
     point.x <= input.bounds.maxX + REGION_EPSILON &&
     point.y >= input.bounds.minY - REGION_EPSILON &&
     point.y <= input.bounds.maxY + REGION_EPSILON
+  const fixedRouteIndices = new Set(input.fixedRouteIndices)
+  for (const index of fixedRouteIndices) {
+    if (
+      !Number.isSafeInteger(index) ||
+      index < 0 ||
+      index >= input.routes.length
+    )
+      throw new Error("repair04: fixed route index is out of range")
+  }
   const spans: Span[] = []
   const byRoute: number[][] = input.routes.map((): number[] => [])
   for (let ri = 0; ri < input.routes.length; ri++) {
@@ -207,6 +219,7 @@ export function negotiateTraceClearance(
           )
         })
       const mutable =
+        !fixedRouteIndices.has(ri) &&
         fragment.every(inside) &&
         hasMutableInterior &&
         preservesLockedVias &&
@@ -259,7 +272,7 @@ export function negotiateTraceClearance(
       })
     }
   }
-  // The normalized penetration kernel integrates to one across a
+  // The normalized clearance kernel integrates to one across a
   // perpendicular crossing. Weight it by the displaced span's routing cost,
   // so crossing a long track does not appear cheaper merely because it is thin.
   const weights = spans.map(({ route }): number => {
@@ -271,12 +284,13 @@ export function negotiateTraceClearance(
     }
     return length
   })
-  const frozen = new Set<number>()
+  const unresolved = new Set<number>()
   const dirty = new Set(input.dirtyRouteIndices)
   const queue: number[] = []
   const queued = new Set<number>()
   const enqueue = (index: number): void => {
-    if (queued.has(index) || frozen.has(index) || !spans[index]!.mutable) return
+    if (queued.has(index) || !spans[index]!.mutable) return
+    unresolved.delete(index)
     queued.add(index)
     queue.push(index)
   }
@@ -306,7 +320,7 @@ export function negotiateTraceClearance(
         if (a.toNextSegmentType === "through_obstacle") continue
         // Same-net wires can share copper. Distinct drill holes still require
         // clearance, including holes in otherwise immutable spans.
-        const immutable = !spans[si]!.mutable || frozen.has(si)
+        const immutable = !spans[si]!.mutable
         if (a.z === b.z && (otherOwner === selectedOwner || immutable)) continue
         const radius =
           (a.z !== b.z
@@ -376,7 +390,11 @@ export function negotiateTraceClearance(
         maxY = Math.max(a.y, b.y)
       const reach =
         (via ? route.viaDiameter : route.traceThickness) / 2 +
-        Math.max(input.traceClearance, input.viaClearance)
+        Math.max(
+          input.traceClearance,
+          input.viaClearance,
+          getRepairViaHoleClearance(input.srj, input.viaClearance),
+        )
       const hits: Array<{ copper: Copper; ratio: number }> = []
       const span = getRepairCopperLayerSpan(input.srj, a, b)
       const activeIndex = via ? copperIndex : copperByLayer.get(a.z)
@@ -406,7 +424,7 @@ export function negotiateTraceClearance(
         const drillDistance =
           (input.viaHoleDiameter ?? route.viaDiameter) / 2 +
           (input.viaHoleDiameter ?? copper.radius * 2) / 2 +
-          input.viaClearance
+          getRepairViaHoleClearance(input.srj, input.viaClearance)
         // Drill spacing applies even when the connected copper spans do
         // not share layers. Same-net copper may overlap, distinct holes may not.
         const required = bothVias
@@ -428,7 +446,7 @@ export function negotiateTraceClearance(
         if (distance < required - REGION_EPSILON)
           hits.push({
             copper,
-            ratio: (required - distance) / (required * required),
+            ratio: 1 / (2 * required),
           })
       }
       // Match the old integer-cell traversal order. This preserves floating
@@ -535,8 +553,9 @@ export function negotiateTraceClearance(
     pathSearchNodes += stats.nodesPopped
     input.onSearch?.(stats)
     if (!path) {
-      frozen.add(index)
-      fixed.push(route)
+      // Search exhaustion does not make tentative copper immutable. Other
+      // spans may displace it and enqueue this search again.
+      unresolved.add(index)
       continue
     }
     current[index] = withPoints({
@@ -559,7 +578,7 @@ export function negotiateTraceClearance(
   }
   return {
     routes: input.routes.map((route, ri): HighDensityRoute => {
-      if (!byRoute[ri]!.length) return route
+      if (!byRoute[ri]!.length || fixedRouteIndices.has(ri)) return route
       const points = byRoute[ri]!.flatMap((si, index): RepairRoutePoint[] =>
         index === 0 ? current[si]!.route : current[si]!.route.slice(1),
       )
@@ -567,6 +586,6 @@ export function negotiateTraceClearance(
     }),
     pathSearchNodes,
     pathSearchCalls,
-    unresolvedSpanCount: queued.size + frozen.size,
+    unresolvedSpanCount: queued.size + unresolved.size,
   }
 }
