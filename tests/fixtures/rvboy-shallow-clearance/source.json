@@ -1,0 +1,12 @@
+{
+  "description": "Exact paired-search input captured from RVboy phase 2 after fixed bypass routing; solver context is not cropped.",
+  "sha256": "b5bba271a1129ead1e568e42b7483e42c7c64dc6c698301a80015dd01f38a8c8",
+  "routerCommit": "8ae4198",
+  "repairParentCommit": "dc486a7",
+  "viewbox": {
+    "minX": 3.5,
+    "maxX": 11.7,
+    "minY": 14,
+    "maxY": 21
+  }
+}

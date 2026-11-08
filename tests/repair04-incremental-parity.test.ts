@@ -15,7 +15,7 @@ import {
 } from "./fixtures/repair04StepFixtures"
 import golden from "./fixtures/repair04-stepped-golden.json"
 
-test("repair04 incremental APIs preserve the original synchronous geometry and work accounting", (): void => {
+test("repair04 incremental APIs preserve synchronous geometry and work accounting", (): void => {
   const original = structuredClone({
     routes: negotiationInput.routes,
     projection: projectionInput.routes,

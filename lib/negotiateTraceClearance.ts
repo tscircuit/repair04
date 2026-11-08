@@ -272,7 +272,7 @@ export function negotiateTraceClearance(
       })
     }
   }
-  // The normalized penetration kernel integrates to one across a
+  // The normalized clearance kernel integrates to one across a
   // perpendicular crossing. Weight it by the displaced span's routing cost,
   // so crossing a long track does not appear cheaper merely because it is thin.
   const weights = spans.map(({ route }): number => {
@@ -445,7 +445,7 @@ export function negotiateTraceClearance(
         if (distance < required - REGION_EPSILON)
           hits.push({
             copper,
-            ratio: (required - distance) / (required * required),
+            ratio: 1 / (2 * required),
           })
       }
       // Match the old integer-cell traversal order. This preserves floating
