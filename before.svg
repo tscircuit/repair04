@@ -1,0 +1,44 @@
+<svg width="540" height="560" viewBox="0 0 540 560" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><polyline data-points="377.8875957756478,174.44032277706918 384.42435766376343,377.87102503143103" data-type="line" data-label="" points="361.9042482533296,190.07879347676263 367.4726009728355,363.37161391566343" fill="none" stroke="rgba(180,83,9,0.85)" stroke-linejoin="round" stroke-width="44.977777777777774" stroke-dasharray="10 4"/></g><g><polyline data-points="126.00000000000094,388.00000000000045 302.0000000000011,388.00000000000045 302.0000000000011,212.00000000000108 126.00000000000094,212.00000000000108 126.00000000000094,388.00000000000045" data-type="line" data-label="" points="147.33333333333414,372.0000000000004 297.2592592592602,372.0000000000004 297.2592592592602,222.07407407407499 147.33333333333414,222.07407407407499 147.33333333333414,372.0000000000004" fill="none" stroke="#b91c1c" stroke-linejoin="round" stroke-width="1.2777777777777777" stroke-dasharray="5 4"/></g><g><rect data-type="rect" data-label="" data-x="270" data-y="280" x="40" y="41.481481481481495" width="460" height="477.037037037037" fill="transparent" stroke="none" stroke-width="1.1739130434782608"/></g><circle data-type="circle" data-label="" data-x="214.00000000000102" data-y="300.0000000000008" cx="222.29629629629716" cy="297.0370370370377" r="74.96296296296296" fill="rgba(37,99,235,0.2)" stroke="#2563eb" stroke-width="1.1739130434782608"/><circle data-type="circle" data-label="" data-x="381.74895573680055" data-y="294.60978619018715" cx="365.19355488690417" cy="292.4453734212705" r="4.2592592592592595" fill="#b91c1c" stroke="white" stroke-width="1.1739130434782608"/><text data-type="text" data-label="Native iMX6: same candidate copper" data-x="24" data-y="28" x="60.44444444444444" y="65.33333333333331" fill="#0f172a" font-size="18.74074074074074" font-family="sans-serif" text-anchor="start" dominant-baseline="central">Native iMX6: same candidate copper</text><text data-type="text" data-label="Before: 1 fixed-obstacle violations" data-x="24" data-y="61" x="60.44444444444444" y="93.44444444444443" fill="#b91c1c" font-size="16.185185185185187" font-family="sans-serif" text-anchor="start" dominant-baseline="central">Before: 1 fixed-obstacle violations</text><text data-type="text" data-label="Wire rejected by the round via&apos;s square envelope" data-x="24" data-y="91" x="60.44444444444444" y="118.99999999999999" fill="#475569" font-size="12.777777777777779" font-family="sans-serif" text-anchor="start" dominant-baseline="central">Wire rejected by the round via's square envelope</text><text data-type="text" data-label="Blue: prior data via source_trace_33 (diameter 0.4 mm)" data-x="24" data-y="484" x="60.44444444444444" y="453.77777777777777" fill="#2563eb" font-size="11.925925925925926" font-family="sans-serif" text-anchor="start" dominant-baseline="central">Blue: prior data via source_trace_33 (diameter 0.4 mm)</text><text data-type="text" data-label="Amber: source_trace_47, inner2, width 0.12 mm" data-x="24" data-y="509" x="60.44444444444444" y="475.0740740740741" fill="#b45309" font-size="11.925925925925926" font-family="sans-serif" text-anchor="start" dominant-baseline="central">Amber: source_trace_47, inner2, width 0.12 mm</text><text data-type="text" data-label="Required gap: 0.119 mm; physical gap: 0.1214 mm" data-x="24" data-y="537" x="60.44444444444444" y="498.9259259259259" fill="#0f172a" font-size="11.925925925925926" font-family="sans-serif" text-anchor="start" dominant-baseline="central">Required gap: 0.119 mm; physical gap: 0.1214 mm</text><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="560" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="540" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
+              document.currentScript.parentElement.addEventListener('mousemove', (e) => {
+                const svg = e.currentTarget;
+                const rect = svg.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const crosshair = svg.getElementById('crosshair');
+                const h = svg.getElementById('crosshair-h');
+                const v = svg.getElementById('crosshair-v');
+                const coords = svg.getElementById('coordinates');
+                
+                crosshair.style.display = 'block';
+                h.setAttribute('x1', '0');
+                h.setAttribute('x2', '540');
+                h.setAttribute('y1', y);
+                h.setAttribute('y2', y);
+                v.setAttribute('x1', x);
+                v.setAttribute('x2', x);
+                v.setAttribute('y1', '0');
+                v.setAttribute('y2', '560');
+
+                // Calculate real coordinates using inverse transformation
+                const matrix = {"a":0.8518518518518519,"c":0,"e":40,"b":0,"d":0.8518518518518519,"f":41.48148148148147};
+                // Manually invert and apply the affine transform
+                // Since we only use translate and scale, we can directly compute:
+                // x' = (x - tx) / sx
+                // y' = (y - ty) / sy
+                const sx = matrix.a;
+                const sy = matrix.d;
+                const tx = matrix.e; 
+                const ty = matrix.f;
+                const realPoint = {
+                  x: (x - tx) / sx,
+                  y: (y - ty) / sy // Flip y back since we used negative scale
+                }
+                
+                coords.textContent = `(${realPoint.x.toFixed(2)}, ${realPoint.y.toFixed(2)})`;
+                coords.setAttribute('x', (x + 5).toString());
+                coords.setAttribute('y', (y - 5).toString());
+              });
+              document.currentScript.parentElement.addEventListener('mouseleave', () => {
+                document.currentScript.parentElement.getElementById('crosshair').style.display = 'none';
+              });
+            ]]></script></svg>
