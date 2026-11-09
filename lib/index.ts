@@ -9,7 +9,10 @@ export type {
 } from "./repairRegionTypes"
 export { mergeRepairRegion } from "./mergeRepairRegion"
 export { normalizeRepairTrace } from "./normalizeRepairTrace"
-export { getFixedObstacleViolations } from "./getFixedObstacleViolations"
+export {
+  getFixedObstacleViolations,
+  createFixedObstacleViolationEvaluator,
+} from "./getFixedObstacleViolations"
 export {
   getNewViaPadViolations,
   createNewViaPadViolationEvaluator,
