@@ -13,6 +13,10 @@ export {
   getFixedObstacleViolations,
   createFixedObstacleViolationEvaluator,
 } from "./getFixedObstacleViolations"
+export type {
+  FixedObstacleViolation,
+  FixedObstacleViolationInput,
+} from "./getFixedObstacleViolations"
 export {
   getNewViaPadViolations,
   createNewViaPadViolationEvaluator,
