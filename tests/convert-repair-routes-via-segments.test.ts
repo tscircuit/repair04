@@ -68,9 +68,15 @@ test("DRC sees every wire segment arriving at and departing from layer transitio
   expect(
     converted[0]!.route.filter((point) => point.route_type === "wire"),
   ).toHaveLength(route.route.length)
-  expect(
-    converted[0]!.route.filter((point) => point.route_type === "via"),
-  ).toEqual([
+  const expectedViaPoints: Array<{
+    route_type: "via"
+    x: number
+    y: number
+    from_layer: string
+    to_layer: string
+    via_diameter: number
+    outer_diameter: number
+  }> = [
     {
       route_type: "via",
       x: -2,
@@ -78,6 +84,7 @@ test("DRC sees every wire segment arriving at and departing from layer transitio
       from_layer: "top",
       to_layer: "inner1",
       via_diameter: 0.8,
+      outer_diameter: 0.8,
     },
     {
       route_type: "via",
@@ -86,6 +93,10 @@ test("DRC sees every wire segment arriving at and departing from layer transitio
       from_layer: "inner1",
       to_layer: "bottom",
       via_diameter: 0.8,
+      outer_diameter: 0.8,
     },
-  ])
+  ]
+  expect(
+    converted[0]!.route.filter((point) => point.route_type === "via"),
+  ).toEqual(expectedViaPoints)
 })

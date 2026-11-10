@@ -8,6 +8,7 @@ import {
   type SimplifiedPcbTrace,
 } from "high-density-repair03/lib"
 import { convertRepairRoutesToTraces } from "./convertRepairRoutesToTraces"
+import { withDeclaredVias } from "./physicalViaMetadata"
 import type { Bounds, RepairRegionInput } from "./repairRegionTypes"
 import {
   getSegmentBoundsInterval,
@@ -83,22 +84,15 @@ function inside(point: Point, bounds: Bounds): boolean {
   )
 }
 
-function rebuildVias(route: HighDensityRoute): HighDensityRoute {
-  const vias: HighDensityRoute["vias"] = []
-  for (let i = 1; i < route.route.length; i++) {
-    const a = route.route[i - 1]!
-    const b = route.route[i]!
-    if (a.z !== b.z && a.toNextSegmentType !== "through_obstacle") {
-      if (a.x !== b.x || a.y !== b.y) {
-        throw new Error(
-          "repair04: a layer transition must have coincident endpoints",
-        )
-      }
-      if (!vias.some((v) => v.x === b.x && v.y === b.y))
-        vias.push({ x: b.x, y: b.y })
-    }
-  }
-  return { ...route, vias }
+function rebuildVias(
+  source: HighDensityRoute,
+  next: HighDensityRoute = source,
+): HighDensityRoute {
+  // Removed transitions drop their record; records without a local transition
+  // (fixed boundary vias) keep their position and metadata. A surviving
+  // transition without a record gets a position-only record.
+  const vias: HighDensityRoute["vias"] = withDeclaredVias(next, source)
+  return { ...next, vias }
 }
 
 function getViaGeometryKey(route: HighDensityRoute): string {
@@ -814,7 +808,7 @@ export class Repair04Solver extends BaseSolver {
               this.pathSearchNodes += stats.nodesPopped
               this.updateWorkStats()
               if (!found) continue
-              const updated = rebuildVias({
+              const updated = rebuildVias(pathRoute, {
                 ...pathRoute,
                 route: [
                   ...pathRoute.route.slice(0, lo),
@@ -924,7 +918,7 @@ export class Repair04Solver extends BaseSolver {
       if (!path) continue
       yield {
         routeIndex: ri,
-        route: rebuildVias({
+        route: rebuildVias(route, {
           ...route,
           route: [
             ...route.route.slice(0, lo),
@@ -1324,7 +1318,7 @@ export class Repair04Solver extends BaseSolver {
         seen.add(key)
         yield {
           routeIndex: contact.routeIndex,
-          route: rebuildVias({
+          route: rebuildVias(route, {
             ...route,
             route: route.route.map(
               (point, index): Point =>
@@ -1360,7 +1354,7 @@ export class Repair04Solver extends BaseSolver {
           )
           const candidate = {
             routeIndex: selected.routeIndex,
-            route: rebuildVias({ ...route, route: moved }),
+            route: rebuildVias(route, { ...route, route: moved }),
           }
           yield candidate
           // Shared _step has already scored this rejected move. Its cache is
@@ -1544,7 +1538,7 @@ export class Repair04Solver extends BaseSolver {
         if (length < 0.1) continue
         yield {
           routeIndex: ri,
-          route: rebuildVias({
+          route: rebuildVias(route, {
             ...route,
             route: [...route.route.slice(0, lo + 1), ...route.route.slice(hi)],
           }),
@@ -1570,7 +1564,7 @@ export class Repair04Solver extends BaseSolver {
               continue
             yield {
               routeIndex: ri,
-              route: rebuildVias({
+              route: rebuildVias(route, {
                 ...route,
                 route: [
                   ...route.route.slice(0, lo + 1),
@@ -1599,7 +1593,7 @@ export class Repair04Solver extends BaseSolver {
             }
             yield {
               routeIndex: ri,
-              route: rebuildVias({
+              route: rebuildVias(route, {
                 ...route,
                 route: [
                   ...route.route.slice(0, lo + 1),
@@ -1641,7 +1635,7 @@ export class Repair04Solver extends BaseSolver {
               continue
             yield {
               routeIndex: ri,
-              route: rebuildVias({ ...route, route: moved }),
+              route: rebuildVias(route, { ...route, route: moved }),
             }
           }
         }
@@ -1725,7 +1719,7 @@ export class Repair04Solver extends BaseSolver {
           const points = [left, { ...left, z }, { ...right, z }, right]
           yield {
             routeIndex: ri,
-            route: rebuildVias({
+            route: rebuildVias(route, {
               ...route,
               route: [
                 ...route.route.slice(0, pi),

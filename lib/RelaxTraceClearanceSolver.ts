@@ -4,7 +4,12 @@ import type { RelaxTraceClearanceInput } from "./relaxTraceClearance"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { getVectorLength } from "./getVectorLength"
 import { getSegmentToSegmentMinDistance as segmentToSegmentMinDistance } from "./getSegmentToSegmentMinDistance"
-import type { HighDensityRoute } from "high-density-repair03/lib"
+import {
+  getPhysicalViaAt,
+  getPhysicalViaDiameter,
+  withDeclaredVias,
+  type PhysicalHighDensityRoute as HighDensityRoute,
+} from "./physicalViaMetadata"
 import {
   getLocalObstacleGeometry,
   getLocalObstacleDistance,
@@ -15,11 +20,7 @@ import { getViaPadClearance } from "./getViaPadClearance"
 import { getRepairJunctionAnchors } from "./getRepairJunctionAnchors"
 import { REGION_EPSILON } from "./repairRegionGeometry"
 import { areExpandedBoundsSeparated } from "./areExpandedBoundsSeparated"
-import type {
-  Bounds,
-  RepairRegionInput,
-  RepairRoutePoint,
-} from "./repairRegionTypes"
+import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
 
 type Point = { x: number; y: number }
 type Vertex = Point & {
@@ -132,6 +133,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
   private phase: "geometry" | "pairs" | "obstacles" | "sweeps" | "finalize" =
     "geometry"
   private routes: HighDensityRoute[] = []
+  private sourceRoutes: HighDensityRoute[] = []
   private nets = new Map<string, string>()
   private vertices = new Map<string, Vertex>()
   private segments: Segment[] = []
@@ -163,6 +165,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
   private prepareGeometry(): void {
     const input = this.input
     const routes = structuredClone(input.routes)
+    this.sourceRoutes = structuredClone(routes)
     const nets = getNetRepresentatives(input.srj, routes)
     const traceClearance = input.traceClearance ?? 0.1
     const viaClearance = input.viaClearance ?? 0.1
@@ -246,7 +249,8 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
           },
           ...getRepairCopperLayerSpan(input.srj, a, b),
           radius: via
-            ? route.viaDiameter / 2
+            ? getPhysicalViaDiameter(route, getPhysicalViaAt(route, a) ?? {}) /
+              2
             : Math.max(
                 a.traceThickness ?? route.traceThickness,
                 b.traceThickness ?? route.traceThickness,
@@ -1036,19 +1040,8 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
         point.y = vertex.y
       }
     }
-    for (const route of routes) {
-      route.vias = []
-      for (let i = 1; i < route.route.length; i++) {
-        const a = route.route[i - 1]!,
-          b = route.route[i]!
-        if (
-          a.z !== b.z &&
-          a.toNextSegmentType !== "through_obstacle" &&
-          !route.vias.some((via) => via.x === b.x && via.y === b.y)
-        ) {
-          route.vias.push({ x: b.x, y: b.y })
-        }
-      }
+    for (const [index, route] of routes.entries()) {
+      route.vias = withDeclaredVias(route, this.sourceRoutes[index]!)
     }
 
     this.solved = true
