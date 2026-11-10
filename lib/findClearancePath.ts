@@ -492,7 +492,7 @@ export function findClearancePath(input: {
   const grid = input.gridSize ?? 0.1
   if (!Number.isFinite(grid) || grid <= 0)
     throw new Error("repair04: clearance grid size must be positive and finite")
-  const { xs, ys, nearestIndex } = getClearanceGridAxes({
+  const { xs, ys, nearestIndex, hasPadChannels } = getClearanceGridAxes({
     srj,
     bounds,
     gridSize: grid,
@@ -507,8 +507,16 @@ export function findClearancePath(input: {
   })
   const idAt = (x: number, y: number, z: number): number =>
     (z * ny + y) * nx + x
-  const idOf = (p: Point): number =>
-    idAt(nearestIndex(xs, p.x), nearestIndex(ys, p.y), p.z)
+  const idOf = (p: Point): number => {
+    if (!hasPadChannels) {
+      return idAt(
+        Math.max(0, Math.min(nx - 1, Math.floor((p.x - bounds.minX) / grid))),
+        Math.max(0, Math.min(ny - 1, Math.floor((p.y - bounds.minY) / grid))),
+        p.z,
+      )
+    }
+    return idAt(nearestIndex(xs, p.x), nearestIndex(ys, p.y), p.z)
+  }
   const heuristic = (p: Point): number =>
     Math.hypot(p.x - end.x, p.y - end.y) + (p.z === end.z ? 0 : 1)
   const denseNodeCount = nx * ny * srj.layerCount

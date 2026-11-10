@@ -500,7 +500,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
                   input.srj.minTraceToPadEdgeClearance ?? 0,
                 ))
         let circle: PadContact["circle"]
-        if (obstacle.shape === "circle") {
+        if (obstacle.shape === "circle" && !obstacle.isNonPlatedHole) {
           circle = { center: obstacle.center, radius: obstacle.width / 2 }
         }
         padContacts.push({
