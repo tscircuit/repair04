@@ -341,7 +341,7 @@ export class FindClearancePathSolver extends BaseSolver {
           obstacle.ccwRotationDegrees === undefined &&
           zs.length > 1)
       for (const z of zs) {
-        // Circular holes and round through-hole copper use their physical outline.
+        // Explicit circles and round through-hole copper use their physical outline.
         // Other pads retain the conservative rectangle used for validation.
         const center = { ...obstacle.center, z }
         add(
