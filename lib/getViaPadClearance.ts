@@ -12,7 +12,7 @@ export function getViaPadClearance(
   // Preserve explicitly declared obstacle/pad margins even on connected pads.
   // Without one, their annuli must stay outside copper, but need no extra gap.
   return Math.max(
-    sameNet ? 0 : viaClearance,
+    sameNet ? 0 : (srj.minViaEdgeToPadEdgeClearance ?? viaClearance),
     srj.defaultObstacleMargin ?? 0,
     srj.minViaEdgeToPadEdgeClearance ?? 0,
   )

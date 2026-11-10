@@ -1,4 +1,5 @@
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
+import { getViaPadClearance } from "./getViaPadClearance"
 import { pointToSegmentClosestPoint } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
@@ -120,7 +121,7 @@ type PreparedObstacle = {
 const createEvaluator = ({
   srj,
   routes: ownershipRoutes,
-  traceClearance = 0.1,
+  traceClearance = srj.minTraceToPadEdgeClearance ?? 0.1,
   viaClearance = 0.1,
 }: FixedObstacleViolationInput): ((
   routes: HighDensityRoute[],
@@ -207,11 +208,7 @@ const createEvaluator = ({
             )
       const viaGap = isBoardEdge
         ? 0
-        : Math.max(
-            viaClearance,
-            srj.defaultObstacleMargin ?? 0,
-            srj.minViaEdgeToPadEdgeClearance ?? 0,
-          )
+        : getViaPadClearance(srj, viaClearance, false)
       const prepared = {
         obstacleIndex,
         obstacle,
