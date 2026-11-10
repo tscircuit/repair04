@@ -60,6 +60,7 @@ type PadContact = {
   corners: Point[]
   bounds: Bounds
   required: number
+  viaPad?: ViaPadConstraint
   revisions: [number, number]
   projectionRevisions: [number, number]
   contact: Contact | null
@@ -480,8 +481,8 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
           )
         )
           continue
-        // Use the enclosing rectangle as a conservative routing constraint for
-        // every pad shape. Physical via guards retain the exact obstacle shape.
+        // Wire and other pad contacts retain the enclosing rectangle; circular
+        // via contacts use their native boundary. Guards keep the exact shape.
         const required =
           segment.radius +
           (segment.via
@@ -498,7 +499,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
                   input.srj.defaultObstacleMargin ?? 0,
                   input.srj.minTraceToPadEdgeClearance ?? 0,
                 ))
-        padContacts.push({
+        const padContact: PadContact = {
           segment,
           corners,
           bounds: padBounds,
@@ -506,7 +507,8 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
           revisions: [-1, -1],
           projectionRevisions: [-1, -1],
           contact: null,
-        })
+        }
+        padContacts.push(padContact)
         if (segment.via) {
           const constraint: ViaPadConstraint = {
             center: obstacle.center,
@@ -515,6 +517,7 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
             shape: getLocalObstacleGeometry(obstacle),
             clearance: required,
           }
+          if (obstacle.shape === "circle") padContact.viaPad = constraint
           // Topology is unchanged by projection. Existing pad contact may move
           // toward clearance, but no step may worsen its original separation.
           const dx = segment.a.original.x - obstacle.center.x
@@ -905,6 +908,34 @@ export class RelaxTraceClearanceSolver extends BaseSolver {
       return
     pad.projectionRevisions[0] = segment.a.revision
     pad.projectionRevisions[1] = segment.b.revision
+    const viaPad = pad.viaPad
+    if (viaPad?.shape.type === "oval" && segment.a === segment.b) {
+      const vertex = segment.a
+      const dx = vertex.x - viaPad.center.x
+      const dy = vertex.y - viaPad.center.y
+      const local = {
+        x: dx * viaPad.cosine + dy * viaPad.sine,
+        y: -dx * viaPad.sine + dy * viaPad.cosine,
+      }
+      const contact = getContact(local, local, viaPad.shape.a, viaPad.shape.b)
+      // On the capsule axis the existing interior-face projection supplies
+      // its deterministic outward direction. Elsewhere use the real boundary.
+      if (contact.distance >= 1e-10) {
+        const centerlineRequired = required + viaPad.shape.radius
+        if (contact.distance < centerlineRequired) {
+          this.project(
+            [[vertex, 1]],
+            (contact.x * viaPad.cosine - contact.y * viaPad.sine) /
+              contact.distance,
+            (contact.x * viaPad.sine + contact.y * viaPad.cosine) /
+              contact.distance,
+            centerlineRequired - contact.distance,
+            false,
+          )
+        }
+        return
+      }
+    }
     const bounds = {
       minX: Math.min(segment.a.x, segment.b.x),
       maxX: Math.max(segment.a.x, segment.b.x),
