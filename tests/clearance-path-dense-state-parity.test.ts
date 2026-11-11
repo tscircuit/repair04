@@ -11,9 +11,9 @@ test("dense states preserve paths, callbacks, and pop limits", (): void => {
   const bounds = { minX: -4, maxX: 4, minY: -4, maxY: 4 }
   for (const heuristicWeight of [1, 3]) {
     for (const maxNodes of [3, 1000]) {
-      for (const penalty of [3, Infinity]) {
+      for (const penalty of [0, 2 ** -54, 3, Infinity]) {
         for (const endLayer of [0, 1]) {
-          const start = { x: -3, y: 0, z: 0 }
+          const start = { x: -2.5, y: 0.5, z: 0 }
           const end = { x: 3, y: 0, z: endLayer }
           const input: ClearancePathInput = {
             srj: {

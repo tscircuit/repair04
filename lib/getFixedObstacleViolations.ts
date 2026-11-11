@@ -1,4 +1,5 @@
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
+import Flatbush from "flatbush"
 import { pointToSegmentClosestPoint } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
@@ -31,6 +32,87 @@ export type FixedObstacleViolationInput = {
 
 type Obstacle = SimpleRouteJson["obstacles"][number]
 type Point = { x: number; y: number }
+type RouteSegment = { routeIndex: number; pointIndex: number }
+type RouteSegmentIndex = {
+  segments: RouteSegment[]
+  indexedSegments: number[]
+  unchecked: number[]
+  maxRadius: number
+  index?: Flatbush
+}
+
+const floatBits = new DataView(new ArrayBuffer(8))
+const nextUp = (value: number): number => {
+  if (Number.isNaN(value) || value === Infinity) return value
+  if (value === 0) return Number.MIN_VALUE
+  floatBits.setFloat64(0, value)
+  let high = floatBits.getUint32(0)
+  let low = floatBits.getUint32(4)
+  if (value > 0) {
+    low = (low + 1) >>> 0
+    if (low === 0) high++
+  } else {
+    if (low === 0) high--
+    low = (low - 1) >>> 0
+  }
+  floatBits.setUint32(0, high)
+  floatBits.setUint32(4, low)
+  return floatBits.getFloat64(0)
+}
+
+const indexRouteSegments = (routes: HighDensityRoute[]): RouteSegmentIndex => {
+  const segments: RouteSegment[] = []
+  const indexedSegments: number[] = []
+  const unchecked: number[] = []
+  const bounds: Array<[number, number, number, number]> = []
+  let maxRadius = 0
+  for (const [routeIndex, route] of routes.entries()) {
+    for (let pointIndex = 1; pointIndex < route.route.length; pointIndex++) {
+      const start = route.route[pointIndex - 1]! as RepairRoutePoint
+      const end = route.route[pointIndex]! as RepairRoutePoint
+      if (start?.toNextSegmentType === "through_obstacle") continue
+      const segmentIndex = segments.length
+      segments.push({ routeIndex, pointIndex })
+      const radius =
+        start &&
+        end &&
+        (start.z !== end.z
+          ? route.viaDiameter / 2
+          : Math.max(
+              start.traceThickness ?? route.traceThickness,
+              end.traceThickness ?? route.traceThickness,
+            ) / 2)
+      // These segments must retain their original layer/ownership validation,
+      // even when far away. Non-finite arithmetic also stays in exact checks.
+      if (
+        !start ||
+        !end ||
+        !Number.isFinite(radius) ||
+        ![start.x, start.y, end.x, end.y].every(Number.isFinite) ||
+        (start.z !== end.z &&
+          (Math.abs(start.x - end.x) > 1e-8 ||
+            Math.abs(start.y - end.y) > 1e-8))
+      ) {
+        unchecked.push(segmentIndex)
+        continue
+      }
+      maxRadius = Math.max(maxRadius, radius)
+      indexedSegments.push(segmentIndex)
+      bounds.push([
+        Math.min(start.x, end.x),
+        Math.min(start.y, end.y),
+        Math.max(start.x, end.x),
+        Math.max(start.y, end.y),
+      ])
+    }
+  }
+  if (bounds.length === 0)
+    return { segments, indexedSegments, unchecked, maxRadius }
+  const index = new Flatbush(bounds.length)
+  for (const bound of bounds) index.add(...bound)
+  index.finish()
+  return { segments, indexedSegments, unchecked, maxRadius, index }
+}
 
 export const getNetRepresentatives = (
   srj: Pick<SimpleRouteJson, "connections" | "obstacles">,
@@ -115,6 +197,7 @@ type PreparedObstacle = {
   separated: (start: Point, end: Point, copperReach: number) => boolean
   wireGap: number
   viaGap: number
+  extent: number
 }
 
 const createEvaluator = ({
@@ -222,6 +305,7 @@ const createEvaluator = ({
         separated,
         wireGap,
         viaGap,
+        extent,
       }
       preparedByIndex.set(obstacleIndex, prepared)
       relevantObstacles.push(prepared)
@@ -234,6 +318,7 @@ const createEvaluator = ({
     // reuse only static context; candidate copper is always checked afresh.
     const currentNets = (nets ??= getNetRepresentatives(srj, ownershipRoutes))
     const violations = new Map<string, FixedObstacleViolation>()
+    let indexedRoutes: RouteSegmentIndex | undefined
     const obstacles = preparationComplete
       ? relevantObstacles
       : prepareObstacles(currentNets)
@@ -247,87 +332,108 @@ const createEvaluator = ({
       separated,
       wireGap,
       viaGap,
+      extent,
     } of obstacles) {
-      for (let routeIndex = 0; routeIndex < routes.length; routeIndex += 1) {
+      // Delay route preparation until the first validated relevant obstacle.
+      // The tree contains centerline bounds, so no radius rounding can shrink it.
+      const indexed = (indexedRoutes ??= indexRouteSegments(routes))
+      const reach = indexed.maxRadius + Math.max(0, wireGap, viaGap) + 1e-8
+      // Round outward before and after subtraction: a rounded separated()
+      // comparison can overlap even when inverse arithmetic cancels at large XY.
+      const minX = -nextUp(-(obstacle.center.x - extent))
+      const minY = -nextUp(-(obstacle.center.y - extent))
+      const maxX = nextUp(obstacle.center.x + extent)
+      const maxY = nextUp(obstacle.center.y + extent)
+      const candidates = Number.isFinite(reach)
+        ? (indexed.index
+            ?.search(
+              -nextUp(-(minX - reach)),
+              -nextUp(-(minY - reach)),
+              nextUp(maxX + reach),
+              nextUp(maxY + reach),
+            )
+            .map((candidate): number => indexed.indexedSegments[candidate]!) ??
+          [])
+        : indexed.indexedSegments.slice()
+      candidates.push(...indexed.unchecked)
+      candidates.sort((left, right): number => left - right)
+      let previousRoute = -1
+      let sameNet = false
+      for (const candidate of candidates) {
+        const { routeIndex, pointIndex } = indexed.segments[candidate]!
         const route = routes[routeIndex]!
-        if (route.route.length < 2) continue
-        if (
-          [route.connectionName, route.rootConnectionName].some(
-            (name) =>
+        if (previousRoute !== routeIndex) {
+          previousRoute = routeIndex
+          sameNet = [route.connectionName, route.rootConnectionName].some(
+            (name): boolean =>
               name !== undefined &&
               obstacleNets.has(currentNets.get(name) ?? name),
           )
-        )
-          continue
-        for (
-          let pointIndex = 1;
-          pointIndex < route.route.length;
-          pointIndex += 1
-        ) {
-          const start = route.route[pointIndex - 1]! as RepairRoutePoint
-          const end = route.route[pointIndex]! as RepairRoutePoint
-          if (start.toNextSegmentType === "through_obstacle") continue
-          if (start.z !== end.z) {
-            const span = getRepairCopperLayerSpan(srj, start, end)
-            if (
-              !Array.from(zLayers).some((z) => z >= span.minZ && z <= span.maxZ)
-            )
-              continue
-            if (
-              Math.abs(start.x - end.x) > 1e-8 ||
-              Math.abs(start.y - end.y) > 1e-8
-            )
-              throw new Error("repair04 found a non-colocated via transition")
-            // Validate the transition above before rejecting distant geometry.
-            if (separated(start, start, route.viaDiameter / 2 + viaGap + 1e-8))
-              continue
-            const localStart = toLocal(start)
-            const distance = getLocalObstacleDistance(
-              localStart,
-              localStart,
-              shape,
-            )
-            const severity = route.viaDiameter / 2 + viaGap - distance
-            if (severity <= 1e-8) continue
-            const key = `fixed-obstacle:${routeIndex}:${obstacleIndex}:via`
-            if ((violations.get(key)?.severity ?? -Infinity) < severity)
-              violations.set(key, {
-                key,
-                center: { x: start.x, y: start.y },
-                routeIndex,
-                obstacleIndex,
-                kind: "via",
-                severity,
-              })
+        }
+        if (sameNet) continue
+        const start = route.route[pointIndex - 1]! as RepairRoutePoint
+        const end = route.route[pointIndex]! as RepairRoutePoint
+        if (start.toNextSegmentType === "through_obstacle") continue
+        if (start.z !== end.z) {
+          const span = getRepairCopperLayerSpan(srj, start, end)
+          if (
+            !Array.from(zLayers).some((z) => z >= span.minZ && z <= span.maxZ)
+          )
             continue
-          }
-          if (!zLayers.has(start.z)) continue
-          const radius =
-            Math.max(
-              start.traceThickness ?? route.traceThickness,
-              end.traceThickness ?? route.traceThickness,
-            ) / 2
-          // A circumscribed rectangle bound can only reject strict separation;
-          // near-boundary copper still receives the original exact calculation.
-          if (separated(start, end, radius + wireGap + 1e-8)) continue
+          if (
+            Math.abs(start.x - end.x) > 1e-8 ||
+            Math.abs(start.y - end.y) > 1e-8
+          )
+            throw new Error("repair04 found a non-colocated via transition")
+          // Validate the transition above before rejecting distant geometry.
+          if (separated(start, start, route.viaDiameter / 2 + viaGap + 1e-8))
+            continue
+          const localStart = toLocal(start)
           const distance = getLocalObstacleDistance(
-            toLocal(start),
-            toLocal(end),
+            localStart,
+            localStart,
             shape,
           )
-          const severity = radius + wireGap - distance
+          const severity = route.viaDiameter / 2 + viaGap - distance
           if (severity <= 1e-8) continue
-          const key = `fixed-obstacle:${routeIndex}:${obstacleIndex}:wire`
+          const key = `fixed-obstacle:${routeIndex}:${obstacleIndex}:via`
           if ((violations.get(key)?.severity ?? -Infinity) < severity)
             violations.set(key, {
               key,
-              center: pointToSegmentClosestPoint(obstacle.center, start, end),
+              center: { x: start.x, y: start.y },
               routeIndex,
               obstacleIndex,
-              kind: "wire",
+              kind: "via",
               severity,
             })
+          continue
         }
+        if (!zLayers.has(start.z)) continue
+        const radius =
+          Math.max(
+            start.traceThickness ?? route.traceThickness,
+            end.traceThickness ?? route.traceThickness,
+          ) / 2
+        // A circumscribed rectangle bound can only reject strict separation;
+        // near-boundary copper still receives the original exact calculation.
+        if (separated(start, end, radius + wireGap + 1e-8)) continue
+        const distance = getLocalObstacleDistance(
+          toLocal(start),
+          toLocal(end),
+          shape,
+        )
+        const severity = radius + wireGap - distance
+        if (severity <= 1e-8) continue
+        const key = `fixed-obstacle:${routeIndex}:${obstacleIndex}:wire`
+        if ((violations.get(key)?.severity ?? -Infinity) < severity)
+          violations.set(key, {
+            key,
+            center: pointToSegmentClosestPoint(obstacle.center, start, end),
+            routeIndex,
+            obstacleIndex,
+            kind: "wire",
+            severity,
+          })
       }
     }
     return Array.from(violations.values())
