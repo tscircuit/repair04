@@ -6,6 +6,7 @@ import type {
 } from "./findClearancePath"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
+import { getRouteAllowedZ } from "./getRouteAllowedZ"
 import { segmentToBoundsMinDistance } from "@tscircuit/math-utils"
 import { getSegmentToSegmentMinDistance as segmentToSegmentMinDistance } from "./getSegmentToSegmentMinDistance"
 import type {
@@ -207,6 +208,7 @@ export class FindClearancePathSolver extends BaseSolver {
       return
     }
     const route = routes[routeIndex]!
+    const allowedZ = getRouteAllowedZ(route, srj.layerCount)
     const drillDiameter = input.viaHoleDiameter ?? route.viaDiameter
     if (
       !Number.isFinite(drillDiameter) ||
@@ -450,8 +452,16 @@ export class FindClearancePathSolver extends BaseSolver {
     // Exact-distance helpers are synchronous and retain no point references.
     const localA = { x: 0, y: 0 }
     const localB = { x: 0, y: 0 }
-    const clear = (a: Point, b: Point): boolean => {
+    const clear = (a: Point, b: Point, throughObstacle = false): boolean => {
       const isVia = a.z !== b.z
+      if (
+        !isVia &&
+        !throughObstacle &&
+        (a.x !== b.x || a.y !== b.y) &&
+        allowedZ !== undefined &&
+        !allowedZ.has(a.z)
+      )
+        return false
       const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
       const margin = Math.max(
         isVia ? input.viaClearance : input.traceClearance,
@@ -586,8 +596,11 @@ export class FindClearancePathSolver extends BaseSolver {
             .slice(1)
             .every(
               (point, index): boolean =>
-                clear(path[index]!, point) &&
-                extraCost(path[index]!, point) === 0,
+                clear(
+                  path[index]!,
+                  point,
+                  path[index]!.toNextSegmentType === "through_obstacle",
+                ) && extraCost(path[index]!, point) === 0,
             )
         ) {
           if (this.stats) this.stats.completionReason = "found"
@@ -811,7 +824,8 @@ export class FindClearancePathSolver extends BaseSolver {
             }
           if (input.allowLayerChanges !== false && clearsDrills(a, viaPath)) {
             for (let z = 0; z < srj.layerCount; z++)
-              if (z !== a.z) neighbors.push(idAt(x, y, z))
+              if (z !== a.z && (allowedZ === undefined || allowedZ.has(z)))
+                neighbors.push(idAt(x, y, z))
           }
           for (const id of neighbors) {
             if (denseSettled ? denseSettled[id] === 1 : settled?.has(id))

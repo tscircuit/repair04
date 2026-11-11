@@ -1,4 +1,5 @@
 import type { HighDensityRoute } from "high-density-repair03/lib"
+import type { RepairRoute } from "./repairRegionTypes"
 import {
   getSegmentBoundsInterval,
   getRepairSourceSpan,
@@ -344,7 +345,7 @@ export const mergeRepairRegion = ({
   routes,
   region,
   repairedRoutes,
-}: MergeRepairRegionOptions): HighDensityRoute[] => {
+}: MergeRepairRegionOptions): RepairRoute[] => {
   if (
     repairedRoutes.length !== region.routeMappings.length ||
     region.lockedPointIndices.length !== repairedRoutes.length

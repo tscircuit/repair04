@@ -2,10 +2,8 @@ import { getRepairRouteVias } from "./getRepairRouteVias"
 import { NegotiateTraceClearanceSolver } from "./NegotiateTraceClearanceSolver"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import Flatbush from "flatbush"
-import type {
-  HighDensityRoute,
-  SimpleRouteJson,
-} from "high-density-repair03/lib"
+import type { SimpleRouteJson } from "high-density-repair03/lib"
+import type { RepairRoute as HighDensityRoute } from "./repairRegionTypes"
 import {
   findClearancePath,
   type ClearancePathSearchStats,

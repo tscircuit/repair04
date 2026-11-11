@@ -1,5 +1,6 @@
 import { getClearanceGridAxes } from "./getClearanceGridAxes"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
+import { getRouteAllowedZ } from "./getRouteAllowedZ"
 import {
   segmentToBoundsMinDistance,
   segmentToSegmentMinDistance,
@@ -12,7 +13,7 @@ import { ClearancePathHeap } from "./ClearancePathHeap"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { getViaPadClearance } from "./getViaPadClearance"
 import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
-import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
+import type { Bounds, RepairRoute, RepairRoutePoint } from "./repairRegionTypes"
 import { REGION_EPSILON } from "./repairRegionGeometry"
 
 type Point = RepairRoutePoint
@@ -47,7 +48,7 @@ export type ClearancePathInput = Parameters<typeof findClearancePath>[0]
 /** Clearance-aware routing between fixed anchors, using only cropped context. */
 export function findClearancePath(input: {
   srj: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean }
-  routes: HighDensityRoute[]
+  routes: RepairRoute[]
   routeIndex: number
   start: Point
   end: Point
@@ -94,6 +95,7 @@ export function findClearancePath(input: {
   }
   if (input.allowLayerChanges === false && start.z !== end.z) return null
   const route = routes[routeIndex]!
+  const allowedZ = getRouteAllowedZ(route, srj.layerCount)
   const drillDiameter = input.viaHoleDiameter ?? route.viaDiameter
   if (
     !Number.isFinite(drillDiameter) ||
@@ -355,8 +357,16 @@ export function findClearancePath(input: {
   // Exact-distance helpers are synchronous and retain no point references.
   const localA = { x: 0, y: 0 }
   const localB = { x: 0, y: 0 }
-  const clear = (a: Point, b: Point): boolean => {
+  const clear = (a: Point, b: Point, throughObstacle = false): boolean => {
     const isVia = a.z !== b.z
+    if (
+      !isVia &&
+      !throughObstacle &&
+      (a.x !== b.x || a.y !== b.y) &&
+      allowedZ !== undefined &&
+      !allowedZ.has(a.z)
+    )
+      return false
     const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
     const margin = Math.max(
       isVia ? input.viaClearance : input.traceClearance,
@@ -482,7 +492,11 @@ export function findClearancePath(input: {
         .slice(1)
         .every(
           (point, index): boolean =>
-            clear(path[index]!, point) && extraCost(path[index]!, point) === 0,
+            clear(
+              path[index]!,
+              point,
+              path[index]!.toNextSegmentType === "through_obstacle",
+            ) && extraCost(path[index]!, point) === 0,
         )
     ) {
       if (input.stats) input.stats.completionReason = "found"
@@ -649,7 +663,8 @@ export function findClearancePath(input: {
       }
     if (input.allowLayerChanges !== false && clearsDrills(a, viaPath)) {
       for (let z = 0; z < srj.layerCount; z++)
-        if (z !== a.z) neighbors.push(idAt(x, y, z))
+        if (z !== a.z && (allowedZ === undefined || allowedZ.has(z)))
+          neighbors.push(idAt(x, y, z))
     }
     for (const id of neighbors) {
       if (settled?.has(id)) continue

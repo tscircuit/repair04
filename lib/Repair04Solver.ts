@@ -8,7 +8,11 @@ import {
   type SimplifiedPcbTrace,
 } from "high-density-repair03/lib"
 import { convertRepairRoutesToTraces } from "./convertRepairRoutesToTraces"
-import type { Bounds, RepairRegionInput } from "./repairRegionTypes"
+import type {
+  Bounds,
+  RepairRegionInput,
+  RepairRoute,
+} from "./repairRegionTypes"
 import {
   getSegmentBoundsInterval,
   REGION_EPSILON,
@@ -32,6 +36,7 @@ import {
   getRepairViaGeometry,
   type RepairViaGeometry,
 } from "./getRepairViaGeometry"
+import { getRouteAllowedZ } from "./getRouteAllowedZ"
 
 type Point = HighDensityRoute["route"][number]
 type RouteReplacement = { routeIndex: number; route: HighDensityRoute }
@@ -118,6 +123,8 @@ function getViaGeometryKey(route: HighDensityRoute): string {
  */
 export class Repair04Solver extends BaseSolver {
   private readonly input: Repair04SolverInput
+  private readonly allowedZByRoute: (ReadonlySet<number> | undefined)[]
+  private readonly hasLayerConstraints: boolean
   private readonly mutableBounds: Bounds
   private readonly engine: AutoroutingDrcEngine
   private readonly fixedTraces: SimplifiedPcbTrace[]
@@ -172,6 +179,12 @@ export class Repair04Solver extends BaseSolver {
       throw new Error("repair04: bounds must be finite and at least 10 × 10 mm")
     }
     this.input = structuredClone(input)
+    this.allowedZByRoute = input.routes.map((route) =>
+      getRouteAllowedZ(route, input.srj.layerCount),
+    )
+    this.hasLayerConstraints = this.allowedZByRoute.some(
+      (allowedZ) => allowedZ !== undefined,
+    )
     this.viaPadEvaluator = createNewViaPadViolationEvaluator({
       srj: this.input.srj,
       viaClearance: this.input.viaClearance,
@@ -465,6 +478,35 @@ export class Repair04Solver extends BaseSolver {
         return cache.trace
       }),
     ])
+    if (this.hasLayerConstraints) {
+      for (const [routeIndex, route] of routes.entries()) {
+        const allowedZ = this.allowedZByRoute[routeIndex]
+        if (allowedZ === undefined) continue
+        for (
+          let pointIndex = 1;
+          pointIndex < route.route.length;
+          pointIndex++
+        ) {
+          const a = route.route[pointIndex - 1]!,
+            b = route.route[pointIndex]!
+          if (
+            a.z !== b.z ||
+            a.toNextSegmentType === "through_obstacle" ||
+            (a.x === b.x && a.y === b.y) ||
+            allowedZ.has(a.z)
+          )
+            continue
+          errors.push({
+            type: "pcb_trace_error",
+            error_type: "pcb_trace_error",
+            pcb_trace_id: `repair04_${routeIndex}`,
+            pcb_trace_error_id: `repair04_wire_layer_${routeIndex}_${pointIndex}`,
+            message: `repair04: route "${route.connectionName}" uses prohibited wire layer ${a.z}`,
+            center: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+          })
+        }
+      }
+    }
     const fixedViolations = new Map<string, number>()
     for (const violation of this.getFixedViolations(routes)) {
       fixedViolations.set(violation.key, violation.severity)
@@ -963,6 +1005,24 @@ export class Repair04Solver extends BaseSolver {
           selected.routeIndex === routeIndex && selected.viaIndex === viaIndex,
       )
       return allowed === true || (via.x === next.x && via.y === next.y)
+    })
+  }
+
+  private preservesWireLayers(
+    routeIndex: number,
+    route: HighDensityRoute,
+  ): boolean {
+    const allowedZ = this.allowedZByRoute[routeIndex]
+    if (allowedZ === undefined) return true
+    return route.route.every((b, index): boolean => {
+      const a = route.route[index - 1]
+      return (
+        a === undefined ||
+        a.z !== b.z ||
+        a.toNextSegmentType === "through_obstacle" ||
+        (a.x === b.x && a.y === b.y) ||
+        allowedZ.has(a.z)
+      )
     })
   }
 
@@ -1584,7 +1644,8 @@ export class Repair04Solver extends BaseSolver {
         }
         if (allowLayerChanges && length > route.viaDiameter * 2 + 0.3) {
           for (let z = 0; z < this.input.srj.layerCount; z++) {
-            if (z === a.z) continue
+            if (z === a.z || this.allowedZByRoute[ri]?.has(z) === false)
+              continue
             const left = {
               x: a.x + dx * 0.2,
               y: a.y + dy * 0.2,
@@ -1721,7 +1782,7 @@ export class Repair04Solver extends BaseSolver {
         )
           continue
         for (let z = 0; z < this.input.srj.layerCount; z++) {
-          if (z === a.z) continue
+          if (z === a.z || this.allowedZByRoute[ri]?.has(z) === false) continue
           const points = [left, { ...left, z }, { ...right, z }, right]
           yield {
             routeIndex: ri,
@@ -1791,6 +1852,13 @@ export class Repair04Solver extends BaseSolver {
     // Every generator shares the same physical-via acceptance invariant,
     // including atomic moves that can otherwise collapse neighboring stacks.
     const replacements = [next.value, ...(next.value.additionalRoutes ?? [])]
+    if (
+      this.hasLayerConstraints &&
+      replacements.some(
+        ({ routeIndex, route }) => !this.preservesWireLayers(routeIndex, route),
+      )
+    )
+      return
     if (
       (this.input.allowLayerChanges !== true ||
         this.input.movableVias?.length) &&
@@ -1870,7 +1938,7 @@ export class Repair04Solver extends BaseSolver {
     return [structuredClone(this.input)]
   }
 
-  override getOutput(): HighDensityRoute[] {
+  override getOutput(): RepairRoute[] {
     if (!this.solved || this.failed)
       throw new Error("repair04: getOutput requires a completed solve")
     return structuredClone(this.routes)

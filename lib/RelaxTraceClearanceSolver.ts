@@ -4,7 +4,7 @@ import type { RelaxTraceClearanceInput } from "./relaxTraceClearance"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { getVectorLength } from "./getVectorLength"
 import { getSegmentToSegmentMinDistance as segmentToSegmentMinDistance } from "./getSegmentToSegmentMinDistance"
-import type { HighDensityRoute } from "high-density-repair03/lib"
+import type { RepairRoute as HighDensityRoute } from "./repairRegionTypes"
 import {
   getLocalObstacleGeometry,
   getLocalObstacleDistance,

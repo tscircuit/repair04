@@ -4,6 +4,7 @@ export { extractRepairRegion } from "./extractRepairRegion"
 export { convertRepairRoutesToTraces } from "./convertRepairRoutesToTraces"
 export type {
   Bounds,
+  RepairRoute,
   RepairRegionInput,
   ExtractedRepairRegion,
 } from "./repairRegionTypes"

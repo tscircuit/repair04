@@ -4,6 +4,12 @@ import type {
 } from "high-density-repair03/lib"
 
 export type Bounds = SimpleRouteJson["bounds"]
+export type RepairRoute = HighDensityRoute & {
+  /** Permitted nonzero wire layers; omitted means unrestricted. */
+  allowedZ?: number[]
+  /** Physical plated-hole metal is not an emitted signal wire. */
+  isThroughObstacle?: boolean
+}
 export type RepairRoutePoint = HighDensityRoute["route"][number] & {
   traceThickness?: number
   toNextSegmentCircuitJsonMetadata?: Record<string, unknown>
@@ -12,7 +18,7 @@ export type RepairRoutePoint = HighDensityRoute["route"][number] & {
 /** Everything the repair algorithm needs; this object contains no full board. */
 export type RepairRegionInput = {
   srj: SimpleRouteJson
-  routes: HighDensityRoute[]
+  routes: RepairRoute[]
   bounds: Bounds
   boundaryMargin: number
   lockedPointIndices: boolean[][]
@@ -27,7 +33,7 @@ export type RepairRegionRouteMapping = {
   end: RepairRoutePosition
   /** Source identity, copper widths, local span and vias, for stale checks. */
   sourceGeometryKey: string
-  originalFragment: HighDensityRoute
+  originalFragment: RepairRoute
 }
 
 export type ExtractedRepairRegion = RepairRegionInput & {
@@ -38,7 +44,7 @@ export type ExtractedRepairRegion = RepairRegionInput & {
 
 export type ExtractRepairRegionOptions = {
   srj: SimpleRouteJson
-  routes: HighDensityRoute[]
+  routes: RepairRoute[]
   bounds: Bounds
   /** The immutable collar. Increased when copper widths require more space. */
   boundaryMargin?: number
@@ -47,7 +53,7 @@ export type ExtractRepairRegionOptions = {
 }
 
 export type MergeRepairRegionOptions = {
-  routes: HighDensityRoute[]
+  routes: RepairRoute[]
   region: ExtractedRepairRegion
-  repairedRoutes: HighDensityRoute[]
+  repairedRoutes: RepairRoute[]
 }
