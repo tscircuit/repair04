@@ -26,6 +26,7 @@ export type ClearanceVisualReproFixture = {
   name: string
   title: string
   provenance: string
+  viaToPadClearance?: number
   viewport: Bounds
   highlightViaTrace?: {
     viaRouteIndex: number
@@ -235,6 +236,7 @@ export function measureClearanceRepro(
   const errors = new AutoroutingDrcEngine(checkSrj, {
     traceClearance: input.traceClearance,
     viaClearance: input.viaClearance,
+    viaToPadClearance: fixture.viaToPadClearance,
   }).evaluate(
     [
       ...(input.srj.traces ?? []),
