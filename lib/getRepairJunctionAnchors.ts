@@ -10,6 +10,7 @@ import {
   REGION_EPSILON,
 } from "./repairRegionGeometry"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
+import { getPhysicalViaAt, getPhysicalViaDiameter } from "./physicalViaMetadata"
 import {
   getLocalObstacleDistance,
   getLocalObstacleGeometry,
@@ -431,7 +432,11 @@ export const getRepairJunctionAnchors = (
           y: point.y,
           minZ: Math.min(previous.z, point.z),
           maxZ: Math.max(previous.z, point.z),
-          radius: route.viaDiameter / 2,
+          radius:
+            getPhysicalViaDiameter(
+              route,
+              getPhysicalViaAt(route, point) ?? {},
+            ) / 2,
           net,
           source,
           routeIndex,

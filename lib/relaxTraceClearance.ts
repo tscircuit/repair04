@@ -1,7 +1,12 @@
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { getVectorLength } from "./getVectorLength"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
-import type { HighDensityRoute } from "high-density-repair03/lib"
+import {
+  getPhysicalViaAt,
+  getPhysicalViaDiameter,
+  withDeclaredVias,
+  type PhysicalHighDensityRoute as HighDensityRoute,
+} from "./physicalViaMetadata"
 import {
   getLocalObstacleGeometry,
   getLocalObstacleDistance,
@@ -121,10 +126,12 @@ function getInteriorPadContact(
   return contact
 }
 
-export type RelaxTraceClearanceInput = RepairRegionInput & {
+export type RelaxTraceClearanceInput = Omit<RepairRegionInput, "routes"> & {
+  routes: HighDensityRoute[]
   traceClearance?: number
   viaClearance?: number
   allowViaMovement?: boolean
+  /** Minimum board-edge clearance, preserving existing boundary intrusion. */
   boardEdgeClearance?: number
 }
 
@@ -136,15 +143,10 @@ export type RelaxTraceClearanceInput = RepairRegionInput & {
  * narrow corridor that fits the copper and its clearances infeasible.
  */
 export function relaxTraceClearance(
-  input: RepairRegionInput & {
-    traceClearance?: number
-    viaClearance?: number
-    allowViaMovement?: boolean
-    /** Minimum board-edge clearance, preserving existing boundary intrusion. */
-    boardEdgeClearance?: number
-  },
+  input: RelaxTraceClearanceInput,
 ): HighDensityRoute[] {
   const routes = structuredClone(input.routes)
+  const sourceRoutes = structuredClone(routes)
   const nets = getNetRepresentatives(input.srj, routes)
   const traceClearance = input.traceClearance ?? 0.1
   const viaClearance = input.viaClearance ?? 0.1
@@ -220,7 +222,7 @@ export function relaxTraceClearance(
         },
         ...getRepairCopperLayerSpan(input.srj, a, b),
         radius: via
-          ? route.viaDiameter / 2
+          ? getPhysicalViaDiameter(route, getPhysicalViaAt(route, a) ?? {}) / 2
           : Math.max(
               a.traceThickness ?? route.traceThickness,
               b.traceThickness ?? route.traceThickness,
@@ -585,19 +587,8 @@ export function relaxTraceClearance(
       point.y = vertex.y
     }
   }
-  for (const route of routes) {
-    route.vias = []
-    for (let i = 1; i < route.route.length; i++) {
-      const a = route.route[i - 1]!,
-        b = route.route[i]!
-      if (
-        a.z !== b.z &&
-        a.toNextSegmentType !== "through_obstacle" &&
-        !route.vias.some((via) => via.x === b.x && via.y === b.y)
-      ) {
-        route.vias.push({ x: b.x, y: b.y })
-      }
-    }
+  for (const [index, route] of routes.entries()) {
+    route.vias = withDeclaredVias(route, sourceRoutes[index]!)
   }
   return routes
 }
