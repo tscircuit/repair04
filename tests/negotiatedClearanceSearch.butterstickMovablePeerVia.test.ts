@@ -351,7 +351,7 @@ test("ButterStick search can negotiate a movable same-net peer drill", async ():
   expect(solver.solved).toBe(true)
   expect(task).toEqual(original)
   const path = solver.getOutput()
-  // The repro snapshots the actual outcome. The fix adds a found assertion.
+  expect(path).not.toBeNull()
   if (path) {
     expect(path[0]).toEqual(task.pathInput.start)
     expect(path.at(-1)).toEqual(task.pathInput.end)
