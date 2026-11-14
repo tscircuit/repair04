@@ -234,7 +234,7 @@ export function createNegotiatedClearanceSearchKernel(
       return Infinity
     const costs = new Map<string, number>()
     for (const { copper, ratio } of query(a, b)) {
-      if (copper.owner === selectedOwner || copper.immutable) return Infinity
+      if (copper.immutable) return Infinity
       costs.set(
         copper.owner,
         Math.max(
