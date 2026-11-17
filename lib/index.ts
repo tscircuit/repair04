@@ -51,3 +51,8 @@ export {
   findPairedClearancePath,
 } from "./PairedClearancePathSolver"
 export type { PairedClearancePathInput } from "./PairedClearancePathSolver"
+
+export type {
+  PhysicalHighDensityRoute,
+  PhysicalHighDensityVia,
+} from "./physicalViaMetadata"

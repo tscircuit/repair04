@@ -1,11 +1,19 @@
-import type {
-  HighDensityRoute,
-  SimplifiedPcbTrace,
-} from "high-density-repair03/lib"
+import type { SimplifiedPcbTrace } from "high-density-repair03/lib"
+import {
+  getPhysicalViaAt,
+  getPhysicalViaDiameter,
+  type PhysicalHighDensityRoute,
+} from "./physicalViaMetadata"
+
+/** The gerber exporter reads these physical fields on via trace points. */
+type ViaTracePoint = SimplifiedPcbTrace["route"][number] & {
+  outer_diameter?: number
+  hole_diameter?: number
+}
 
 /** Stable fragment ids let the local DRC engine target the owning route. */
 export function convertRepairRoutesToTraces(
-  routes: HighDensityRoute[],
+  routes: PhysicalHighDensityRoute[],
   layerCount: number,
 ): SimplifiedPcbTrace[] {
   const layerName = (z: number): string =>
@@ -22,14 +30,24 @@ export function convertRepairRoutesToTraces(
         previous.x === point.x &&
         previous.y === point.y
       ) {
-        points.push({
+        const via = getPhysicalViaAt(route, point)
+        const viaDiameter = getPhysicalViaDiameter(
+          route,
+          via ?? { x: point.x, y: point.y },
+        )
+        const viaPoint: ViaTracePoint = {
           route_type: "via",
           x: point.x,
           y: point.y,
           from_layer: layerName(previous.z),
           to_layer: layerName(point.z),
-          via_diameter: route.viaDiameter,
-        })
+          via_diameter: viaDiameter,
+          outer_diameter: viaDiameter,
+          ...(via?.holeDiameter === undefined
+            ? {}
+            : { hole_diameter: via.holeDiameter }),
+        }
+        points.push(viaPoint)
       }
       // Both sides of every via need explicit wire vertices: the indexed DRC
       // engine evaluates adjacent wire vertices, including the departure leg.

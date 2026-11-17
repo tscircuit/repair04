@@ -38,9 +38,15 @@ test("atomic layer transitions do not become vias or join neighboring physical v
     ])
     const converted = convertRepairRoutesToTraces([route], 4)[0]!
     expect(converted.connection_name).toBe("signal-net")
-    expect(
-      converted.route.filter((point) => point.route_type === "via"),
-    ).toEqual([
+    const expectedViaPoints: Array<{
+      route_type: "via"
+      x: number
+      y: number
+      from_layer: string
+      to_layer: string
+      via_diameter: number
+      outer_diameter: number
+    }> = [
       {
         route_type: "via",
         x: 0,
@@ -48,6 +54,7 @@ test("atomic layer transitions do not become vias or join neighboring physical v
         from_layer: "top",
         to_layer: "inner1",
         via_diameter: 0.3,
+        outer_diameter: 0.3,
       },
       {
         route_type: "via",
@@ -56,8 +63,12 @@ test("atomic layer transitions do not become vias or join neighboring physical v
         from_layer: "inner2",
         to_layer: "bottom",
         via_diameter: 0.3,
+        outer_diameter: 0.3,
       },
-    ])
+    ]
+    expect(
+      converted.route.filter((point) => point.route_type === "via"),
+    ).toEqual(expectedViaPoints)
     const srj: SimpleRouteJson = {
       layerCount: 4,
       minTraceWidth: 0.1,
