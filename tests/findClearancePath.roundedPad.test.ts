@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test"
-import { segmentToBoundsMinDistance } from "@tscircuit/math-utils"
+import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import type {
   HighDensityRoute,
   SimpleRouteJson,
 } from "high-density-repair03/lib"
 import { findClearancePath } from "../lib/findClearancePath"
 
-test("paths respect the rectangular pad envelope used by candidate scoring", (): void => {
+test("paths respect the physical outline of round surface pads", (): void => {
   const start = { x: -1, y: 0, z: 0 }
   const end = { x: 1, y: 0, z: 0 }
   const route: HighDensityRoute = {
@@ -51,16 +51,16 @@ test("paths respect the rectangular pad envelope used by candidate scoring", ():
   for (let index = 1; index < output!.length; index++) {
     expect(output![index]!.z).toBe(0)
     expect(
-      segmentToBoundsMinDistance(output![index - 1]!, output![index]!, {
-        minX: -0.2,
-        maxX: 0.2,
-        minY: -0.2,
-        maxY: 0.2,
-      }) - 0.05,
+      segmentToSegmentMinDistance(
+        output![index - 1]!,
+        output![index]!,
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+      ) - 0.25,
     ).toBeGreaterThanOrEqual(0.1 - 1e-8)
   }
-  // This point clears the circle but starts inside its required envelope.
+  // A point beside the enclosing rectangle can still clear the round pad.
   expect(
     findClearancePath({ ...input, start: { x: 0.25, y: 0.25, z: 0 } }),
-  ).toBeNull()
+  ).not.toBeNull()
 })
