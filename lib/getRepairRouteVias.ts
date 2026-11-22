@@ -1,4 +1,7 @@
-import type { HighDensityRoute } from "high-density-repair03/lib"
+import {
+  getPhysicalViaAt,
+  type PhysicalHighDensityRoute as HighDensityRoute,
+} from "./physicalViaMetadata"
 import { isPointInBounds, REGION_EPSILON } from "./repairRegionGeometry"
 import type { Bounds } from "./repairRegionTypes"
 
@@ -32,7 +35,7 @@ export function getRepairRouteVias({
       )
     }
     if (!vias.some((via) => via.x === end.x && via.y === end.y)) {
-      vias.push({ x: end.x, y: end.y })
+      vias.push({ ...getPhysicalViaAt(route, end), x: end.x, y: end.y })
     }
   }
   return vias
