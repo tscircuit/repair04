@@ -112,6 +112,10 @@ export function getClearanceGridAxes({
     { length: Math.floor((bounds.maxY - bounds.minY) / gridSize) },
     (_, index): number => bounds.minY + (index + 0.5) * gridSize,
   )
+  // A crop smaller than one grid cell still needs one representative column
+  // and row. Without these centers the search has an empty state space.
+  if (xs.length === 0) xs.push((bounds.minX + bounds.maxX) / 2)
+  if (ys.length === 0) ys.push((bounds.minY + bounds.maxY) / 2)
   if (!hasCircularPadArray(obstacles)) {
     return { xs, ys, nearestIndex, hasPadChannels: false }
   }
