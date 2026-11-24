@@ -454,22 +454,37 @@ export class FindClearancePathSolver extends BaseSolver {
         }
       }
     }
+    // Copper and clearance rules are fixed for this search, so the per-edge
+    // geometry depends only on whether the edge changes layer.
+    const throughHoleVias = srj.allowBlindAndBuriedVias !== true
+    const maxLayerZ = srj.layerCount - 1
+    const holeClearance = srj.minTraceToHoleEdgeClearance ?? 0
+    const hasHoleClearance = srj.minTraceToHoleEdgeClearance !== undefined
+    const planarRadius = traceThickness / 2
+    const viaRadius = route.viaDiameter / 2
+    const planarMargin = Math.max(
+      input.traceClearance,
+      srj.defaultObstacleMargin ?? 0,
+      srj.minTraceToPadEdgeClearance ?? 0,
+    )
+    const viaMargin = Math.max(
+      input.viaClearance,
+      srj.defaultObstacleMargin ?? 0,
+      srj.minViaEdgeToPadEdgeClearance ?? 0,
+    )
+    const planarReach =
+      planarRadius + Math.max(planarMargin, holeClearance) + 1e-5
+    const viaReach = viaRadius + Math.max(viaMargin, holeClearance) + 1e-5
+    const viaOnlyGap = getViaPadClearance(srj, input.viaClearance, true)
     let queryId = 0
     // Exact-distance helpers are synchronous and retain no point references.
     const localA = { x: 0, y: 0 }
     const localB = { x: 0, y: 0 }
     const clear = (a: Point, b: Point): boolean => {
       const isVia = a.z !== b.z
-      const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
-      const margin = Math.max(
-        isVia ? input.viaClearance : input.traceClearance,
-        srj.defaultObstacleMargin ?? 0,
-        isVia
-          ? (srj.minViaEdgeToPadEdgeClearance ?? 0)
-          : (srj.minTraceToPadEdgeClearance ?? 0),
-      )
-      const reach =
-        radius + Math.max(margin, srj.minTraceToHoleEdgeClearance ?? 0) + 1e-5
+      const radius = isVia ? viaRadius : planarRadius
+      const margin = isVia ? viaMargin : planarMargin
+      const reach = isVia ? viaReach : planarReach
       // Barriers belong to this synchronous search only. A visit stamp preserves
       // the original first-seen order without allocating a Set for each edge.
       const currentQuery = ++queryId
@@ -477,7 +492,12 @@ export class FindClearancePathSolver extends BaseSolver {
         maxX = Math.max(a.x, b.x)
       const minY = Math.min(a.y, b.y),
         maxY = Math.max(a.y, b.y)
-      const { minZ, maxZ } = getRepairCopperLayerSpan(srj, a, b)
+      const minZ = isVia ? (throughHoleVias ? 0 : Math.min(a.z, b.z)) : a.z
+      const maxZ = isVia
+        ? throughHoleVias
+          ? maxLayerZ
+          : Math.max(a.z, b.z)
+        : a.z
       for (
         let x = Math.floor(minX - reach);
         x <= Math.floor(maxX + reach);
@@ -498,12 +518,10 @@ export class FindClearancePathSolver extends BaseSolver {
             barrier.visitedQuery = currentQuery
             if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
             const requiredGap =
-              barrier.isNonPlatedHole &&
-              !isVia &&
-              srj.minTraceToHoleEdgeClearance !== undefined
-                ? srj.minTraceToHoleEdgeClearance
+              barrier.isNonPlatedHole && !isVia && hasHoleClearance
+                ? holeClearance
                 : barrier.viaOnly
-                  ? getViaPadClearance(srj, input.viaClearance, true)
+                  ? viaOnlyGap
                   : barrier.rect || barrier.pad
                     ? margin
                     : isVia && barrier.minZ !== barrier.maxZ
@@ -641,6 +659,8 @@ export class FindClearancePathSolver extends BaseSolver {
       }
       const heuristic = (p: Point): number =>
         Math.hypot(p.x - end.x, p.y - end.y) + (p.z === end.z ? 0 : 1)
+      const heuristicAt = (x: number, y: number, z: number): number =>
+        Math.hypot(x - end.x, y - end.y) + (z === end.z ? 0 : 1)
       const denseNodeCount = nx * ny * srj.layerCount
       // Bound dense queue storage to 4 MB; unusually large grids remain sparse.
       const useDenseStorage =
@@ -824,16 +844,20 @@ export class FindClearancePathSolver extends BaseSolver {
           for (const id of neighbors) {
             if (denseSettled ? denseSettled[id] === 1 : settled?.has(id))
               continue
-            const b = point(id),
-              baseCost =
-                current.cost +
-                (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
-              previousCost = denseCosts
-                ? denseCosts[id]!
-                : (costs.get(id) ?? Infinity)
+            // Grid coordinates are recovered from the state id before the
+            // neighbor point is materialized, so rejected edges allocate nothing.
+            const bz = Math.floor(id / (nx * ny)),
+              bx = xs[id % nx]!,
+              by = ys[Math.floor(id / nx) % ny]!
+            const baseCost =
+              current.cost + (a.z === bz ? Math.hypot(a.x - bx, a.y - by) : 1)
+            const previousCost = denseCosts
+              ? denseCosts[id]!
+              : (costs.get(id) ?? Infinity)
             // Congestion costs are nonnegative, so an edge that cannot improve the
             // geometric cost cannot improve the complete cost either.
             if (baseCost >= previousCost) continue
+            const b = point(id)
             // Hard-blocked edges cannot enter the queue. Avoid the more expensive
             // movable-copper congestion query for those edges.
             const low = Math.min(current.id, id),
@@ -886,7 +910,11 @@ export class FindClearancePathSolver extends BaseSolver {
             else costs.set(id, cost)
             if (densePrevious) densePrevious[id] = current.id
             else previous.set(id, current.id)
-            heap.pushValues(id, cost, cost + heuristicWeight * heuristic(b))
+            heap.pushValues(
+              id,
+              cost,
+              cost + heuristicWeight * heuristicAt(bx, by, bz),
+            )
           }
         }
         if (heap.length && expanded < (input.maxNodes ?? 30000)) return
