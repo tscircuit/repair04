@@ -1,3 +1,4 @@
+import { getClearancePathDistance } from "./getClearancePathDistance"
 import { getClearanceGridAxes } from "./getClearanceGridAxes"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import {
@@ -522,7 +523,7 @@ export function findClearancePath(input: {
     return idAt(nearestIndex(xs, p.x), nearestIndex(ys, p.y), p.z)
   }
   const heuristic = (p: Point): number =>
-    Math.hypot(p.x - end.x, p.y - end.y) + (p.z === end.z ? 0 : 1)
+    getClearancePathDistance(p.x - end.x, p.y - end.y) + (p.z === end.z ? 0 : 1)
   const denseNodeCount = nx * ny * srj.layerCount
   // Bound dense queue storage to 4 MB; unusually large grids remain sparse.
   const useDenseStorage =
@@ -553,7 +554,8 @@ export function findClearancePath(input: {
         p = point(id)
       if (!clear(start, p)) continue
       const cost =
-        Math.hypot(p.x - start.x, p.y - start.y) + extraCost(start, p)
+        getClearancePathDistance(p.x - start.x, p.y - start.y) +
+        extraCost(start, p)
       if (!Number.isFinite(cost)) continue
       costs.set(id, cost)
       previous.set(id, -1)
@@ -590,7 +592,7 @@ export function findClearancePath(input: {
     const viaPath = viaPaths.get(current.id)
     if (
       a.z === end.z &&
-      Math.hypot(a.x - end.x, a.y - end.y) < grid * 3 &&
+      getClearancePathDistance(a.x - end.x, a.y - end.y) < grid * 3 &&
       clear(a, end) &&
       Number.isFinite(extraCost(a, end))
     ) {
@@ -606,7 +608,7 @@ export function findClearancePath(input: {
           b = path[i]!
         pathCosts.push(
           pathCosts[i - 1]! +
-            (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) +
+            (a.z === b.z ? getClearancePathDistance(a.x - b.x, a.y - b.y) : 1) +
             extraCost(a, b),
         )
       }
@@ -618,7 +620,7 @@ export function findClearancePath(input: {
             if (
               clear(simplified.at(-1)!, path[j]!) &&
               (!input.getAdditionalEdgeCost ||
-                Math.hypot(
+                getClearancePathDistance(
                   path[j]!.x - path[anchor]!.x,
                   path[j]!.y - path[anchor]!.y,
                 ) +
@@ -659,7 +661,8 @@ export function findClearancePath(input: {
       if (settled?.has(id)) continue
       const b = point(id),
         baseCost =
-          current.cost + (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
+          current.cost +
+          (a.z === b.z ? getClearancePathDistance(a.x - b.x, a.y - b.y) : 1),
         previousCost = costs.get(id) ?? Infinity
       // Congestion costs are nonnegative, so an edge that cannot improve the
       // geometric cost cannot improve the complete cost either.
