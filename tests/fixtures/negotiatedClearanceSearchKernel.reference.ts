@@ -1,3 +1,4 @@
+import { getClearancePathDistance } from "../../lib/getClearancePathDistance"
 import Flatbush from "flatbush"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import { FindClearancePathSolver } from "../../lib/FindClearancePathSolver"
@@ -180,7 +181,9 @@ export function createNegotiatedClearanceSearchKernel(
     }
     let total = 0
     for (const cost of costs.values()) total += cost
-    return (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) * total
+    return (
+      (a.z === b.z ? getClearancePathDistance(a.x - b.x, a.y - b.y) : 1) * total
+    )
   }
   // Ordinary drill sites occupy the full stack regardless of which two
   // electrical layers the search connects. Copper and weights are fixed
