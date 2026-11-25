@@ -1,3 +1,4 @@
+import { getClearancePathDistance } from "./getClearancePathDistance"
 import { getClearanceGridAxes } from "./getClearanceGridAxes"
 import { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import type {
@@ -640,7 +641,8 @@ export class FindClearancePathSolver extends BaseSolver {
         return idAt(nearestIndex(xs, p.x), nearestIndex(ys, p.y), p.z)
       }
       const heuristic = (p: Point): number =>
-        Math.hypot(p.x - end.x, p.y - end.y) + (p.z === end.z ? 0 : 1)
+        getClearancePathDistance(p.x - end.x, p.y - end.y) +
+        (p.z === end.z ? 0 : 1)
       const denseNodeCount = nx * ny * srj.layerCount
       // Bound dense queue storage to 4 MB; unusually large grids remain sparse.
       const useDenseStorage =
@@ -680,7 +682,8 @@ export class FindClearancePathSolver extends BaseSolver {
             p = point(id)
           if (!clear(start, p)) continue
           const cost =
-            Math.hypot(p.x - start.x, p.y - start.y) + extraCost(start, p)
+            getClearancePathDistance(p.x - start.x, p.y - start.y) +
+            extraCost(start, p)
           if (!Number.isFinite(cost)) continue
           if (denseCosts) denseCosts[id] = cost
           else costs.set(id, cost)
@@ -741,7 +744,7 @@ export class FindClearancePathSolver extends BaseSolver {
           const viaPath = viaPaths.get(current.id)
           if (
             a.z === end.z &&
-            Math.hypot(a.x - end.x, a.y - end.y) < grid * 3 &&
+            getClearancePathDistance(a.x - end.x, a.y - end.y) < grid * 3 &&
             clear(a, end) &&
             Number.isFinite(extraCost(a, end))
           ) {
@@ -765,7 +768,9 @@ export class FindClearancePathSolver extends BaseSolver {
                 b = path[i]!
               pathCosts.push(
                 pathCosts[i - 1]! +
-                  (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) +
+                  (a.z === b.z
+                    ? getClearancePathDistance(a.x - b.x, a.y - b.y)
+                    : 1) +
                   extraCost(a, b),
               )
             }
@@ -781,7 +786,7 @@ export class FindClearancePathSolver extends BaseSolver {
                   if (
                     clear(simplified.at(-1)!, path[j]!) &&
                     (!input.getAdditionalEdgeCost ||
-                      Math.hypot(
+                      getClearancePathDistance(
                         path[j]!.x - path[anchor]!.x,
                         path[j]!.y - path[anchor]!.y,
                       ) +
@@ -827,7 +832,9 @@ export class FindClearancePathSolver extends BaseSolver {
             const b = point(id),
               baseCost =
                 current.cost +
-                (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1),
+                (a.z === b.z
+                  ? getClearancePathDistance(a.x - b.x, a.y - b.y)
+                  : 1),
               previousCost = denseCosts
                 ? denseCosts[id]!
                 : (costs.get(id) ?? Infinity)

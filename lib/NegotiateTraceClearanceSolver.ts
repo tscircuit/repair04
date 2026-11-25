@@ -1,3 +1,4 @@
+import { getClearancePathDistance } from "./getClearancePathDistance"
 import { getRepairRouteVias } from "./getRepairRouteVias"
 import { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import type {
@@ -361,7 +362,8 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
         for (let index = 1; index < route.route.length; index++) {
           const a = route.route[index - 1]!,
             b = route.route[index]!
-          length += a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1
+          length +=
+            a.z === b.z ? getClearancePathDistance(a.x - b.x, a.y - b.y) : 1
         }
         return length
       })
@@ -676,7 +678,11 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             }
             let total = 0
             for (const cost of costs.values()) total += cost
-            return (a.z === b.z ? Math.hypot(a.x - b.x, a.y - b.y) : 1) * total
+            return (
+              (a.z === b.z
+                ? getClearancePathDistance(a.x - b.x, a.y - b.y)
+                : 1) * total
+            )
           }
           // Ordinary drill sites occupy the full stack regardless of which two
           // electrical layers the search connects. Copper and weights are fixed
