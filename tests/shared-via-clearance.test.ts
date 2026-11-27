@@ -11,5 +11,7 @@ test("projects shared power copper beside a fixed ground via", async (): Promise
   expect(fixture.input).toEqual(before)
   expect(output).toHaveLength(before.routes.length)
   expect(output[2]).toEqual(before.routes[2])
-  await expect(renderClearanceRepro(fixture, output)).toMatchSvgSnapshot(import.meta.path)
+  await expect(renderClearanceRepro(fixture, output)).toMatchSvgSnapshot(
+    import.meta.path,
+  )
 })
