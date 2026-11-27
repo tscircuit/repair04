@@ -1,3 +1,4 @@
+import { SameNetDrillIndex } from "./SameNetDrillIndex"
 import { getClearanceGridAxes } from "./getClearanceGridAxes"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import {
@@ -47,7 +48,11 @@ export type ClearancePathInput = Parameters<typeof findClearancePath>[0]
 
 /** Clearance-aware routing between fixed anchors, using only cropped context. */
 export function findClearancePath(input: {
-  srj: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean }
+  srj: SimpleRouteJson & {
+    allowBlindAndBuriedVias?: boolean
+    minViaHoleDiameter?: number
+    minViaHoleEdgeToViaHoleEdgeClearance?: number
+  }
   routes: HighDensityRoute[]
   routeIndex: number
   start: Point
@@ -104,7 +109,15 @@ export function findClearancePath(input: {
     throw new Error(
       "repair04: via hole diameter must be positive and fit the copper",
     )
-  const drillSpacing = drillDiameter + input.viaClearance
+  const drillEdgeClearance =
+    srj.minViaHoleEdgeToViaHoleEdgeClearance ?? input.viaClearance
+  const drillSpacing = drillDiameter + drillEdgeClearance
+  const existingDrills = new SameNetDrillIndex({
+    board: srj,
+    newHoleDiameter: drillDiameter,
+    newPadDiameter: route.viaDiameter,
+    edgeClearance: drillEdgeClearance,
+  })
   const clearsDrills = (
     point: Point,
     viaPath: ViaPath | undefined,
@@ -298,7 +311,10 @@ export function findClearancePath(input: {
     }
   }
   for (const raw of srj.traces ?? []) {
-    if (net(raw.connection_name) === owner) continue
+    if (net(raw.connection_name) === owner) {
+      existingDrills.addTrace(raw, layer)
+      continue
+    }
     const trace = normalizeRepairTrace(raw, srj.minTraceWidth)
     for (let i = 1; i < trace.route.length; i++) {
       const a = trace.route[i - 1]!,
@@ -361,6 +377,7 @@ export function findClearancePath(input: {
   const localB = { x: 0, y: 0 }
   const clear = (a: Point, b: Point): boolean => {
     const isVia = a.z !== b.z
+    if (isVia && !existingDrills.canPlaceVia(a, b)) return false
     const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
     const margin = Math.max(
       isVia ? input.viaClearance : input.traceClearance,
