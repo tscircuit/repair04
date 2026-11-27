@@ -1,6 +1,6 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`indexed anchors retain the exhaustive scan's copper contacts and insertion order 1`] = `
+exports[`indexed anchors retain required copper contacts and insertion order 1`] = `
 [
   {
     "anchors": [
@@ -58,18 +58,6 @@ exports[`indexed anchors retain the exhaustive scan's copper contacts and insert
             "y": 0.300000005,
           },
         ],
-      },
-      {
-        "route": "branch-12",
-        "segmentTimes": [
-          [
-            0,
-            [
-              0,
-            ],
-          ],
-        ],
-        "viaPositions": [],
       },
       {
         "route": "branch-24",
@@ -134,18 +122,6 @@ exports[`indexed anchors retain the exhaustive scan's copper contacts and insert
     "anchors": [
       {
         "route": "branch-24",
-        "segmentTimes": [
-          [
-            0,
-            [
-              0,
-            ],
-          ],
-        ],
-        "viaPositions": [],
-      },
-      {
-        "route": "branch-12",
         "segmentTimes": [
           [
             0,

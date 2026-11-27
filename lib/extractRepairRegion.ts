@@ -13,6 +13,7 @@ import {
   interpolateRepairPoint,
   isPointInBounds,
   REGION_EPSILON,
+  repairValueKey,
   sameRepairPoint,
 } from "./repairRegionGeometry"
 import type {
@@ -209,7 +210,8 @@ const getFragments = (
         lastPoint &&
         lastPoint.x === point.x &&
         lastPoint.y === point.y &&
-        lastPoint.z === point.z
+        lastPoint.z === point.z &&
+        repairValueKey(lastPoint) === repairValueKey(point)
       ) {
         active.locks[active.locks.length - 1] =
           active.locks[active.locks.length - 1]! || fixed
