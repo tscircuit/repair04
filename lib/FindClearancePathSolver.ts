@@ -1,3 +1,4 @@
+import { SameNetDrillIndex } from "./SameNetDrillIndex"
 import { getClearanceGridAxes } from "./getClearanceGridAxes"
 import { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import type {
@@ -217,7 +218,15 @@ export class FindClearancePathSolver extends BaseSolver {
       throw new Error(
         "repair04: via hole diameter must be positive and fit the copper",
       )
-    const drillSpacing = drillDiameter + input.viaClearance
+    const drillEdgeClearance =
+      srj.minViaHoleEdgeToViaHoleEdgeClearance ?? input.viaClearance
+    const drillSpacing = drillDiameter + drillEdgeClearance
+    const existingDrills = new SameNetDrillIndex({
+      board: srj,
+      newHoleDiameter: drillDiameter,
+      newPadDiameter: route.viaDiameter,
+      edgeClearance: drillEdgeClearance,
+    })
     const clearsDrills = (
       point: Point,
       viaPath: ViaPath | undefined,
@@ -392,7 +401,10 @@ export class FindClearancePathSolver extends BaseSolver {
       this.barrierCount = barriers.length
     }
     this.prepareTrace = (raw): void => {
-      if (net(raw.connection_name) === owner) return
+      if (net(raw.connection_name) === owner) {
+        existingDrills.addTrace(raw, layer)
+        return
+      }
       const trace = normalizeRepairTrace(raw, srj.minTraceWidth)
       for (let i = 1; i < trace.route.length; i++) {
         const a = trace.route[i - 1]!,
@@ -460,6 +472,7 @@ export class FindClearancePathSolver extends BaseSolver {
     const localB = { x: 0, y: 0 }
     const clear = (a: Point, b: Point): boolean => {
       const isVia = a.z !== b.z
+      if (isVia && !existingDrills.canPlaceVia(a, b)) return false
       const radius = isVia ? route.viaDiameter / 2 : traceThickness / 2
       const margin = Math.max(
         isVia ? input.viaClearance : input.traceClearance,
