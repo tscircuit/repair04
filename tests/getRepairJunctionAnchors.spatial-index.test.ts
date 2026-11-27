@@ -7,7 +7,7 @@ import type {
 import { getRepairJunctionAnchors } from "../lib/getRepairJunctionAnchors"
 import { REGION_EPSILON } from "../lib/repairRegionGeometry"
 
-test("indexed anchors retain the exhaustive scan's copper contacts and insertion order", (): void => {
+test("indexed anchors retain required copper contacts and insertion order", (): void => {
   const routes: HighDensityRoute[] = [
     {
       connectionName: "trunk",

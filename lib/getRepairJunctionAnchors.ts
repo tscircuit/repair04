@@ -123,7 +123,7 @@ const addSegmentContactAnchors = (
   segments: Segment[],
   bounds: Bounds,
   results: RepairJunctionAnchors[],
-  sharesImmutableEndpointComponent: (left: string, right: string) => boolean,
+  sharesPreservedConnection: (left: string, right: string) => boolean,
 ): void => {
   const cellSize = 2
   const cells = new Map<string, number[]>()
@@ -188,10 +188,7 @@ const addSegmentContactAnchors = (
           const other = locals[otherIndex]!
           if (
             other.original.source === original.source ||
-            sharesImmutableEndpointComponent(
-              other.original.source,
-              original.source,
-            ) ||
+            sharesPreservedConnection(other.original.source, original.source) ||
             (other.original.routeIndex === undefined &&
               original.routeIndex === undefined)
           )
@@ -350,19 +347,17 @@ export const getRepairJunctionAnchors = (
       }
     }
   }
-  const sharesImmutableEndpointComponent = (
-    left: string,
-    right: string,
-  ): boolean => {
+  const sharesPreservedConnection = (left: string, right: string): boolean => {
     if (!left.startsWith("route:") || !right.startsWith("route:")) return false
-    // Both original route endpoints are immutable, even outside this crop. Their
-    // route paths stay contiguous, so incidental overlaps within this already
-    // connected component need not be frozen as additional junctions.
+    // Original endpoints and selected attachments remain fixed. Their routes
+    // stay contiguous, so incidental overlaps within an already connected
+    // component do not need additional junction locks.
     return (
       findEndpointComponent(Number(left.slice(6))) ===
       findEndpointComponent(Number(right.slice(6)))
     )
   }
+  const preservedConnections: Array<[string, string]> = []
   const anchors: Anchor[] = []
   const segments: Segment[] = []
   const vias: Via[] = []
@@ -565,7 +560,7 @@ export const getRepairJunctionAnchors = (
     })) {
       if (
         anchor.source === segment.source ||
-        sharesImmutableEndpointComponent(anchor.source, segment.source)
+        sharesPreservedConnection(anchor.source, segment.source)
       )
         continue
       const t = Math.max(
@@ -599,6 +594,7 @@ export const getRepairJunctionAnchors = (
         )
       }
       lockVia(anchor.viaOwner, anchor)
+      preservedConnections.push([anchor.source, segment.source])
     }
   }
   for (const via of vias) {
@@ -612,21 +608,25 @@ export const getRepairJunctionAnchors = (
       })) {
         if (
           anchor.source === via.source ||
-          sharesImmutableEndpointComponent(anchor.source, via.source) ||
+          sharesPreservedConnection(anchor.source, via.source) ||
           Math.hypot(via.x - anchor.x, via.y - anchor.y) >
             via.radius + anchor.radius + REGION_EPSILON
         )
           continue
         lockVia(via.routeIndex, via)
         lockVia(anchor.viaOwner, anchor)
+        preservedConnections.push([anchor.source, via.source])
       }
     }
   }
-  addSegmentContactAnchors(
-    segments,
-    bounds,
-    results,
-    sharesImmutableEndpointComponent,
-  )
+  // The fixed endpoint and via attachments above already preserve these
+  // connections. Free incidental wire overlaps within each connected component.
+  for (const [left, right] of preservedConnections) {
+    if (!left.startsWith("route:") || !right.startsWith("route:")) continue
+    const leftRoot = findEndpointComponent(Number(left.slice(6)))
+    const rightRoot = findEndpointComponent(Number(right.slice(6)))
+    endpointComponents[leftRoot] = rightRoot
+  }
+  addSegmentContactAnchors(segments, bounds, results, sharesPreservedConnection)
   return results
 }
