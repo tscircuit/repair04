@@ -11,7 +11,13 @@ test("keeps a coincident vertex's outgoing barrel and width metadata through ext
   const points: RepairRoutePoint[] = [
     { x: -100, y: 0, z: 0, pcb_port_id: "start" },
     { x: 4.5, y: 0, z: 0, traceThickness: 0.1 },
-    { x: 4.5, y: 0, z: 0, traceThickness: 0.2, toNextSegmentType: "through_obstacle" },
+    {
+      x: 4.5,
+      y: 0,
+      z: 0,
+      traceThickness: 0.2,
+      toNextSegmentType: "through_obstacle",
+    },
     { x: 4.5, y: 0, z: 1, traceThickness: 0.2 },
     { x: 100, y: 0, z: 1, pcb_port_id: "end" },
   ]
@@ -21,15 +27,28 @@ test("keeps a coincident vertex's outgoing barrel and width metadata through ext
     { x: 100, y: 0, layer: "bottom", pcb_port_id: "end" },
   ]
   const region = extractRepairRegion({ ...input, boundaryMargin: 1 })
-  const outgoing = region.routes[0]!.route.find(point => point.toNextSegmentType === "through_obstacle")
+  const outgoing = region.routes[0]!.route.find(
+    (point) => point.toNextSegmentType === "through_obstacle",
+  )
   expect(outgoing).toMatchObject({ x: 4.5, y: 0, z: 0, traceThickness: 0.2 })
-  const repairedRoutes = region.routes.map(fragment => ({
+  const repairedRoutes = region.routes.map((fragment) => ({
     ...fragment,
-    vias: getRepairRouteVias({ route: fragment, mutableBounds: region.mutableBounds }),
+    vias: getRepairRouteVias({
+      route: fragment,
+      mutableBounds: region.mutableBounds,
+    }),
   }))
   expect(repairedRoutes[0]!.vias).toEqual([])
-  expect(mergeRepairRegion({ routes: input.routes, region, repairedRoutes })).toEqual(input.routes)
+  expect(
+    mergeRepairRegion({ routes: input.routes, region, repairedRoutes }),
+  ).toEqual(input.routes)
   const newDrill = structuredClone(repairedRoutes)
   newDrill[0]!.vias.push({ x: 4.5, y: 0 })
-  expect(() => mergeRepairRegion({ routes: input.routes, region, repairedRoutes: newDrill })).toThrow("boundary collar")
+  expect(() =>
+    mergeRepairRegion({
+      routes: input.routes,
+      region,
+      repairedRoutes: newDrill,
+    }),
+  ).toThrow("boundary collar")
 })

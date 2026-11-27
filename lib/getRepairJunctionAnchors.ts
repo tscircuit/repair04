@@ -188,10 +188,7 @@ const addSegmentContactAnchors = (
           const other = locals[otherIndex]!
           if (
             other.original.source === original.source ||
-            sharesPreservedConnection(
-              other.original.source,
-              original.source,
-            ) ||
+            sharesPreservedConnection(other.original.source, original.source) ||
             (other.original.routeIndex === undefined &&
               original.routeIndex === undefined)
           )
@@ -350,10 +347,7 @@ export const getRepairJunctionAnchors = (
       }
     }
   }
-  const sharesPreservedConnection = (
-    left: string,
-    right: string,
-  ): boolean => {
+  const sharesPreservedConnection = (left: string, right: string): boolean => {
     if (!left.startsWith("route:") || !right.startsWith("route:")) return false
     // Original endpoints and selected attachments remain fixed. Their routes
     // stay contiguous, so incidental overlaps within an already connected
@@ -633,11 +627,6 @@ export const getRepairJunctionAnchors = (
     const rightRoot = findEndpointComponent(Number(right.slice(6)))
     endpointComponents[leftRoot] = rightRoot
   }
-  addSegmentContactAnchors(
-    segments,
-    bounds,
-    results,
-    sharesPreservedConnection,
-  )
+  addSegmentContactAnchors(segments, bounds, results, sharesPreservedConnection)
   return results
 }

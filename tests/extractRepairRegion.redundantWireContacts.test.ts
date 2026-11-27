@@ -20,7 +20,13 @@ test("a preserved shared via leaves redundant wire contacts movable", (): void =
     ],
   }))
   const input = {
-    srj: { layerCount: 2, minTraceWidth: 0.1, bounds, obstacles: [], connections: [] },
+    srj: {
+      layerCount: 2,
+      minTraceWidth: 0.1,
+      bounds,
+      obstacles: [],
+      connections: [],
+    },
     routes,
     bounds,
     boundaryMargin: 0.1,
@@ -28,7 +34,9 @@ test("a preserved shared via leaves redundant wire contacts movable", (): void =
   const region = extractRepairRegion(input)
   const repairedRoutes = structuredClone(region.routes)
   for (const [routeIndex, route] of repairedRoutes.entries()) {
-    const bendIndex = route.route.findIndex(point => point.x === 2 && point.y === 0)
+    const bendIndex = route.route.findIndex(
+      (point) => point.x === 2 && point.y === 0,
+    )
     expect(bendIndex).toBeGreaterThan(-1)
     expect(region.lockedPointIndices[routeIndex]![bendIndex]).toBe(false)
     route.route[bendIndex]!.y = 0.5
@@ -46,5 +54,7 @@ test("a preserved shared via leaves redundant wire contacts movable", (): void =
   }
   const movedVia = structuredClone(region.routes)
   for (const point of movedVia[0]!.route) if (point.x === -2) point.y = 1
-  expect(() => mergeRepairRegion({ routes, region, repairedRoutes: movedVia })).toThrow("locked point")
+  expect(() =>
+    mergeRepairRegion({ routes, region, repairedRoutes: movedVia }),
+  ).toThrow("locked point")
 })
