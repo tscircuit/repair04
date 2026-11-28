@@ -4,6 +4,13 @@ import type {
 } from "high-density-repair03/lib"
 
 export type Bounds = SimpleRouteJson["bounds"]
+export type RepairBoardEdgeObstacle = SimpleRouteJson["obstacles"][number] & {
+  repairBoardEdge: {
+    start: { x: number; y: number }
+    end: { x: number; y: number }
+    clearance: number
+  }
+}
 export type RepairRoutePoint = HighDensityRoute["route"][number] & {
   traceThickness?: number
   toNextSegmentCircuitJsonMetadata?: Record<string, unknown>

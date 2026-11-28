@@ -731,6 +731,9 @@ export class NegotiateTraceClearanceSolver extends BaseSolver {
             heuristicWeight: input.pathHeuristicWeight,
             existingPath: route.route,
             viaHoleDiameter: input.viaHoleDiameter,
+            preserveBlockedAnchorApproaches:
+              input.preserveBlockedAnchorApproaches,
+            useExactBoardEdgeClearance: input.useExactBoardEdgeClearance,
           }
           const reverseNodes = Math.min(
             input.maxPathSearchNodesPerCall ?? input.maxPathSearchNodes,

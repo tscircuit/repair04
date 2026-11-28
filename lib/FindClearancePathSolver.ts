@@ -16,7 +16,11 @@ import { ClearancePathHeap } from "./ClearancePathHeap"
 import { normalizeRepairTrace } from "./normalizeRepairTrace"
 import { getViaPadClearance } from "./getViaPadClearance"
 import { getConservativeRectBarrierBounds } from "./getConservativeRectBarrierBounds"
-import type { Bounds, RepairRoutePoint } from "./repairRegionTypes"
+import type {
+  Bounds,
+  RepairBoardEdgeObstacle,
+  RepairRoutePoint,
+} from "./repairRegionTypes"
 import { REGION_EPSILON } from "./repairRegionGeometry"
 
 type Point = RepairRoutePoint
@@ -32,6 +36,7 @@ type Barrier = {
   pad?: boolean
   isCopperPour?: boolean
   isNonPlatedHole?: boolean
+  isBoardEdge?: boolean
   a: Point
   b: Point
   rect?: { width: number; height: number; rotation: number }
@@ -41,6 +46,16 @@ type Barrier = {
   visitedQuery: number
 }
 type ViaPath = { x: number; y: number; previous?: ViaPath }
+
+export type PersistentClearancePathOptions = {
+  /** Retain blocked portions of an existing planar approach for caller validation. */
+  preserveBlockedAnchorApproaches?: boolean
+  /** Use the declared outline clearance for extracted board edges. */
+  useExactBoardEdgeClearance?: boolean
+}
+
+export type PersistentClearancePathInput = ClearancePathInput &
+  PersistentClearancePathOptions
 
 type ClearancePathPhase =
   | "initialize"
@@ -54,7 +69,7 @@ type ClearancePathPhase =
 
 /** Persistent clearance-aware A* state, advancing at most 128 heap pops per step. */
 export class FindClearancePathSolver extends BaseSolver {
-  readonly input: ClearancePathInput
+  readonly input: PersistentClearancePathInput
   override stats: ClearancePathSearchStats
   private phase: ClearancePathPhase = "initialize"
   private cursor = 0
@@ -72,7 +87,7 @@ export class FindClearancePathSolver extends BaseSolver {
   private searchBatch?: () => void
 
   constructor(
-    input: ClearancePathInput,
+    input: PersistentClearancePathInput,
     private readonly connectivity?: ClearancePathConnectivity,
   ) {
     super()
@@ -181,8 +196,8 @@ export class FindClearancePathSolver extends BaseSolver {
 
   private initialize(): void {
     const input = this.input
-    const { srj, routes, routeIndex, start, end, bounds, traceThickness } =
-      input
+    const { srj, routes, routeIndex, bounds, traceThickness } = input
+    let { start, end } = input
     const heuristicWeight = input.heuristicWeight ?? 1
     if (!Number.isFinite(heuristicWeight) || heuristicWeight < 1)
       throw new Error(
@@ -284,6 +299,7 @@ export class FindClearancePathSolver extends BaseSolver {
       pad = false,
       isNonPlatedHole = false,
       isCopperPour = false,
+      isBoardEdge = false,
     ): void => {
       const extent = rect ? Math.hypot(rect.width, rect.height) / 2 : radius
       const rectCos = rect ? Math.cos(rect.rotation) : 1
@@ -313,6 +329,7 @@ export class FindClearancePathSolver extends BaseSolver {
         viaOnly,
         pad,
         isNonPlatedHole,
+        isBoardEdge,
         isCopperPour,
         rectCos,
         rectSin,
@@ -347,7 +364,24 @@ export class FindClearancePathSolver extends BaseSolver {
           obstacle.width === obstacle.height &&
           obstacle.ccwRotationDegrees === undefined &&
           zs.length > 1)
+      const boardEdge = input.useExactBoardEdgeClearance
+        ? (obstacle as Partial<RepairBoardEdgeObstacle>).repairBoardEdge
+        : undefined
       for (const z of zs) {
+        if (boardEdge) {
+          add(
+            { ...boardEdge.start, z },
+            { ...boardEdge.end, z },
+            boardEdge.clearance,
+            undefined,
+            false,
+            false,
+            false,
+            false,
+            true,
+          )
+          continue
+        }
         // Circular holes and round through-hole copper use their physical outline.
         // Other pads retain the conservative rectangle used for validation.
         const center = { ...obstacle.center, z }
@@ -497,10 +531,11 @@ export class FindClearancePathSolver extends BaseSolver {
             if (barrier.visitedQuery === currentQuery) continue
             barrier.visitedQuery = currentQuery
             if (barrier.maxZ < minZ || barrier.minZ > maxZ) continue
-            const requiredGap =
-              barrier.isNonPlatedHole &&
-              !isVia &&
-              srj.minTraceToHoleEdgeClearance !== undefined
+            const requiredGap = barrier.isBoardEdge
+              ? 0
+              : barrier.isNonPlatedHole &&
+                  !isVia &&
+                  srj.minTraceToHoleEdgeClearance !== undefined
                 ? srj.minTraceToHoleEdgeClearance
                 : barrier.viaOnly
                   ? getViaPadClearance(srj, input.viaClearance, true)
@@ -551,15 +586,54 @@ export class FindClearancePathSolver extends BaseSolver {
       return true
     }
 
+    let inheritedApproaches: { start: Point[]; end: Point[] } | undefined
+    const finishPath = (path: Point[]): void => {
+      this.finish(
+        inheritedApproaches
+          ? [...inheritedApproaches.start, ...path, ...inheritedApproaches.end]
+          : path,
+      )
+    }
+    const findClearApproachPoint = (
+      path: Point[],
+      direction: -1 | 1,
+    ): number => {
+      const anchorIndex = direction === 1 ? 0 : path.length - 1
+      const layer = path[anchorIndex]!.z
+      for (
+        let index = anchorIndex + direction;
+        index >= 0 && index < path.length;
+        index += direction
+      ) {
+        const point = path[index]!
+        const previous = path[index - direction]!
+        const segmentStart = direction === 1 ? previous : point
+        if (
+          point.z !== layer ||
+          segmentStart.toNextSegmentType ||
+          previous.insideJumperPad ||
+          point.insideJumperPad
+        ) {
+          break
+        }
+        if (clear(point, point)) return index
+      }
+      return -1
+    }
     this.seedSearch = (): void => {
-      if (!clear(start, start) || !clear(end, end)) {
+      const startClear = clear(start, start)
+      const endClear = clear(end, end)
+      const existingPath = input.existingPath
+      if (
+        (!startClear || !endClear) &&
+        (!input.preserveBlockedAnchorApproaches || !existingPath)
+      ) {
         this.finish(null)
         return
       }
-      if (input.existingPath) {
-        const path = input.existingPath
-        const first = path[0],
-          last = path.at(-1)
+      if (existingPath) {
+        const first = existingPath[0],
+          last = existingPath.at(-1)
         if (
           !first ||
           !last ||
@@ -574,8 +648,8 @@ export class FindClearancePathSolver extends BaseSolver {
             "repair04: existing clearance path must match its anchors",
           )
         if (
-          path.some((point, index): boolean => {
-            const previous = path[index - 1]
+          existingPath.some((point, index): boolean => {
+            const previous = existingPath[index - 1]
             return Boolean(
               previous &&
                 previous.z !== point.z &&
@@ -586,6 +660,25 @@ export class FindClearancePathSolver extends BaseSolver {
           throw new Error(
             "repair04: existing clearance path has a non-colocated layer transition",
           )
+        let path = existingPath
+        if (!startClear || !endClear) {
+          // Retain the existing copper up to the first hard-clear point.
+          const firstClear = startClear ? 0 : findClearApproachPoint(path, 1)
+          const lastClear = endClear
+            ? path.length - 1
+            : findClearApproachPoint(path, -1)
+          if (firstClear < 0 || lastClear <= firstClear) {
+            this.finish(null)
+            return
+          }
+          start = path[firstClear]!
+          end = path[lastClear]!
+          inheritedApproaches = {
+            start: path.slice(0, firstClear),
+            end: path.slice(lastClear + 1),
+          }
+          path = path.slice(firstClear, lastClear + 1)
+        }
         if (
           pathClearsDrills(path) &&
           (input.allowLayerChanges !== false ||
@@ -599,7 +692,7 @@ export class FindClearancePathSolver extends BaseSolver {
             )
         ) {
           if (this.stats) this.stats.completionReason = "found"
-          this.finish(path.map((point): Point => ({ ...point })))
+          finishPath(path.map((point): Point => ({ ...point })))
           return
         }
       }
@@ -799,7 +892,7 @@ export class FindClearancePathSolver extends BaseSolver {
                 "repair04: search generated conflicting drill sites",
               )
             if (this.stats) this.stats.completionReason = "found"
-            this.finish(simplified)
+            finishPath(simplified)
             return
           }
           const x = current.id % nx,
