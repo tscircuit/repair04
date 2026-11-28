@@ -1,5 +1,6 @@
 import { getRepairRouteVias } from "./getRepairRouteVias"
 import { NegotiateTraceClearanceSolver } from "./NegotiateTraceClearanceSolver"
+import type { PersistentClearancePathOptions } from "./FindClearancePathSolver"
 import { segmentToSegmentMinDistance } from "@tscircuit/math-utils"
 import Flatbush from "flatbush"
 import type {
@@ -37,7 +38,7 @@ type Copper = {
   cellY: number
   immutable: boolean
 }
-export type NegotiatedClearanceInput = {
+export type NegotiatedClearanceInput = PersistentClearancePathOptions & {
   /** Read-only copper paths: considered by search and omitted from output. */
   fixedRoutes?: HighDensityRoute[]
   srj: SimpleRouteJson & { allowBlindAndBuriedVias?: boolean }
@@ -100,7 +101,11 @@ export function negotiateTraceClearance(
   ) {
     throw new Error("repair04: search direction count must be one or two")
   }
-  if (input.searchDirectionCount === 2) {
+  if (
+    input.searchDirectionCount === 2 ||
+    input.preserveBlockedAnchorApproaches ||
+    input.useExactBoardEdgeClearance
+  ) {
     const solver = new NegotiateTraceClearanceSolver(input)
     solver.solve()
     return solver.getOutput()

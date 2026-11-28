@@ -19,6 +19,7 @@ import type {
   Bounds,
   ExtractedRepairRegion,
   ExtractRepairRegionOptions,
+  RepairBoardEdgeObstacle,
   RepairRegionRouteMapping,
   RepairRoutePoint,
   RepairRoutePosition,
@@ -270,7 +271,7 @@ const getFragments = (
 const getLocalBoardEdgeObstacles = (
   srj: SimpleRouteJson,
   contextBounds: Bounds,
-): Obstacle[] => {
+): RepairBoardEdgeObstacle[] => {
   const bounds = srj.bounds
   const polygon =
     srj.outline && srj.outline.length >= 3
@@ -281,7 +282,8 @@ const getLocalBoardEdgeObstacles = (
           { x: bounds.maxX, y: bounds.maxY },
           { x: bounds.minX, y: bounds.maxY },
         ]
-  const edges: Obstacle[] = []
+  const edges: RepairBoardEdgeObstacle[] = []
+  const clearance = srj.minBoardEdgeClearance ?? 0
   for (let index = 0; index < polygon.length; index += 1) {
     const start = polygon[index]!
     const end = polygon[(index + 1) % polygon.length]!
@@ -297,13 +299,18 @@ const getLocalBoardEdgeObstacles = (
       type: "rect",
       center: { x: start.x + dx * midpointT, y: start.y + dy * midpointT },
       width: length * (interval[1] - interval[0]),
-      height: Math.max(2 * (srj.minBoardEdgeClearance ?? 0), REGION_EPSILON),
+      height: Math.max(2 * clearance, REGION_EPSILON),
       ccwRotationDegrees: (Math.atan2(dy, dx) * 180) / Math.PI,
       layers: Array.from({ length: srj.layerCount }, (_, z) =>
         z === 0 ? "top" : z === srj.layerCount - 1 ? "bottom" : `inner${z}`,
       ),
       zLayers: Array.from({ length: srj.layerCount }, (_, z) => z),
       connectedTo: [],
+      repairBoardEdge: {
+        start: { x: start.x + dx * interval[0], y: start.y + dy * interval[0] },
+        end: { x: start.x + dx * interval[1], y: start.y + dy * interval[1] },
+        clearance,
+      },
     })
   }
   return edges

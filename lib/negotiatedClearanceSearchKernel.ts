@@ -1,8 +1,10 @@
 import Flatbush from "flatbush"
 import type { ClearancePathConnectivity } from "./ClearancePathConnectivity"
 import { getSegmentToSegmentMinDistance as segmentToSegmentMinDistance } from "./getSegmentToSegmentMinDistance"
-import { FindClearancePathSolver } from "./FindClearancePathSolver"
-import type { ClearancePathInput } from "./findClearancePath"
+import {
+  FindClearancePathSolver,
+  type PersistentClearancePathInput,
+} from "./FindClearancePathSolver"
 import { getRepairCopperLayerSpan } from "./getRepairCopperLayerSpan"
 import { REGION_EPSILON } from "./repairRegionGeometry"
 import type { RepairRoutePoint } from "./repairRegionTypes"
@@ -33,7 +35,10 @@ type CopperIndex = {
   queryStamps: Uint32Array
 }
 export type NegotiatedClearanceSearchInput = {
-  pathInput: Omit<ClearancePathInput, "stats" | "getAdditionalEdgeCost">
+  pathInput: Omit<
+    PersistentClearancePathInput,
+    "stats" | "getAdditionalEdgeCost"
+  >
   coppers: NegotiatedClearanceCopper[]
   selectedOwner: string
   weights: number[]
@@ -279,7 +284,7 @@ export function createNegotiatedClearanceSearchKernel(
 
 function createPathInput(
   task: NegotiatedClearanceSearchInput,
-): ClearancePathInput {
+): PersistentClearancePathInput {
   let kernel:
     | ReturnType<typeof createNegotiatedClearanceSearchKernel>
     | undefined
